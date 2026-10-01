@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Análise de Fundos · teste de dados</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700&family=Manrope:wght@400;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root { --anil:#2b2c78; --azul:#1f5aa6; --ouro:#c9a23a; --verde:#0c8a4e; --verm:#d0262c;
+          --bg:#fff; --bg2:#f3f5fb; --txt:#1b1d3a; --borda:#d8dcef; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#0c1030; --bg2:#151b41; --txt:#e8eaf6; --borda:#2a3264; --verde:#34c77b; --verm:#ff6b6b; }
+  }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family:Manrope, system-ui, sans-serif; background:var(--bg); color:var(--txt); }
+  header { padding:18px 24px; border-bottom:2px solid var(--ouro); display:flex; align-items:end; gap:16px; }
+  h1 { font-family:Cinzel, serif; margin:0; font-size:1.8rem; letter-spacing:.04em; }
+  .sub { color:var(--ouro); font-weight:700; letter-spacing:.12em; font-size:.72rem; text-transform:uppercase; }
+  .status { margin-left:auto; text-align:right; font-size:.8rem; opacity:.8; }
+  main { padding:18px 24px; display:grid; grid-template-columns: minmax(0,1fr) minmax(0,2fr); gap:20px; }
+  @media (max-width: 800px) { main { grid-template-columns: 1fr; } }
+  input { width:100%; padding:10px 12px; font:inherit; border:2px solid var(--ouro); background:var(--bg2); color:var(--txt); }
+  ul { list-style:none; padding:0; margin:8px 0; max-height:60vh; overflow:auto; border:1px solid var(--borda); }
+  li { padding:7px 10px; border-bottom:1px solid var(--borda); cursor:pointer; font-size:.86rem; }
+  li:nth-child(even) { background:var(--bg2); }
+  li:hover, li:focus { outline:2px solid var(--anil); }
+  li small { display:block; opacity:.7; }
+  .card { border:1px solid var(--borda); padding:14px; }
+  .kpis { display:flex; gap:10px; flex-wrap:wrap; margin:10px 0; }
+  .kpi { border:1px solid var(--ouro); padding:6px 10px; font-size:.85rem; }
+  .kpi b { display:block; font-size:1.05rem; }
+  .pos { color:var(--verde); } .neg { color:var(--verm); }
+  svg { width:100%; height:260px; background:var(--bg2); }
+  .log { font-family:ui-monospace, monospace; font-size:.75rem; opacity:.75; white-space:pre-wrap; margin-top:10px; }
+</style>
+</head>
+<body>
+<header>
+  <div><h1>Análise de Fundos</h1><div class="sub">Etapa 1 · teste de leitura dos dados no navegador</div></div>
+  <div class="status" id="status">carregando…</div>
+</header>
+<main>
+  <section>
+    <input id="busca" placeholder="Buscar fundo por nome ou CNPJ (mín. 3 caracteres)" autocomplete="off" disabled>
+    <ul id="lista"></ul>
+  </section>
+  <section class="card" id="detalhe"><p>Escolha um fundo na lista.</p></section>
+</main>
+<div class="log" id="log" style="padding:0 24px 24px"></div>
+
+<script type="module">
+import { DADOS_URL, DUCKDB_URL } from "./config.js";
+window.addEventListener("error", (e) => { document.getElementById("log").textContent += "ERRO: " + e.message + "\n"; });
+window.addEventListener("unhandledrejection", (e) => {
+  document.getElementById("log").textContent += "ERRO: " + (e.reason?.message || e.reason) + "\n";
+  document.getElementById("status").textContent = "erro ao carregar (veja abaixo)";
+});
+const duckdb = await import(DUCKDB_URL);
+
+const $ = (id) => document.getElementById(id);
+const log = (t) => { $("log").textContent += t + "\n"; };
+const brPct = (v) => v == null ? "" : (v * 100).toLocaleString("pt-BR", {minimumFractionDigits: 2, maximumFractionDigits: 2}) + "%";
+const brNum = (v, c = 2) => v == null ? "" : Number(v).toLocaleString("pt-BR", {minimumFractionDigits: c, maximumFractionDigits: c});
+const brData = (d) => d ? new Date(d).toLocaleDateString("pt-BR", {timeZone: "UTC"}) : "";
+const cnpjFmt = (c) => c.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, "$1.$2.$3/$4-$5");
+
+// ---- DuckDB no navegador
+const t0 = performance.now();
+const bundles = duckdb.getJsDelivrBundles();
+const bundle = await duckdb.selectBundle(bundles);
+const workerUrl = URL.createObjectURL(new Blob([`importScripts("${bundle.mainWorker}");`], {type: "text/javascript"}));
+const db = new duckdb.AsyncDuckDB(new duckdb.VoidLogger(), new Worker(workerUrl));
+await db.instantiate(bundle.mainModule, bundle.pthreadWorker);
+const conn = await db.connect();
+log(`DuckDB pronto em ${Math.round(performance.now() - t0)} ms`);
+
+// lê um parquet remoto: tenta leitura parcial (só os pedaços necessários); se falhar, baixa o arquivo inteiro
+const registrados = new Set();
+async function fonte(caminho) {
+  const url = DADOS_URL + caminho;
+  try {
+    await conn.query(`SELECT 1 FROM read_parquet('${url}') LIMIT 0`);
+    return `read_parquet('${url}')`;
+  } catch (e) {
+    if (!registrados.has(caminho)) {
+      const r = await fetch(url);
+      if (!r.ok) throw new Error(`${caminho}: HTTP ${r.status}`);
+      await db.registerFileBuffer(caminho, new Uint8Array(await r.arrayBuffer()));
+      registrados.add(caminho);
+      log(`(${caminho}: leitura parcial indisponível, arquivo baixado inteiro)`);
+    }
+    return `read_parquet('${caminho}')`;
+  }
+}
+
+// ---- metadados e lista de fundos
+const meta = await (await fetch(DADOS_URL + "meta.json")).json();
+$("status").innerHTML = `dados da CVM até <b>${brData(meta.ultimo_dado)}</b><br>gerado em ${meta.gerado_em.replace("T", " ")}`;
+const t1 = performance.now();
+await conn.query(`CREATE TABLE fundos AS SELECT * FROM ${await fonte("fundos.parquet")}`);
+const nF = (await conn.query("SELECT count(*) AS n FROM fundos")).toArray()[0].n;
+log(`Lista de fundos (${Number(nF).toLocaleString("pt-BR")}) carregada em ${Math.round(performance.now() - t1)} ms`);
+$("busca").disabled = false;
+$("busca").focus();
+
+// ---- busca
+let tm;
+$("busca").addEventListener("input", () => {
+  clearTimeout(tm);
+  tm = setTimeout(async () => {
+    const q = $("busca").value.trim().toUpperCase().replace(/'/g, "''");
+    if (q.length < 3) { $("lista").innerHTML = ""; return; }
+    const dig = q.replace(/\D/g, "");
+    const cond = `upper(NOME) LIKE '%${q}%'` + (dig.length >= 3 ? ` OR CNPJ LIKE '%${dig}%'` : "");
+    const r = (await conn.query(`SELECT CNPJ, NOME, CLASSIFICACAO_ANBIMA, DT_COMPTC FROM fundos WHERE ${cond}
+                                 ORDER BY VL_PATRIM_LIQ DESC NULLS LAST LIMIT 30`)).toArray();
+    $("lista").innerHTML = r.map(x => `<li tabindex="0" data-c="${x.CNPJ}">${x.NOME}
+        <small>${cnpjFmt(x.CNPJ)} · ${x.CLASSIFICACAO_ANBIMA || ""} · última cota ${brData(x.DT_COMPTC)}</small></li>`).join("");
+  }, 200);
+});
+$("lista").addEventListener("click", (e) => { const li = e.target.closest("li"); if (li) abrir(li.dataset.c); });
+$("lista").addEventListener("keydown", (e) => { if (e.key === "Enter" && e.target.dataset.c) abrir(e.target.dataset.c); });
+
+// ---- histórico de um fundo (arquivo do grupo do CNPJ: últimos 6 dígitos % 128)
+async function abrir(cnpj) {
+  const t = performance.now();
+  const g = String(parseInt(cnpj.slice(-6), 10) % meta.grupos).padStart(3, "0");
+  const partes = [];
+  for (const pasta of ["hist", "ano"]) {
+    try { partes.push(`SELECT * FROM ${await fonte(`cotas/${pasta}/g${g}.parquet`)} WHERE CNPJ = '${cnpj}'`); }
+    catch (e) { /* fundo sem dados nessa parte */ }
+  }
+  const h = (await conn.query(partes.join(" UNION ALL ") + " ORDER BY DT_COMPTC")).toArray();
+  const ms = Math.round(performance.now() - t);
+  const f = (await conn.query(`SELECT * FROM fundos WHERE CNPJ = '${cnpj}'`)).toArray()[0];
+  if (!h.length) { $("detalhe").innerHTML = "<p>Sem cotas.</p>"; return; }
+  const q = h.map(x => x.VL_QUOTA), d = h.map(x => Number(x.DT_COMPTC));
+  const acum = q[q.length - 1] / q[0] - 1;
+  const minQ = Math.min(...q), maxQ = Math.max(...q), W = 800, H = 260;
+  const pts = q.map((v, i) => `${(i / (q.length - 1)) * W},${H - 10 - ((v - minQ) / (maxQ - minQ || 1)) * (H - 20)}`).join(" ");
+  $("detalhe").innerHTML = `
+    <h2 style="margin:0 0 4px">${f.NOME}</h2>
+    <div>${cnpjFmt(cnpj)} · ${f.CLASSIFICACAO_ANBIMA || f.CLASSIFICACAO_CVM || ""} · gestor: ${f.GESTOR || "—"}</div>
+    <div class="kpis">
+      <div class="kpi">cotas<b>${h.length.toLocaleString("pt-BR")}</b></div>
+      <div class="kpi">de / até<b>${brData(d[0])} – ${brData(d[d.length - 1])}</b></div>
+      <div class="kpi">última cota<b>${brNum(q[q.length - 1], 6)}</b></div>
+      <div class="kpi">acumulado<b class="${acum >= 0 ? "pos" : "neg"}">${brPct(acum)}</b></div>
+      <div class="kpi">12 meses<b class="${(f.RET_12M ?? 0) >= 0 ? "pos" : "neg"}">${brPct(f.RET_12M)}</b></div>
+      <div class="kpi">tempo de carga<b>${ms.toLocaleString("pt-BR")} ms</b></div>
+    </div>
+    <svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none"><polyline fill="none" stroke="#2b2c78" stroke-width="2" points="${pts}"/></svg>`;
+  log(`${cnpj}: ${h.length} cotas em ${ms} ms (grupo g${g})`);
+}
+</script>
+</body>
+</html>
