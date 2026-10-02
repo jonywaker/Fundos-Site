@@ -53,12 +53,14 @@ const fimDoMes = (n) => { const [a, m] = partes(n); return somarMeses(diaYMD(a, 
 export function lowerBound(arr, x) { let lo = 0, hi = arr.length; while (lo < hi) { const m = (lo + hi) >> 1; if (arr[m] < x) lo = m + 1; else hi = m; } return lo; }
 export function upperBound(arr, x) { let lo = 0, hi = arr.length; while (lo < hi) { const m = (lo + hi) >> 1; if (arr[m] <= x) lo = m + 1; else hi = m; } return lo; }
 
-export function janela(d, periodo, { ref, ini, fim } = {}) {
+export function janela(d, periodo, { ref, ini, fim, fimComum } = {}) {
   if (!d.length) return null;
   let limIni, limFim;
   if (periodo === "Mês") { const [a, m] = partes(ref); limIni = diaYMD(a, m, 1); limFim = fimDoMes(ref); }
   else if (periodo === "Ano") { const [a] = partes(ref); limIni = diaYMD(a, 1, 1); limFim = diaYMD(a, 12, 31); }
-  else if (MESES_PERIODO[periodo]) { limFim = d[d.length - 1]; limIni = somarMeses(limFim, -MESES_PERIODO[periodo]); }
+  // fimComum: cota mais recente entre os fundos selecionados. Todos usam o mesmo início, mesmo os que pararam antes
+  // (o VBA usava a última cota de cada fundo, o que dava períodos diferentes para fundos cancelados)
+  else if (MESES_PERIODO[periodo]) { limFim = fimComum ?? d[d.length - 1]; limIni = somarMeses(limFim, -MESES_PERIODO[periodo]); }
   else if (periodo === "Vida Toda") { limIni = d[0]; limFim = d[d.length - 1]; }
   else { limIni = ini; limFim = fim; }
   const iIni = lowerBound(d, limIni), iFim = upperBound(d, limFim) - 1;
