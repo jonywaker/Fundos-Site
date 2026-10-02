@@ -160,6 +160,17 @@ function apelidos(cnpjs) {
 const paramsAtuais = () => JSON.stringify({ sel: st.sel, per: [...st.periodos], mes: $("#refMes").value, ano: $("#refAno").value,
   ini: $("#pIni").value, fim: $("#pFim").value, peso: $("#peso").value });
 
+// Fundo que parou de enviar cotas antes da data final comum: cancelado, em liquidação ou sem dados recentes.
+// Atrasos curtos (até 7 dias) são normais no envio à CVM e não são marcados.
+const DIAS_PARADO = 7;
+function situacaoParado(f, cad, fimComum) {
+  const ult = f.d[f.d.length - 1], sit = String(cad.SITUACAO || "");
+  if (fimComum == null || fimComum - ult <= DIAS_PARADO) return null;
+  const rot = /cancel/i.test(sit) ? "Cancelado" : /liquida/i.test(sit) ? "Em liquidação" : "Sem cotas recentes";
+  return { rot, ult, txt: `${rot} · última cota em ${fmtData(ult)}${sit && !/cancel|liquida/i.test(sit) ? " · situação na CVM: " + sit : ""}` };
+}
+const marcaParado = (l) => (l && l._parado ? `<span class="parado" title="${esc(l._parado.txt)}">⊘</span>` : "");
+
 async function calcular() {
   const barra = $("#progresso");
   barra.hidden = false;
@@ -175,7 +186,11 @@ async function calcular() {
     $("#progTxt").textContent = "calculando…";
     await new Promise((r) => setTimeout(r, 0));
     const [ma, mm] = $("#refMes").value.split("-").map(Number);
-    const opc = { ref: null, ini: diaDe(new Date($("#pIni").value)), fim: diaDe(new Date($("#pFim").value)) };
+    // data final comum: a cota mais recente entre os fundos selecionados
+    let fimComum = -Infinity;
+    for (const f of fundos.values()) if (f.d.length) fimComum = Math.max(fimComum, f.d[f.d.length - 1]);
+    if (!Number.isFinite(fimComum)) fimComum = undefined;
+    const opc = { ref: null, ini: diaDe(new Date($("#pIni").value)), fim: diaDe(new Date($("#pFim").value)), fimComum };
     const peso = Number($("#peso").value) / 100;
     const apel = apelidos(sel);
     const res = { apelidos: apel, fundos, periodos: {} };
@@ -187,7 +202,7 @@ async function calcular() {
         const r = f ? calcularFundo(f, st.idx.ibov, per, peso, { ...opc, ref }) : null;
         if (!r) { semDados.push(c); continue; }
         const cad = st.porCnpj.get(c) || {};
-        Object.assign(r, { _c: c, "Fundo": cad.NOME, "CNPJ": cnpjFmt(c), "Classificação CVM": cad.CLASSIFICACAO_CVM || "",
+        Object.assign(r, { _c: c, _parado: situacaoParado(f, cad, fimComum), "Fundo": cad.NOME, "CNPJ": cnpjFmt(c), "Classificação CVM": cad.CLASSIFICACAO_CVM || "",
           "Classificação ANBIMA": cad.CLASSIFICACAO_ANBIMA || "", "Objetivo de retorno": cad.INDICADOR_DESEMPENHO || "N/D" });
         linhas.push(r);
         series.set(c, serieAcumulada(f, r["Data Inicial"], r["Data Final"]));
@@ -257,7 +272,13 @@ function tabelaHTML({ colunas, linhas, fixas = 0, larguras = [260, 150], grupos 
 }
 
 function tabelaMetricas(dados) {
-  const colunas = COLUNAS.map(([g, n, t]) => ({ chave: n, nome: n, tipo: t, cor: t === "pct" }));
+  const colunas = COLUNAS.map(([g, n, t]) => {
+    const c = { chave: n, nome: n, tipo: t, cor: t === "pct" };
+    if (n === "Fundo") c.html = (v, l) => marcaParado(l) + esc(v ?? "");
+    if (n === "Data Final") c.html = (v, l) => l._parado
+      ? `<span class="parado-dt" title="${esc(l._parado.txt)}">${esc(FMT.data(v))}</span>` : esc(FMT.data(v));
+    return c;
+  });
   const grupos = COLUNAS.map(([g]) => g);
   let linhas = [...dados.linhas];
   const { col, desc } = st.ordem;
@@ -270,7 +291,11 @@ function tabelaMetricas(dados) {
     });
   }
   const dest = linhas.map((l) => casa(st.destaque, l.Fundo, l.CNPJ));
-  return tabelaHTML({ colunas, linhas, fixas: 2, grupos, destacar: dest, altura: 520 });
+  const parados = linhas.filter((l) => l._parado);
+  const nota = parados.length ? `<p class="nota-parado"><span class="parado">⊘</span> ${parados.length} fundo(s) sem cotas até o fim do período
+    (cancelado, em liquidação ou sem envio recente). O cálculo usa o mesmo início dos demais e vai até a última cota de cada um.
+    Passe o mouse sobre o símbolo para ver a data.</p>` : "";
+  return tabelaHTML({ colunas, linhas, fixas: 2, grupos, destacar: dest, altura: 520 }) + nota;
 }
 
 // tabela-legenda: cor, posição, fundo e valores, do maior para o menor; 5 maiores + 5 menores (+ destacados)
@@ -290,7 +315,7 @@ function tabelaLegenda(chave, itens, colsValor) {
     });
   }
   const colunas = [{ chave: "#", nome: "#", tipo: "txt" },
-    { chave: "Fundo", nome: "Fundo", html: (v, l) => `<span class="sw" style="background:${l.cor}"></span>${esc(v)}` },
+    { chave: "Fundo", nome: "Fundo", html: (v, l) => `<span class="sw" style="background:${l.cor}"></span>${marcaParado(l)}${esc(v)}` },
     ...colsValor.map((c) => ({ chave: c, nome: c, tipo: "pct", cor: true }))];
   const dest = vis.map((it, i) => !seps.has(i) && casa(st.destaque, it.Fundo));
   return `<label class="tog"><input type="checkbox" data-todos="${chave}" ${todos ? "checked" : ""} ${ord.length <= 10 ? "disabled" : ""}>
@@ -421,9 +446,10 @@ function renderResultado() {
   grafico("gDd", seriesDd, { xMin: zi, xMax: zf });
 
   const final = (s) => (s.y.length ? s.y[s.y.length - 1] : null);
-  $("#legAcum").innerHTML = tabelaLegenda("acum", seriesAcum.map((s) => ({ Fundo: s.nome, cor: s.cor, Final: final(s) })), ["Final"]);
+  const paradoPorNome = new Map(dados.linhas.map((l) => [res.apelidos[l._c], l._parado]));
+  $("#legAcum").innerHTML = tabelaLegenda("acum", seriesAcum.map((s) => ({ Fundo: s.nome, cor: s.cor, _parado: paradoPorNome.get(s.nome), Final: final(s) })), ["Final"]);
   const mdd = Object.fromEntries(dados.linhas.map((l) => [res.apelidos[l._c], l.Queda]));
-  $("#legDd").innerHTML = tabelaLegenda("dd", seriesDd.map((s) => ({ Fundo: s.nome, cor: s.cor, Final: final(s), "Máx. queda": mdd[s.nome] })), ["Final", "Máx. queda"]);
+  $("#legDd").innerHTML = tabelaLegenda("dd", seriesDd.map((s) => ({ Fundo: s.nome, cor: s.cor, _parado: paradoPorNome.get(s.nome), Final: final(s), "Máx. queda": mdd[s.nome] })), ["Final", "Máx. queda"]);
   avisoDesatualizado();
 }
 
