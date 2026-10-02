@@ -113,7 +113,9 @@ if (!rMeta.ok) throw new Error(`meta.json não encontrado (HTTP ${rMeta.status})
 const meta = await rMeta.json();
 $("status").innerHTML = `dados da CVM até <b>${brData(meta.ultimo_dado)}</b><br>gerado em ${meta.gerado_em.replace("T", " ")}`;
 const t1 = performance.now();
-await conn.query(`CREATE TABLE fundos AS SELECT * FROM ${await fonte("fundos.parquet")}`);
+const rF = await fetch(DADOS_URL + "fundos.parquet");     // 1 download só (mais rápido que leitura parcial)
+await db.registerFileBuffer("fundos.parquet", new Uint8Array(await rF.arrayBuffer()));
+await conn.query(`CREATE TABLE fundos AS SELECT * FROM read_parquet('fundos.parquet')`);
 const nF = (await conn.query("SELECT count(*) AS n FROM fundos")).toArray()[0].n;
 log(`Lista de fundos (${Number(nF).toLocaleString("pt-BR")}) carregada em ${Math.round(performance.now() - t1)} ms`);
 $("busca").disabled = false;
@@ -137,16 +139,29 @@ $("busca").addEventListener("input", () => {
 $("lista").addEventListener("click", (e) => { const li = e.target.closest("li"); if (li) abrir(li.dataset.c); });
 $("lista").addEventListener("keydown", (e) => { if (e.key === "Enter" && e.target.dataset.c) abrir(e.target.dataset.c); });
 
-// ---- histórico de um fundo (arquivo do grupo do CNPJ: últimos 6 dígitos % 128)
+// ---- histórico de um fundo: baixa de uma vez o arquivo pequeno do grupo do CNPJ (hist + ano atual, em
+//      paralelo) e guarda na memória; abrir de novo um fundo do mesmo grupo é instantâneo
+const grupos = new Map();
+function carregarGrupo(g) {
+  if (!grupos.has(g)) {
+    grupos.set(g, Promise.all(["hist", "ano"].map(async (pasta) => {
+      const nome = `${pasta}_g${g}.parquet`;
+      const r = await fetch(`${DADOS_URL}cotas/${pasta}/g${g}.parquet`);
+      if (!r.ok) return null;                                    // grupo sem dados nessa parte
+      await db.registerFileBuffer(nome, new Uint8Array(await r.arrayBuffer()));
+      return nome;
+    })).then((nomes) => nomes.filter(Boolean)));
+  }
+  return grupos.get(g);
+}
+
 async function abrir(cnpj) {
   const t = performance.now();
-  const g = String(parseInt(cnpj.slice(-6), 10) % meta.grupos).padStart(3, "0");
-  const partes = [];
-  for (const pasta of ["hist", "ano"]) {
-    try { partes.push(`SELECT * FROM ${await fonte(`cotas/${pasta}/g${g}.parquet`)} WHERE CNPJ = '${cnpj}'`); }
-    catch (e) { /* fundo sem dados nessa parte */ }
-  }
-  const h = (await conn.query(partes.join(" UNION ALL ") + " ORDER BY DT_COMPTC")).toArray();
+  const g = String(parseInt(cnpj.slice(-6), 10) % meta.grupos).padStart(4, "0");
+  const nomes = await carregarGrupo(g);
+  const tDown = Math.round(performance.now() - t);
+  const sqlCotas = nomes.map(n => `SELECT * FROM read_parquet('${n}') WHERE CNPJ = '${cnpj}'`).join(" UNION ALL ");
+  const h = nomes.length ? (await conn.query(sqlCotas + " ORDER BY DT_COMPTC")).toArray() : [];
   const ms = Math.round(performance.now() - t);
   const f = (await conn.query(`SELECT * FROM fundos WHERE CNPJ = '${cnpj}'`)).toArray()[0];
   if (!h.length) { $("detalhe").innerHTML = "<p>Sem cotas.</p>"; return; }
@@ -166,7 +181,7 @@ async function abrir(cnpj) {
       <div class="kpi">tempo de carga<b>${ms.toLocaleString("pt-BR")} ms</b></div>
     </div>
     <svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none"><polyline fill="none" stroke="#2b2c78" stroke-width="2" points="${pts}"/></svg>`;
-  log(`${cnpj}: ${h.length} cotas em ${ms} ms (grupo g${g})`);
+  log(`${cnpj}: ${h.length} cotas em ${ms} ms (download ${tDown} ms, grupo g${g})`);
 }
 </script>
 </body>
