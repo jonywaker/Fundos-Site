@@ -150,7 +150,7 @@
             <div class="opcoes"><span class="ordem">Eixo horizontal <span id="riscoEixo" class="pilulas mini"><button data-e="ret">Retorno a.a.</button><button data-e="sharpe">Sharpe</button></span></span></div>
             <button class="btn-min" type="button" data-min="risco" title="Minimizar esta seção">−</button></div>
           <p id="riscoNota" class="nota"></p>
-          <div class="linha2">
+          <div class="linha2 larga">
             <div class="graf"><canvas id="gRisco"></canvas></div>
             <div id="tabRisco" class="leg"></div>
           </div>
@@ -158,6 +158,7 @@
 
         <section class="cartao" data-sec="corr">
           <div class="cab"><h2>Correlação (retornos diários)</h2>
+            <div class="opcoes"><button class="sec mini-btn" type="button" data-corr-tudo="corr">Mostrar tudo</button></div>
             <button class="btn-min" type="button" data-min="corr" title="Minimizar esta seção">−</button></div>
           <p id="corrNota" class="nota"></p>
           <div id="tabCorr"></div>
@@ -214,12 +215,55 @@
         <div id="cartItens"></div>
         <div id="cartRes"></div>
         <div id="cartGraf">
-          <div class="linha2 metades">
-            <div><h3 class="sub">Evolução (base 100)</h3><div class="graf baixo"><canvas id="gCartEvol"></canvas></div></div>
-            <div><h3 class="sub">Linha d'água (queda desde o pico)</h3><div class="graf baixo"><canvas id="gCartDD"></canvas></div></div>
+          <h3 class="sub">Métricas da carteira e dos ativos no mesmo período</h3>
+          <div id="cartMetricas"></div>
+
+          <div class="cab sub-cab"><h3 class="sub">Rentabilidade acumulada</h3>
+            <div class="opcoes">
+              <label class="tog"><input id="cartRelOn" type="checkbox"> Relativa a…</label>
+              <span id="cartRelCtl" hidden>
+                <div id="cbCartAlvo" class="combo"></div>
+                <span id="cartRelModo" class="pilulas mini"><button data-m="dif">Diferença (+)</button><button data-m="pct">% do alvo</button></span>
+              </span>
+            </div></div>
+          <p id="cartRelNota" class="nota"></p>
+          <div class="linha2">
+            <div class="graf"><canvas id="gCartEvol"></canvas></div>
+            <div id="legCartEvol" class="leg"></div>
           </div>
-          <h3 class="sub">Risco × retorno dos ativos e da carteira</h3>
-          <div class="graf baixo"><canvas id="gCartRR"></canvas></div>
+
+          <div class="cab sub-cab"><h3 class="sub">Drawdown (queda desde o pico)</h3></div>
+          <div class="linha2">
+            <div class="graf"><canvas id="gCartDD"></canvas></div>
+            <div id="legCartDD" class="leg"></div>
+          </div>
+
+          <div class="cab sub-cab"><h3 class="sub">Risco × retorno</h3>
+            <div class="opcoes"><span class="ordem">Eixo horizontal <span id="cartRiscoEixo" class="pilulas mini"><button data-e="ret">Retorno a.a.</button><button data-e="sharpe">Sharpe</button></span></span></div></div>
+          <div class="linha2 larga">
+            <div class="graf"><canvas id="gCartRR"></canvas></div>
+            <div id="tabCartRisco" class="leg"></div>
+          </div>
+
+          <div class="cab sub-cab"><h3 class="sub">Correlação (retornos diários)</h3>
+            <div class="opcoes"><button class="sec mini-btn" type="button" data-corr-tudo="cart">Mostrar tudo</button></div></div>
+          <div id="tabCartCorr"></div>
+
+          <div class="cab sub-cab"><h3 class="sub">Janela móvel</h3></div>
+          <div class="jm-ctl opcoes">
+            <label>Benchmark (índice ou fundo) <div id="cbCartJmBench" class="combo"></div></label>
+            <label>Duração (meses) <input id="cartJmMeses" type="number" min="1" max="240" step="1" value="12"></label>
+            <button id="cartJmAtualizar" class="prim" type="button">↻ Atualizar</button>
+          </div>
+          <div id="cartJmInfo" class="jm-info"></div>
+          <div id="cartJmCorpo">
+            <div class="linha2">
+              <div class="graf"><canvas id="gCartJM"></canvas></div>
+              <div id="legCartJM" class="leg"></div>
+            </div>
+            <div id="tabCartJM"></div>
+            <p><button id="cartJmBaixar" class="sec" type="button">⬇ Baixar lista completa (CSV, abre no Excel)</button></p>
+          </div>
         </div>
       </section>
     </main>
@@ -267,6 +311,14 @@
   </div>
 </dialog>
 
+<div id="painelCarga" class="painel-carga" role="dialog" aria-modal="false" aria-labelledby="cargaTit" hidden>
+  <div class="pc-caixa">
+    <div class="pc-cab"><h2 id="cargaTit">Carregando fundos</h2><span id="cargaFase" class="nota"></span></div>
+    <div class="pc-barra"><div id="cargaBarra"></div></div>
+    <div id="cargaResumo" class="pc-resumo"></div>
+    <div id="cargaLista" class="pc-lista"></div>
+  </div>
+</div>
 <div id="mini" class="minigraf" role="tooltip" hidden></div>
 <div id="corrTip" class="minigraf corr-tip" role="tooltip" hidden></div>
 <button id="btnTopo" class="btn-topo" type="button" aria-label="Voltar ao topo" title="Voltar ao topo" hidden>↑</button>
