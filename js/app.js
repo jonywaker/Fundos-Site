@@ -37,7 +37,7 @@ async function iniciar() {
   try {
     $("#status").innerHTML = "carregando…";
     st.meta = await D.iniciar(DADOS_URL);
-    D.definirGrupos(st.meta.grupos);
+    D.definirGrupos(st.meta.grupos, st.meta.formato);
     $("#status").innerHTML = `dados da CVM até<b>${fmtData(diaDe(new Date(st.meta.ultimo_dado)))}</b>
       <small>atualizado em ${st.meta.gerado_em.slice(8, 10)}/${st.meta.gerado_em.slice(5, 7)} ${st.meta.gerado_em.slice(11, 16)}</small>`;
     const [lista, idx] = await Promise.all([D.carregarLista(), D.carregarIndices()]);
