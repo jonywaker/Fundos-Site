@@ -505,7 +505,7 @@ async function calcular() {
       }
       res.periodos[per] = { linhas, semDados, series };
     }
-    st.res = res; st.params = paramsAtuais(); st.zoom = {};
+    st.res = res; st.params = paramsAtuais(); st.zoom = {}; st.zoomG = {};
     if (!res.periodos[st.perAtivo]) st.perAtivo = Object.keys(res.periodos)[0];
     // janela móvel: padrão de 5 anos de aplicações até a última cota
     if (fimComum != null) {
@@ -761,6 +761,8 @@ function grafico(id, series, { fmtY = (v) => brPct(v, 1), ref = null, xMin, xMax
     ant.options.plugins.linhaRef = { y: ref };
     ant.options.plugins.tooltip.callbacks.title = (it) => tituloX(it[0].parsed.x);
     ant.options.plugins.tooltip.callbacks.label = (it) => `${it.dataset.label}: ${fmtY(it.parsed.y)}`;
+    ant.$base = { x: [xMin, xMax], y: [undefined, undefined] };
+    aplicarZoomG(ant, id);
     ant.update("none");
     return;
   }
@@ -781,6 +783,7 @@ function grafico(id, series, { fmtY = (v) => brPct(v, 1), ref = null, xMin, xMax
     },
     plugins: [linhaRef],
   });
+  posCriar(id, { x: [xMin, xMax], y: [undefined, undefined] });
 }
 
 // estrela de 4 pontas preenchida (marcador da carteira)
@@ -814,6 +817,8 @@ function graficoRR(id, pts, { fmtX, tituloX, refX = null }) {
     ant.options.scales.x.title.text = tituloX; ant.options.scales.x.ticks.callback = fmtX;
     ant.options.plugins.linhaRef = { x: refX };
     ant.options.plugins.tooltip.callbacks.label = (it) => `${it.raw.nome}: volatilidade ${brPct(it.parsed.y)} · ${tituloX.startsWith("Retorno") ? "retorno " + brPct(it.parsed.x) + " a.a." : "Sharpe " + br(it.parsed.x, 2)}`;
+    ant.$base = { x: [undefined, undefined], y: [0, undefined] };
+    aplicarZoomG(ant, id);
     ant.update("none");
     return;
   }
@@ -832,6 +837,7 @@ function graficoRR(id, pts, { fmtX, tituloX, refX = null }) {
     },
     plugins: [linhaRef, rotulos],
   });
+  posCriar(id, { x: [undefined, undefined], y: [0, undefined] });
 }
 
 // ============================== resultado ==============================
@@ -1323,9 +1329,9 @@ const opcoesFundos = (lista = st.res?.sel || []) => { const cores = coresFundos(
 
 function montarCombos() {
   criarCombo("cbAlvo", { opcoes: () => [...opcoesIndices(), ...opcoesFundos((st.ctx?.dados.linhas || []).map((l) => l._c))],
-    aoEscolher: (o) => { st.rel.alvo = o.rot; renderAcum(); } });
+    aoEscolher: (o) => { st.rel.alvo = o.rot; semZoom("gAcum"); renderAcum(); } });
   criarCombo("cbJmBench", { opcoes: () => [{ tipo: "n", v: "", rot: "Nenhum (retorno absoluto)", grupo: "Sem comparação" }, ...opcoesIndices(), ...opcoesFundos()],
-    aoEscolher: (o) => { st.jmBench = { tipo: o.tipo, v: o.v, rot: o.rot }; calcularJM(); renderJM(); } });
+    aoEscolher: (o) => { st.jmBench = { tipo: o.tipo, v: o.v, rot: o.rot }; semZoom("gJM"); calcularJM(); renderJM(); } });
   criarCombo("cbCartAdd", { limpar: true, placeholder: "Digite o nome, CNPJ ou índice…",
     opcoes: () => { const tem = new Set(st.cart.itens.map((x) => x.tipo + x.v)); return [...opcoesFundos(), ...opcoesIndices()].filter((o) => !tem.has(o.tipo + o.v)); },
     aoEscolher: (o) => { st.cart.itens.push({ tipo: o.tipo, v: o.v, peso: st.cart.itens.length ? 10 : 100 }); salvarCart(); renderCarteira(); } });
@@ -1334,9 +1340,9 @@ function montarCombos() {
   // carteira: alvo do "Relativa a" (índices e ativos da carteira) e benchmark da janela móvel
   criarCombo("cbCartAlvo", { opcoes: () => [...opcoesIndices(), ...(st.cartRes?.validos || []).filter((it) => it.tipo === "f")
       .map((it) => ({ tipo: "f", v: it.v, rot: nomeItem(it), cnpj: it.v, grupo: "Ativos da carteira", cor: corItem(it) }))],
-    aoEscolher: (o) => { st.cartUI.rel.alvo = o.rot; renderCartAcum(); } });
+    aoEscolher: (o) => { st.cartUI.rel.alvo = o.rot; semZoom("gCartEvol"); renderCartAcum(); } });
   criarCombo("cbCartJmBench", { opcoes: () => [{ tipo: "n", v: "", rot: "Nenhum (retorno absoluto)", grupo: "Sem comparação" }, ...opcoesIndices(), ...opcoesFundos()],
-    aoEscolher: (o) => { st.cartUI.jmBench = { tipo: o.tipo, v: o.v, rot: o.rot }; calcularCartJM(); renderCartJM(); } });
+    aoEscolher: (o) => { st.cartUI.jmBench = { tipo: o.tipo, v: o.v, rot: o.rot }; semZoom("gCartJM"); calcularCartJM(); renderCartJM(); } });
   definirCombo("cbAlvo", st.rel.alvo); definirCombo("cbJmBench", st.jmBench.rot); definirCombo("cbCartRef", st.cart.ref.rot);
   definirCombo("cbCartAlvo", st.cartUI.rel.alvo); definirCombo("cbCartJmBench", st.cartUI.jmBench.rot);
 }
@@ -1395,6 +1401,7 @@ function calcularCarteira() {
   const c = st.cart, res = $("#cartRes");
   const validos = c.itens.filter((it) => (Number(it.peso) || 0) > 0 && serieItem(it));
   $("#cartGraf").hidden = true; st.cartRes = null;
+  semZoom("gCartEvol", "gCartDD", "gCartRR", "gCartJM");          // pesos, datas ou rebalanceamento mudaram: gráficos voltam ao inteiro
   if (!validos.length) { res.innerHTML = c.itens.length ? `<p class="nota">Dê peso maior que zero a pelo menos um ativo calculado.</p>` : ""; return; }
   const soma = validos.reduce((a, it) => a + Number(it.peso), 0), pesos = validos.map((it) => Number(it.peso) / soma);
   const ini = diaDe(new Date(c.ini)), fim = diaDe(new Date(c.fim));
@@ -1617,7 +1624,7 @@ document.addEventListener("change", (e) => {
   if (t.id === "cartRebal") { c.rebal = Number(t.value); salvarCart(); calcularCarteira(); }
   else if (t.id === "cartValor") { c.valor = Math.max(0, Number(t.value) || 0); salvarCart(); calcularCarteira(); }
   else if (t.id === "cartIni" || t.id === "cartFim") { c[t.id === "cartIni" ? "ini" : "fim"] = t.value; salvarCart(); if (c.ini && c.fim) calcularCarteira(); }
-  else if (t.id === "cartRelOn") { st.cartUI.rel.on = t.checked; renderCartAcum(); }
+  else if (t.id === "cartRelOn") { st.cartUI.rel.on = t.checked; semZoom("gCartEvol"); renderCartAcum(); }
   else if (t.id === "cartJmMeses") st.cartUI.jmMeses = Math.max(1, Math.min(240, Number(t.value) || 12));
   else if (t.id === "cartJmIni" || t.id === "cartJmFim") st.cartUI[t.id === "cartJmIni" ? "jmIni" : "jmFim"] = t.value;
 });
@@ -1638,12 +1645,12 @@ document.addEventListener("click", (e) => {
   }
   else if (t.id === "cartLimpar") { if (c.itens.length && !confirm("Tirar todos os ativos da carteira?")) return; c.itens = []; salvarCart(); renderCarteira(); }
   else if (t.id === "cartPeriodo") usarPeriodoAtivo(true);
-  else if (t.closest?.("#cartRelModo button")) { st.cartUI.rel.modo = t.closest("button").dataset.m; renderCartAcum(); }
-  else if (t.closest?.("#cartRiscoEixo button")) { st.cartUI.eixo = t.closest("button").dataset.e; delete st.ord.cartRisco; renderCartRisco(); }
+  else if (t.closest?.("#cartRelModo button")) { st.cartUI.rel.modo = t.closest("button").dataset.m; semZoom("gCartEvol"); renderCartAcum(); }
+  else if (t.closest?.("#cartRiscoEixo button")) { st.cartUI.eixo = t.closest("button").dataset.e; delete st.ord.cartRisco; semZoom("gCartRR"); renderCartRisco(); }
   else if (t.id === "cartJmAtualizar") {
     st.cartUI.jmMeses = Math.max(1, Math.min(240, Number($("#cartJmMeses").value) || 12));
     st.cartUI.jmIni = $("#cartJmIni").value || st.cartUI.jmIni; st.cartUI.jmFim = $("#cartJmFim").value || st.cartUI.jmFim;
-    calcularCartJM(); renderCartJM();
+    semZoom("gCartJM"); calcularCartJM(); renderCartJM();
   }
   else if (t.id === "cartJmBaixar") {
     const jm = st.cartRes?.jm; if (!jm) return;
@@ -2249,6 +2256,130 @@ document.addEventListener("change", (e) => {
   else if (t.id === "relDestSo") renderDestRel();
 });
 
+// ============================== zoom de arrastar dentro dos gráficos ==============================
+// Arraste na diagonal = zoom nos dois eixos; na horizontal = só no eixo X; na vertical = só no eixo Y.
+// Os zooms se acumulam; "Voltar" desfaz um passo e o clique duplo (ou "Ver tudo") volta ao início.
+st.zoomG = {};                                   // id do gráfico -> pilha de { x: [min, max] | null, y: [min, max] | null }
+const ZOOM_MIN = 10;                             // px: abaixo disso, o movimento conta como só horizontal ou só vertical
+
+function aplicarZoomG(ch, id) {
+  const z = st.zoomG[id]?.at(-1), b = ch.$base || { x: [undefined, undefined], y: [undefined, undefined] };
+  const sx = ch.options.scales.x, sy = ch.options.scales.y;
+  [sx.min, sx.max] = z?.x || b.x;
+  [sy.min, sy.max] = z?.y || b.y;
+  sy.ticks.includeBounds = !z?.y;                 // com zoom, não escreve o valor exato do limite (evita números sobrepostos)
+  if (ch.config.type === "scatter") sx.ticks.includeBounds = !z?.x;
+  barraZoom(id);
+}
+function posCriar(id, base) {
+  const ch = st.graficos[id]; if (!ch) return;
+  ch.$base = base;
+  ativarZoom(id);
+  if (st.zoomG[id]?.length) { aplicarZoomG(ch, id); ch.update("none"); } else barraZoom(id);
+}
+function limparZoom(...ids) { for (const id of ids) { delete st.zoomG[id]; const ch = st.graficos[id]; if (ch?.$base) { aplicarZoomG(ch, id); ch.update("none"); } } }
+function voltarZoom(id, tudo) {
+  const pilha = st.zoomG[id]; if (!pilha?.length) return;
+  if (tudo) pilha.length = 0; else pilha.pop();
+  const ch = st.graficos[id]; aplicarZoomG(ch, id); ch.update("none");
+}
+
+// botões "Voltar" e "Ver tudo" no canto do gráfico (aparecem só com zoom)
+function barraZoom(id) {
+  const cv = $("#" + id), caixa = cv?.parentElement; if (!caixa) return;
+  let barra = $(".zoom-bar", caixa);
+  if (!barra) {
+    caixa.insertAdjacentHTML("beforeend", `<div class="zoom-bar" data-zoom-de="${id}"><span class="zoom-dica">arraste para dar zoom · clique duplo volta</span>
+      <button type="button" class="zoom-voltar" title="Desfaz o último zoom">↶ Voltar</button><button type="button" class="zoom-tudo" title="Volta ao gráfico inteiro (ou clique duplo no gráfico)">⤢ Ver tudo</button></div>`);
+    barra = $(".zoom-bar", caixa);
+  }
+  const n = st.zoomG[id]?.length || 0;
+  barra.classList.toggle("com-zoom", n > 0);
+  $(".zoom-voltar", barra).textContent = n > 1 ? `↶ Voltar (${n})` : "↶ Voltar";
+}
+
+// seleção desenhada por cima do gráfico durante o arraste
+function desenharSelecao(caixa, area, r, modo) {
+  let el = $(".zoom-sel", caixa);
+  if (!el) { caixa.insertAdjacentHTML("beforeend", `<svg class="zoom-sel" aria-hidden="true"></svg>`); el = $(".zoom-sel", caixa); }
+  if (!r) { el.style.display = "none"; return; }
+  const { left: L, top: T, right: R, bottom: B } = area, sombra = escuro() ? "rgba(0,0,0,.45)" : "rgba(20,26,74,.22)";
+  const { x0, y0, x1, y1 } = r, cor = escuro() ? "#ffffff" : ANIL, w = 2;
+  let marcas = "";
+  if (modo === "xy") {
+    const k = Math.min(12, (x1 - x0) / 3, (y1 - y0) / 3);
+    marcas = [[x0, y0, 1, 1], [x1, y0, -1, 1], [x0, y1, 1, -1], [x1, y1, -1, -1]]
+      .map(([x, y, sx, sy]) => `<path d="M${x + sx * k},${y} L${x},${y} L${x},${y + sy * k}"/>`).join("");
+  } else if (modo === "x") {
+    const m = (y0 + y1) / 2, h = Math.min(24, (y1 - y0) / 4);
+    marcas = `<path d="M${x0},${m - h} L${x0},${m + h} M${x1},${m - h} L${x1},${m + h}"/>`;
+  } else {
+    const m = (x0 + x1) / 2, h = Math.min(24, (x1 - x0) / 4);
+    marcas = `<path d="M${m - h},${y0} L${m + h},${y0} M${m - h},${y1} L${m + h},${y1}"/>`;
+  }
+  el.style.display = "block";
+  el.innerHTML = `<path fill="${sombra}" fill-rule="evenodd" d="M${L},${T} H${R} V${B} H${L} Z M${x0},${y0} V${y1} H${x1} V${y0} Z"/>` +
+    `<g fill="none" stroke="${cor}" stroke-width="${w}" stroke-linecap="square">${marcas}</g>`;
+}
+
+function ativarZoom(id) {
+  const cv = $("#" + id); if (!cv || cv.dataset.zoom) return;
+  cv.dataset.zoom = "1";
+  const caixa = cv.parentElement;
+  let ini = null, modo = null, ret = null;
+  // posição do canvas dentro da caixa (a seleção é desenhada em coordenadas da caixa)
+  const off = () => ({ x: cv.offsetLeft, y: cv.offsetTop });
+  const areaCaixa = (ch) => { const o = off(), a = ch.chartArea; return { left: a.left + o.x, top: a.top + o.y, right: a.right + o.x, bottom: a.bottom + o.y }; };
+  cv.addEventListener("pointerdown", (e) => {
+    if (e.pointerType !== "mouse" || e.button !== 0) return;          // no celular, arrastar continua rolando a página
+    const ch = st.graficos[id]; if (!ch) return;
+    const b = cv.getBoundingClientRect(), x = e.clientX - b.left, y = e.clientY - b.top, a = ch.chartArea;
+    if (x < a.left || x > a.right || y < a.top || y > a.bottom) return;
+    ini = { x, y }; modo = null; ret = null;
+    ch.$tt = ch.options.plugins.tooltip.enabled; ch.options.plugins.tooltip.enabled = false;   // sem a caixinha de valores durante o arraste
+    cv.setPointerCapture(e.pointerId); e.preventDefault();
+  });
+  cv.addEventListener("pointermove", (e) => {
+    if (!ini) return;
+    const ch = st.graficos[id]; if (!ch) return;
+    const b = cv.getBoundingClientRect(), a = ch.chartArea;
+    const x = Math.min(a.right, Math.max(a.left, e.clientX - b.left)), y = Math.min(a.bottom, Math.max(a.top, e.clientY - b.top));
+    const dx = Math.abs(x - ini.x), dy = Math.abs(y - ini.y);
+    if (dx < 3 && dy < 3) return;
+    modo = dy < ZOOM_MIN && dx >= ZOOM_MIN ? "x" : dx < ZOOM_MIN && dy >= ZOOM_MIN ? "y" : dx >= ZOOM_MIN && dy >= ZOOM_MIN ? "xy" : null;
+    const o = off();
+    ret = modo === "x" ? { x0: Math.min(x, ini.x), x1: Math.max(x, ini.x), y0: a.top, y1: a.bottom }
+      : modo === "y" ? { x0: a.left, x1: a.right, y0: Math.min(y, ini.y), y1: Math.max(y, ini.y) }
+      : modo === "xy" ? { x0: Math.min(x, ini.x), x1: Math.max(x, ini.x), y0: Math.min(y, ini.y), y1: Math.max(y, ini.y) } : null;
+    ch.tooltip?.setActiveElements([], { x: 0, y: 0 }); ch.draw();
+    desenharSelecao(caixa, areaCaixa(ch), ret && { x0: ret.x0 + o.x, x1: ret.x1 + o.x, y0: ret.y0 + o.y, y1: ret.y1 + o.y }, modo);
+  });
+  const terminar = () => {
+    if (!ini) return;
+    const ch = st.graficos[id], r = ret, m = modo;
+    ini = null; ret = null; modo = null;
+    desenharSelecao(caixa, null, null);
+    if (ch) ch.options.plugins.tooltip.enabled = ch.$tt ?? true;
+    if (!ch || !r || !m) return;
+    const sx = ch.scales.x, sy = ch.scales.y, topo = st.zoomG[id]?.at(-1);
+    const novo = {
+      x: m === "y" ? (topo?.x || null) : [sx.getValueForPixel(r.x0), sx.getValueForPixel(r.x1)],
+      y: m === "x" ? (topo?.y || null) : [sy.getValueForPixel(r.y1), sy.getValueForPixel(r.y0)],
+    };
+    (st.zoomG[id] ||= []).push(novo);
+    aplicarZoomG(ch, id); ch.update("none");
+  };
+  cv.addEventListener("pointerup", terminar);
+  cv.addEventListener("pointercancel", () => { ini = null; desenharSelecao(caixa, null, null); const ch = st.graficos[id]; if (ch) ch.options.plugins.tooltip.enabled = ch.$tt ?? true; });
+  cv.addEventListener("dblclick", () => voltarZoom(id, true));
+  cv.title = "Arraste para dar zoom (na diagonal, na horizontal ou na vertical). Clique duplo volta ao gráfico inteiro.";
+}
+document.addEventListener("click", (e) => {
+  const b = e.target.closest?.(".zoom-bar button"); if (!b) return;
+  voltarZoom(b.closest(".zoom-bar").dataset.zoomDe, b.classList.contains("zoom-tudo"));
+});
+
+const semZoom = (...ids) => { for (const id of ids) delete st.zoomG[id]; };
 // ---------- slider de datas (dois cursores)
 function configurarSlider(dIni, dFim, [zi, zf]) {
   const a = $("#zIni"), b = $("#zFim");
@@ -2265,6 +2396,7 @@ function aoMoverSlider(ev) {
   if (zi > zf) { if (ev.target.id === "zIni") zi = zf; else zf = zi; }
   st.zoom[st.perAtivo] = [zi, zf];
   configurarSlider(Number($("#zIni").min), Number($("#zIni").max), [zi, zf]);
+  semZoom("gAcum", "gDd");
   clearTimeout(tSlider); tSlider = setTimeout(() => { renderAcum(); renderDd(); }, 120);
 }
 
@@ -2351,12 +2483,12 @@ document.addEventListener("click", (e) => {
     const k = bIdx.dataset.idx; st.idxSel.has(k) ? st.idxSel.delete(k) : st.idxSel.add(k);
     salvar("indices", [...st.idxSel]); desenharChipsIndices(); renderAcum(); renderRisco(); renderCorrelacao(); return;
   }
-  if (t.closest("#riscoEixo button")) { st.riscoEixo = t.closest("button").dataset.e; salvar("riscoEixo", st.riscoEixo); delete st.ord.risco; renderRisco(); return; }
+  if (t.closest("#riscoEixo button")) { st.riscoEixo = t.closest("button").dataset.e; salvar("riscoEixo", st.riscoEixo); delete st.ord.risco; semZoom("gRisco"); renderRisco(); return; }
   if (t.id === "btnTravar") { st.travar = !st.travar; salvar("travar", st.travar); desenharTravar(); return; }
   if (t.id === "btnTopo") { scrollTo({ top: 0, behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" }); return; }
   if (t.id === "abrirFontes") { $("#dlgFontes").showModal(); return; }
   if (t.closest("[data-fechar]") || t.id === "dlgFontes") { $("#dlgFontes").close(); return; }
-  if (t.id === "jmAtualizar") { calcularJM(); renderJM(); return; }
+  if (t.id === "jmAtualizar") { semZoom("gJM"); calcularJM(); renderJM(); return; }
   if (t.id === "jmBaixar") { baixarJM(); return; }
   if (t.closest("#resBusca button.add")) { adicionar([t.closest("button.add").dataset.c]); }
   else if (t.dataset.rm) remover(t.dataset.rm);
@@ -2366,8 +2498,8 @@ document.addEventListener("click", (e) => {
     st.periodos.has(p) ? st.periodos.delete(p) : st.periodos.add(p); atualizarSidebar();
   }
   else if (t.id === "calcular") calcular();
-  else if (t.closest("#barraPer button")) { st.perAtivo = t.closest("button").dataset.per; renderResultado(); }
-  else if (t.closest("#relModo button")) { st.rel.modo = t.closest("button").dataset.m; renderAcum(); }
+  else if (t.closest("#barraPer button")) { st.perAtivo = t.closest("button").dataset.per; semZoom("gAcum", "gDd", "gRisco"); renderResultado(); }
+  else if (t.closest("#relModo button")) { st.rel.modo = t.closest("button").dataset.m; semZoom("gAcum"); renderAcum(); }
 });
 document.addEventListener("keydown", (e) => {
   if ((e.key === "Enter" || e.key === " ") && e.target.matches?.("tr.grupo")) { e.preventDefault(); alternarGrupo(e.target.dataset.g); }
@@ -2383,7 +2515,7 @@ document.addEventListener("change", async (e) => {
   if (false) { /* seleção: tratada no módulo de seleção */ }
   else if (t.dataset.todos) { st.todos[t.dataset.todos] = t.checked; ({ acum: renderAcum, dd: renderDd, jm: renderJM, cartAcum: renderCartAcum, cartDd: renderCartDd, cartJM: renderCartJM })[t.dataset.todos]?.(); }
   else if (t.id === "agrupar") { st.agrupar = t.value; salvar("agrupar", st.agrupar); renderMetricas(); }
-  else if (t.id === "relOn") { st.rel.on = t.checked; renderAcum(); }
+  else if (t.id === "relOn") { st.rel.on = t.checked; semZoom("gAcum"); renderAcum(); }
   else if (t.id === "guardar") { await D.definirGuardar(t.checked); atualizarEspaco(); }
   else if (t.id === "jmIni") st.jmIniAuto = false;
   else if (t.id === "jmFim") st.jmFimAuto = false;
