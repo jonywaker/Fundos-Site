@@ -367,3 +367,46 @@ dialog.dlg-texto { width: min(900px, 96vw); max-height: 90vh; border: 1px solid 
 .minibar i.up { left: 50%; background: var(--verde); } .minibar i.down { right: 50%; background: var(--vermelho); }
 .linha2.metades { grid-template-columns: repeat(auto-fit, minmax(min(100%, 380px), 1fr)); }
 .graf.baixo { height: 320px; }
+
+/* ============ painel de carregamento em destaque ============ */
+.painel-carga { position: fixed; inset: 0; z-index: 70; display: grid; place-items: center; padding: 16px; background: rgba(12,16,48,.45); backdrop-filter: blur(2px); }
+.painel-carga[hidden] { display: none; }
+.pc-caixa { width: min(720px, 100%); max-height: min(78vh, 720px); display: flex; flex-direction: column; gap: 10px; background: var(--card); color: var(--txt);
+  border-radius: 14px; border-top: 3px solid var(--ouro); box-shadow: 0 24px 60px -16px rgba(10,14,40,.6); padding: 18px 20px; }
+.pc-cab { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.pc-cab h2 { margin: 0; font-family: Cinzel, Georgia, serif; font-size: 18px; color: var(--anil); }
+@media (prefers-color-scheme: dark) { .pc-cab h2 { color: var(--ouro); } }
+.pc-barra { height: 12px; border-radius: 99px; background: var(--borda); overflow: hidden; }
+.pc-barra > div { height: 100%; width: 0; border-radius: 99px; background: linear-gradient(90deg, var(--ciano), var(--azul), var(--ouro)); transition: width .25s; }
+.pc-resumo { font-size: 13.5px; }
+.pc-resumo .baix { color: var(--azul); font-weight: 700; } .pc-resumo .sem { color: #b7791f; font-weight: 700; }
+.pc-lista { overflow-y: auto; display: flex; flex-direction: column; border: 1px solid var(--borda); border-radius: 9px; min-height: 120px; }
+.pc-item { display: grid; grid-template-columns: 22px 1fr auto; gap: 8px; align-items: center; padding: 5px 10px; font-size: 12.5px; border-bottom: 1px solid var(--borda); order: 2; }
+.pc-item .pc-nome { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+.pc-item .pc-cnpj { color: var(--sub); font-variant-numeric: tabular-nums; font-size: 12px; }
+.pc-st { width: 16px; height: 16px; border-radius: 50%; display: grid; place-items: center; font-size: 11px; font-weight: 800; }
+.pc-item.pend { order: 1; } .pc-item.pend .pc-st { border: 2px solid var(--borda); } .pc-item.pend .pc-nome { color: var(--sub); }
+.pc-item.baix { order: 0; background: color-mix(in srgb, var(--azul) 8%, var(--card)); }
+.pc-item.baix .pc-st { border: 2px solid var(--azul); border-top-color: transparent; animation: girar .8s linear infinite; }
+.pc-item.ok .pc-st { background: var(--verde); color: #fff; } .pc-item.ok .pc-st::before { content: "✓"; }
+.pc-item.sem { order: -1; } .pc-item.sem .pc-st { background: #b7791f; color: #fff; } .pc-item.sem .pc-st::before { content: "!"; }
+.painel-carga.erro .pc-caixa { border-top-color: var(--vermelho); } .painel-carga.erro #cargaFase { color: var(--vermelho); font-weight: 700; }
+@keyframes girar { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .pc-item.baix .pc-st { animation: none; } .pc-barra > div { transition: none; } }
+
+/* ============ matriz de correlação com eixos fixos ============ */
+.mx-vp { overflow: auto; border: 1px solid var(--borda); border-radius: 9px; position: relative; }
+.mx-esp { position: relative; }
+.mx-cv { position: sticky; top: 0; left: 0; display: block; cursor: crosshair; }
+.corr-ext { grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr)); }
+.corr-ext > .nota { grid-column: 1 / -1; margin: 6px 0 0; }
+.corr-ext .tb td.t { max-width: 260px; overflow: hidden; text-overflow: ellipsis; }
+
+/* tabela ao lado do gráfico mais larga (risco × retorno) e títulos internos da carteira */
+.linha2.larga { grid-template-columns: minmax(0, 1fr) minmax(320px, 520px); }
+@media (max-width: 1100px) { .linha2.larga { grid-template-columns: 1fr; } }
+.sub-cab { margin-top: 18px; }
+.sub-cab h3.sub { margin: 0; }
+#cartMetricas { margin-bottom: 6px; }
+.jm-ctl .combo .combo-in, .opcoes .combo .combo-in { width: 100%; min-width: 0; box-sizing: border-box; }
+.jm-ctl .combo { min-width: 260px; }
