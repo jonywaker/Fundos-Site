@@ -375,7 +375,7 @@ document.addEventListener("click", async (e) => {
   if (t.id === "abrirGrupos") return abrirGrupos();
   if (t.closest?.("[data-fechar-dlg]")) return t.closest("dialog").close();
   const bo = t.closest?.("button.ord-f");
-  if (bo) { clicarOrdem(bo.dataset.tab, bo.dataset.col, bo.dataset.txt === "1"); ({ sel: renderSeletor, selB: renderSelDialogo, col: renderColagem })[bo.dataset.tab]?.(); return; }
+  if (bo) { clicarOrdem(bo.dataset.tab, bo.dataset.col, bo.dataset.txt === "1"); ({ sel: renderSeletor, selB: renderSelDialogo, col: renderColagem, relDest: renderDestRel })[bo.dataset.tab]?.(); return; }
   // janela da lista
   const lf = t.closest?.("#dlgTabela tr.linha-f");
   if (lf && !t.closest("input, select, button")) return alternarDlg(lf.dataset.c);
@@ -563,7 +563,9 @@ const FMT = {
   valor: (v) => br(v, 2), int: (v) => (typeof v === "number" ? br(v, 0) : ""), data: (v) => (typeof v === "number" ? fmtData(v) : v ?? ""),
   txt: (v) => v ?? "",
 };
+// destaque: o texto digitado no topo ou, durante a geração de um relatório, a lista de fundos escolhida na janela de download
 const casa = (termo, ...textos) => {
+  if (st.destExtra && textos.some((x) => st.destExtra.has(String(x ?? "")))) return true;
   const t = termo.trim().toLowerCase(); if (!t) return false;
   const dig = t.replace(/\D/g, "");
   return textos.some((x) => { x = String(x ?? ""); return x.toLowerCase().includes(t) || (dig.length >= 4 && x.replace(/\D/g, "").includes(dig)); });
@@ -1696,15 +1698,24 @@ const SECOES_REL = [
   { k: "rawCartJm", g: "Dados", bruto: true, nome: "Janela móvel da carteira: todas as janelas", ok: () => !!st.cartRes?.jm?.lista.length },
 ];
 const disponivel = (s) => s.ok() && (!s.bruto || rel.fmt === "xlsx");
-const rel = { sel: new Set(pref("relSel", ["fundos", "met", "acum", "risco"])), fmt: pref("relFmt", "pdf"), pngUm: false, xlsImg: true };
+const rel = { sel: new Set(pref("relSel", ["fundos", "met", "acum", "risco"])), fmt: pref("relFmt", "pdf"), pngUm: false, xlsImg: true, dest: new Set(), destIni: false };
 
 function abrirRelatorio() {
   const grupos = [...new Set(SECOES_REL.map((s) => s.g))];
   const titulo = { Fundos: "Análise dos fundos · " + esc(st.perAtivo || ""), Carteira: "Montagem de carteira", Dados: "Dados usados nos cálculos · só no Excel" };
-  $("#relSecoes").innerHTML = grupos.map((g) => `<div class="rel-grupo${g === "Dados" ? " rel-dados" : ""}"><b>${titulo[g]}</b>` +
+  $("#relSecoes").innerHTML = grupos.map((g) => `<div class="rel-grupo${g === "Dados" ? " rel-dados" : ""}"><div class="rel-g-cab"><b>${titulo[g]}</b>
+      <span><button class="link" type="button" data-rel-g="${g}" data-marca="1">marcar tudo</button> · <button class="link" type="button" data-rel-g="${g}" data-marca="0">desmarcar</button></span></div>` +
     (g === "Dados" ? `<span class="nota">Uma linha por fundo (ou ativo) e por dia, "um embaixo do outro": bom para tabela dinâmica e filtros.</span>` : "") +
     SECOES_REL.filter((s) => s.g === g).map((s) => `<label class="tog" data-sec-rel="${s.k}"><input type="checkbox" data-rel="${s.k}"> ${esc(s.nome)} <small></small></label>`).join("") + `</div>`).join("");
   desenharFormatoRel();
+  // destaque do relatório: na 1ª vez, começa com os fundos destacados na tela
+  if (!rel.destIni && st.res) {
+    rel.destIni = true;
+    if (st.destaque.trim()) for (const c of st.res.sel) if (casa(st.destaque, st.porCnpj.get(c)?.NOME, cnpjFmt(c), st.res.apelidos[c])) rel.dest.add(c);
+  }
+  for (const c of [...rel.dest]) if (!st.res?.sel.includes(c)) rel.dest.delete(c);
+  $("#relDestBusca").value = ""; $("#relDestSo").checked = false;
+  renderDestRel();
   $("#relProg").textContent = ""; $("#relBaixar").disabled = false;
   $("#dlgRel").showModal();
 }
@@ -1723,6 +1734,25 @@ function desenharFormatoRel() {
   $("#relBaixar").textContent = `⬇ Baixar ${({ pdf: "PDF", png: "PNG", xlsx: "Excel" })[rel.fmt]} (${escolhidas.length} parte${escolhidas.length === 1 ? "" : "s"})`;
   $("#relBaixar").disabled = !escolhidas.length;
 }
+
+// ---------- fundos destacados no relatório (clique na linha para marcar, como na lista de fundos)
+function renderDestRel() {
+  const q = $("#relDestBusca").value.trim().toUpperCase(), so = $("#relDestSo").checked;
+  const base = (st.res?.sel || []).map((c) => st.porCnpj.get(c)).filter(Boolean)
+    .filter((f) => (!so || rel.dest.has(f.CNPJ)) && (!q || f._busca.includes(q) || (q.replace(/\D/g, "").length >= 3 && f.CNPJ.includes(q.replace(/\D/g, "")))));
+  const lista = ordenarFundos(base, "relDest");
+  $("#relDestN").textContent = rel.dest.size;
+  $("#relDestTab").innerHTML = lista.length ? `<table class="tb tab-fundos">${cabFundos("relDest", false)}<tbody>${lista.map((f) =>
+    `<tr class="linha-f${rel.dest.has(f.CNPJ) ? " marcado" : ""}" data-dest="${f.CNPJ}" tabindex="0" title="${rel.dest.has(f.CNPJ) ? "Destacado · clique para tirar" : "Clique para destacar"}">` +
+    COLS_FUNDO.map((c) => celFundo(f, c)).join("") + "</tr>").join("")}</tbody></table>` : `<p class="nota" style="padding:10px">Nenhum fundo ${so ? "destacado" : "encontrado"}.</p>`;
+}
+// nomes, apelidos e CNPJs dos fundos escolhidos (os gráficos e tabelas usam um ou outro)
+function conjuntoDestaque(cnpjs) {
+  const out = new Set();
+  for (const c of cnpjs) { out.add(c); out.add(cnpjFmt(c)); const n = st.porCnpj.get(c)?.NOME; if (n) out.add(n); const a = st.res?.apelidos[c]; if (a) out.add(a); }
+  return out;
+}
+const linhaDestacada = (l) => !!st.destExtra && l.some((v) => typeof v === "string" && (st.destExtra.has(v) || st.destExtra.has(v.replace(/^\d+\.\s/, "").replace(/ \([^)]*\)$/, ""))));
 
 // ---------- blocos de cada parte: títulos, imagens dos gráficos e tabelas completas (valores brutos + tipo)
 // tabela: { nome, colunas: [{ nome, tipo }], linhas: [[...]], soExcel?, nota? }
@@ -1996,6 +2026,7 @@ async function gerarPDF(partes, prog) {
         doc.setFont("helvetica", "bold"); doc.setFontSize(9.5); doc.setTextColor(43, 44, 120);
         if (y > H - 30) { doc.addPage(); y = 14; }
         doc.text(pdfTxt(b.nome), M, y); y += 2;
+        b._dest = st.destExtra ? b.linhas.map(linhaDestacada) : null;
         doc.autoTable({ startY: y, margin: { left: M, right: M, top: 12, bottom: 12 }, theme: "grid",
           head: [b.colunas.map((c) => pdfTxt(c.nome))], body: b.linhas.map((l) => l.map((v, j) => pdfTxt(fmtCel(v, b.colunas[j].tipo)))),
           styles: { fontSize: 6.5, cellPadding: 1.2, overflow: "linebreak", minCellWidth: 15, lineColor: [221, 226, 239], lineWidth: 0.1 },
@@ -2003,6 +2034,7 @@ async function gerarPDF(partes, prog) {
           alternateRowStyles: { fillColor: [246, 248, 253] }, columnStyles: { 0: { cellWidth: 55, fontStyle: "bold" } },
           horizontalPageBreak: true, horizontalPageBreakRepeat: 0,
           didParseCell: (d) => { if (d.section === "body" && d.column.index > 0 && b.colunas[d.column.index]?.tipo !== "txt") d.cell.styles.halign = "right";
+            if (d.section === "body" && b._dest?.[d.row.index]) { d.cell.styles.fillColor = [255, 236, 179]; d.cell.styles.fontStyle = "bold"; }
             const v = b.linhas[d.row.index]?.[d.column.index];
             if (d.section === "body" && b.colunas[d.column.index]?.tipo === "pct" && typeof v === "number") d.cell.styles.textColor = v > 0 ? [12, 138, 78] : v < 0 ? [208, 38, 44] : [40, 40, 40]; } });
         y = doc.lastAutoTable.finalY + 6;
@@ -2025,7 +2057,7 @@ function htmlParte(p) {
     if (b.tipo === "img") h += `<img src="${b.url}" style="width:${Math.min(1300, b.w)}px;height:auto" alt="">`;
     else if (b.tipo === "tabela" && !b.soExcel) {
       const lin = b.linhas.slice(0, LIMITE_LINHAS_PNG);
-      h += `<h3>${esc(b.nome)}</h3><table><thead><tr>${b.colunas.map((c) => `<th>${esc(c.nome)}</th>`).join("")}</tr></thead><tbody>${lin.map((l) => `<tr>${l.map((v, j) => {
+      h += `<h3>${esc(b.nome)}</h3><table><thead><tr>${b.colunas.map((c) => `<th>${esc(c.nome)}</th>`).join("")}</tr></thead><tbody>${lin.map((l) => `<tr${linhaDestacada(l) ? ' class="dest"' : ""}>${l.map((v, j) => {
         const t = b.colunas[j].tipo, cor = t === "pct" && typeof v === "number" ? (v > 0 ? "color:#0c8a4e" : v < 0 ? "color:#d0262c" : "") : "";
         return `<td class="${t === "txt" ? "t" : ""}" style="${cor}">${esc(fmtCel(v, t))}</td>`; }).join("")}</tr>`).join("")}</tbody></table>` +
         (b.linhas.length > LIMITE_LINHAS_PNG ? `<p class="rel-sub">Mostrando ${LIMITE_LINHAS_PNG} de ${b.linhas.length} linhas; a tabela completa sai no Excel.</p>` : "");
@@ -2078,8 +2110,10 @@ async function gerarExcel(partes, prog, comImagens) {
       ws.columns = b.colunas.map((c, j) => ({ header: c.nome, width: j === 0 ? 44 : Math.min(24, Math.max(12, c.nome.length + 2)), style: FMT[c.tipo] ? { numFmt: FMT[c.tipo] } : {} }));
       const cab = ws.getRow(1); cab.font = { bold: true, color: { argb: "FFFFFFFF" } }; cab.alignment = { vertical: "middle", wrapText: true }; cab.height = 32;
       cab.eachCell((c) => { c.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF2B2C78" } }; });
+      const marcar = st.destExtra && !b.bruto;
       for (let r = 0; r < b.linhas.length; r++) {
-        ws.addRow(b.linhas[r].map((v, j) => (v == null ? null : b.colunas[j].tipo === "data" && typeof v === "number" ? dataJs(v) : v)));
+        const row = ws.addRow(b.linhas[r].map((v, j) => (v == null ? null : b.colunas[j].tipo === "data" && typeof v === "number" ? dataJs(v) : v)));
+        if (marcar && linhaDestacada(b.linhas[r])) { row.font = { bold: true }; row.eachCell({ includeEmpty: true }, (c) => { c.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFFFECB3" } }; }); }
         if (r % 4000 === 3999) await pausa();
       }
       ws.autoFilter = { from: { row: 1, column: 1 }, to: { row: 1, column: b.colunas.length } };
@@ -2122,8 +2156,13 @@ async function baixarRelatorio() {
   if (!escolhidas.length) return;
   const btn = $("#relBaixar"), prog = (t) => { $("#relProg").textContent = t; };
   btn.disabled = true;
+  const destTela = st.destaque, comDest = rel.dest.size > 0;
   try {
     prog("preparando…"); await pausa();
+    if (comDest) {                       // o relatório usa os fundos escolhidos na janela (o texto do topo fica de lado)
+      st.destaque = ""; st.destExtra = conjuntoDestaque(rel.dest);
+      prog("aplicando o destaque nos gráficos…"); renderResultado(); await pausa();
+    }
     const partes = escolhidas.map((s) => blocosRel(s.k)).filter(Boolean);
     // proteção contra arquivos enormes (o navegador pode travar)
     const tabs = partes.flatMap((p) => p.blocos.filter((b) => b.tipo === "tabela"));
@@ -2164,7 +2203,10 @@ async function baixarRelatorio() {
     prog(`pronto: arquivo de ${br(blob.size / 1024 / 1024, 1)} MB baixado.`);
   } catch (e) {
     console.error(e); prog("erro: " + (e?.message || e));
-  } finally { btn.disabled = false; }
+  } finally {
+    btn.disabled = false;
+    if (comDest) { st.destExtra = null; st.destaque = destTela; renderResultado(); }
+  }
 }
 
 document.addEventListener("click", (e) => {
@@ -2178,12 +2220,33 @@ document.addEventListener("click", (e) => {
     salvar("relSel", [...rel.sel]); return desenharFormatoRel();
   }
   if (t.id === "relBaixar") return baixarRelatorio();
+  const gb = t.closest?.("[data-rel-g]");
+  if (gb) {
+    const marca = gb.dataset.marca === "1";
+    for (const sec of SECOES_REL.filter((x) => x.g === gb.dataset.relG && disponivel(x))) marca ? rel.sel.add(sec.k) : rel.sel.delete(sec.k);
+    salvar("relSel", [...rel.sel]); return desenharFormatoRel();
+  }
+  const ld = t.closest?.("#relDestTab tr.linha-f");
+  if (ld) { const c = ld.dataset.dest; rel.dest.has(c) ? rel.dest.delete(c) : rel.dest.add(c); return renderDestRel(); }
+  const bo = t.closest?.("#relDestTab button.ord-f");
+  if (bo) return renderDestRel();          // a ordenação em si é tratada no módulo de seleção
+  if (t.id === "relDestLimpar") { rel.dest.clear(); return renderDestRel(); }
+  if (t.id === "relDestTela") {
+    rel.dest.clear();
+    if (st.destaque.trim()) for (const c of st.res.sel) if (casa(st.destaque, st.porCnpj.get(c)?.NOME, cnpjFmt(c), st.res.apelidos[c])) rel.dest.add(c);
+    return renderDestRel();
+  }
 });
+document.addEventListener("keydown", (e) => {
+  if ((e.key === "Enter" || e.key === " ") && e.target.matches?.("#relDestTab tr.linha-f")) { e.preventDefault(); e.target.click(); }
+});
+document.addEventListener("input", (e) => { if (e.target.id === "relDestBusca") renderDestRel(); });
 document.addEventListener("change", (e) => {
   const t = e.target;
   if (t.dataset?.rel) { t.checked ? rel.sel.add(t.dataset.rel) : rel.sel.delete(t.dataset.rel); salvar("relSel", [...rel.sel]); desenharFormatoRel(); }
   else if (t.name === "relPng") rel.pngUm = t.value === "um";
   else if (t.id === "relXlsImg") rel.xlsImg = t.checked;
+  else if (t.id === "relDestSo") renderDestRel();
 });
 
 // ---------- slider de datas (dois cursores)
