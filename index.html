@@ -24,28 +24,18 @@
     <aside class="lateral">
       <section class="bloco">
         <h3>Adicionar fundos</h3>
-        <div id="modoAdd" class="pilulas">
-          <button data-m="buscar" aria-pressed="true">Buscar</button>
-          <button data-m="colar" aria-pressed="false">Colar CNPJs</button>
-          <button data-m="lista" aria-pressed="false">Lista</button>
-        </div>
-        <div class="modo" data-m="buscar">
-          <input id="busca" type="search" placeholder="Nome, gestor ou CNPJ (mín. 3 letras)" autocomplete="off">
-          <div id="resBusca" class="resbusca"></div>
-        </div>
-        <div class="modo" data-m="colar" hidden>
-          <textarea id="colar" rows="4" placeholder="Cole CNPJs (um por linha, ou separados por vírgula)"></textarea>
-          <button id="btnColar" class="sec">Adicionar CNPJs</button>
-          <div id="avisoColar" class="nota"></div>
-        </div>
-        <div class="modo" data-m="lista" hidden>
-          <p class="nota">Tabela com detalhes (classificação, gestor, retorno, PL) para escolher vários de uma vez.</p>
-          <button id="abrirSeletor" class="sec">Abrir lista de fundos…</button>
+        <input id="busca" type="search" placeholder="Nome, gestor ou CNPJ (mín. 3 letras)" autocomplete="off">
+        <div id="resBusca" class="resbusca"></div>
+        <div class="botoes-add">
+          <button id="abrirSeletor" class="sec" type="button" title="Tabela com todos os fundos: filtre, ordene e clique nas linhas para escolher">☰ Lista de fundos…</button>
+          <button id="abrirColar" class="sec" type="button" title="Cole uma lista de CNPJs para importar">📋 Colar CNPJs…</button>
+          <button id="abrirGrupos" class="sec" type="button" title="Carregar ou salvar grupos de fundos">★ Grupos…</button>
         </div>
       </section>
 
       <section class="bloco">
         <h3><span>Selecionados (<span id="nSel">0</span>)</span><button id="limpar" class="link" hidden>limpar</button></h3>
+        <div id="avisoSel" class="nota"></div>
         <div id="selecionados" class="chips"></div>
       </section>
 
@@ -250,9 +240,13 @@
           <div id="tabCartCorr"></div>
 
           <div class="cab sub-cab"><h3 class="sub">Janela móvel</h3></div>
+          <p class="nota">A janela móvel pode olhar um período mais longo que o da carteira: a carteira é refeita com os mesmos pesos e o mesmo rebalanceamento
+            entre as datas abaixo (começa quando todos os ativos têm cota).</p>
           <div class="jm-ctl opcoes">
             <label>Benchmark (índice ou fundo) <div id="cbCartJmBench" class="combo"></div></label>
             <label>Duração (meses) <input id="cartJmMeses" type="number" min="1" max="240" step="1" value="12"></label>
+            <label>Primeira aplicação a partir de <input id="cartJmIni" type="date"></label>
+            <label>Fim da análise <input id="cartJmFim" type="date"></label>
             <button id="cartJmAtualizar" class="prim" type="button">↻ Atualizar</button>
           </div>
           <div id="cartJmInfo" class="jm-info"></div>
@@ -270,18 +264,64 @@
   </div>
 </div>
 
-<dialog id="seletor">
+<dialog id="seletor" aria-labelledby="selTit">
   <div class="dlg-cab">
-    <h2>Selecionar fundos</h2>
+    <h2 id="selTit">Lista de fundos</h2>
     <input id="dlgBusca" type="search" placeholder="Nome, gestor ou CNPJ…" autocomplete="off">
     <label class="tog"><input id="dlgAtivos" type="checkbox" checked> Só fundos ativos (cota nos últimos 30 dias)</label>
+    <button id="dlgLimparFiltros" class="sec mini-btn" type="button">Limpar filtros</button>
   </div>
   <p id="dlgInfo" class="nota"></p>
   <div id="dlgTabela" class="dlg-tab"></div>
-  <div class="dlg-pe">
-    <div><b>Marcados (<span id="dlgN">0</span>)</b><div id="dlgSel" class="chips"></div></div>
-    <div class="botoes"><button id="dlgCancelar" class="sec">Cancelar</button><button id="dlgAdd" class="prim" disabled>Adicionar</button></div>
+  <div class="dlg-sel">
+    <div class="dlg-sel-cab">
+      <b>Selecionados (<span id="dlgN">0</span>)</b>
+      <label class="tog"><input id="dlgSoSel" type="checkbox"> Mostrar só os selecionados na tabela de cima</label>
+      <button id="dlgMarcarVis" class="sec mini-btn" type="button">Selecionar todos os mostrados</button>
+      <button id="dlgLimparSel" class="sec mini-btn" type="button">Limpar seleção</button>
+    </div>
+    <div id="dlgSel" class="dlg-tab baixa"></div>
   </div>
+  <div class="dlg-pe"><span class="nota">Clique em qualquer lugar da linha para selecionar ou tirar. As mudanças valem ao clicar em Aplicar.</span>
+    <div class="botoes"><button id="dlgCancelar" class="sec" type="button">Cancelar</button><button id="dlgAplicar" class="prim" type="button">Aplicar seleção</button></div></div>
+</dialog>
+
+<dialog id="dlgColar" class="dlg-medio" aria-labelledby="colTit">
+  <div class="dlg-cab"><h2 id="colTit">Importar CNPJs</h2></div>
+  <div id="colPasso1">
+    <p class="nota">Cole os CNPJs (um por linha, ou separados por vírgula, ponto e vírgula ou espaço). Pode ser com ou sem pontuação.</p>
+    <textarea id="colTexto" rows="8" placeholder="11.111.111/0001-01&#10;22222222000102"></textarea>
+    <div class="dlg-pe"><span></span><div class="botoes"><button class="sec" type="button" data-fechar-dlg>Cancelar</button>
+      <button id="colBuscar" class="prim" type="button">Buscar fundos</button></div></div>
+  </div>
+  <div id="colPasso2" hidden>
+    <p id="colInfo" class="nota"></p>
+    <div id="colTabela" class="dlg-tab"></div>
+    <div class="col-add"><label>Adicionar outro fundo <input id="colBusca" type="search" placeholder="Nome, gestor ou CNPJ (mín. 3 letras)" autocomplete="off"></label>
+      <div id="colRes" class="resbusca"></div></div>
+    <div class="dlg-pe"><button id="colVoltar" class="sec" type="button">← Colar outra lista</button>
+      <div class="botoes"><button class="sec" type="button" data-fechar-dlg>Cancelar</button>
+        <button id="colAcrescentar" class="sec" type="button">＋ Acrescentar aos selecionados</button>
+        <button id="colSubstituir" class="prim" type="button">Substituir a seleção</button></div></div>
+  </div>
+</dialog>
+
+<dialog id="dlgGrupos" class="dlg-medio" aria-labelledby="grTit">
+  <div class="dlg-cab"><h2 id="grTit">Grupos de fundos</h2><button class="sec" type="button" data-fechar-dlg>Fechar</button></div>
+  <div class="gr-salvar opcoes">
+    <label><span>Salvar a seleção atual (<b id="grN">0</b> fundos) como</span>
+      <input id="grNome" type="text" list="grNomes" maxlength="60" placeholder="Nome do grupo (ex.: Multimercados macro)"></label>
+    <datalist id="grNomes"></datalist>
+    <button id="grSalvar" class="prim" type="button">Salvar grupo</button>
+  </div>
+  <div id="grLista"></div>
+  <div class="dlg-pe"><span class="nota">Os grupos ficam guardados neste navegador. Para levar a outro computador ou passar a um colega, use Exportar e Importar.</span>
+    <div class="botoes"><button id="grExportar" class="sec" type="button">⬇ Exportar grupos</button>
+      <label class="sec botao-arquivo">⬆ Importar arquivo<input id="grImportar" type="file" accept=".json,application/json" hidden></label></div></div>
+</dialog>
+
+<dialog id="dlgPergunta" class="dlg-pergunta" aria-labelledby="pergTit">
+  <h3 id="pergTit"></h3><p id="pergTexto"></p><div id="pergBotoes" class="botoes"></div>
 </dialog>
 
 <dialog id="dlgFontes" class="dlg-texto" aria-labelledby="fontesTit">
