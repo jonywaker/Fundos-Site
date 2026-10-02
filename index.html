@@ -87,6 +87,7 @@
         </div>
         <input id="destaque" type="search" placeholder="Destacar fundo…" autocomplete="off">
         <button id="btnTravar" class="sec mini-btn" type="button"></button>
+        <button id="btnRel" class="prim mini-btn" type="button" title="Escolher partes e baixar em PDF, PNG ou Excel">⬇ Baixar relatório</button>
       </div>
 
       <div id="semDados"></div>
@@ -318,6 +319,35 @@
   <div class="dlg-pe"><span class="nota">Os grupos ficam guardados neste navegador. Para levar a outro computador ou passar a um colega, use Exportar e Importar.</span>
     <div class="botoes"><button id="grExportar" class="sec" type="button">⬇ Exportar grupos</button>
       <label class="sec botao-arquivo">⬆ Importar arquivo<input id="grImportar" type="file" accept=".json,application/json" hidden></label></div></div>
+</dialog>
+
+<dialog id="dlgRel" class="dlg-medio" aria-labelledby="relTit">
+  <div class="dlg-cab"><h2 id="relTit">Baixar relatório</h2><button class="sec" type="button" data-fechar-dlg>Fechar</button></div>
+  <div class="rel-cols">
+    <div>
+      <h3 class="sub">O que incluir</h3>
+      <div id="relSecoes"></div>
+      <p><button id="relTudo" class="link" type="button">marcar tudo</button> · <button id="relNada" class="link" type="button">desmarcar tudo</button></p>
+    </div>
+    <div class="rel-dir">
+      <h3 class="sub">Formato</h3>
+      <div id="relFmt" class="pilulas"><button data-f="pdf" type="button">PDF</button><button data-f="png" type="button">PNG (imagem)</button><button data-f="xlsx" type="button">Excel</button></div>
+      <div id="relOpPdf" class="nota rel-op">Gráficos e tabelas, uma parte por página (A4 deitado). Tabelas largas continuam na página seguinte repetindo o nome do fundo.
+        As séries diárias muito longas ficam só no Excel.</div>
+      <div id="relOpPng" class="nota rel-op" hidden>
+        <label><input type="radio" name="relPng" value="varias" checked> Uma imagem por parte (vários arquivos num .zip)</label>
+        <label><input type="radio" name="relPng" value="um"> Tudo numa imagem só</label>
+        <span>Tabelas com mais de 80 linhas aparecem cortadas na imagem (completas no Excel).</span></div>
+      <div id="relOpXls" class="nota rel-op" hidden>
+        Tabelas completas, uma por aba: todas as linhas e colunas, com os valores em número (dá para calcular, filtrar e montar gráficos),
+        incluindo as séries diárias de cada gráfico. Só no Excel dá para incluir também os dados usados nos cálculos (abaixo, à esquerda);
+        se forem grandes demais para o Excel, eles vêm em CSV num .zip junto com o Excel.
+        <label class="tog"><input id="relXlsImg" type="checkbox" checked> Incluir as imagens dos gráficos (aba "Gráficos")</label></div>
+      <p id="relEstim" class="nota"></p>
+      <button id="relBaixar" class="prim" type="button">⬇ Baixar</button>
+      <p id="relProg" class="nota" aria-live="polite"></p>
+    </div>
+  </div>
 </dialog>
 
 <dialog id="dlgPergunta" class="dlg-pergunta" aria-labelledby="pergTit">
