@@ -113,6 +113,7 @@ function adicionar(cnpjs) {
   return { ok, faltam };
 }
 function remover(c) { st.sel = st.sel.filter((x) => x !== c); atualizarSidebar(); }
+function avisoSel(html) { const el = $("#avisoSel"); el.innerHTML = html; clearTimeout(avisoSel.t); avisoSel.t = setTimeout(() => (el.innerHTML = ""), 9000); }
 
 function buscar(texto, limite, filtroExtra) {
   const q = texto.trim().toUpperCase();
@@ -151,42 +152,292 @@ function atualizarSidebar() {
   avisoDesatualizado();
 }
 
-function lerColagem() {
-  const itens = $("#colar").value.split(/[\s;,]+/).map((s) => s.replace(/\D/g, "")).filter(Boolean).map((s) => s.padStart(14, "0"));
-  const { ok, faltam } = adicionar(itens);
-  $("#colar").value = "";
-  $("#avisoColar").innerHTML = `<span class="ok">${ok} fundo(s) adicionado(s)</span>` +
-    (faltam.length ? `<br><span class="neg">Não encontrados: ${faltam.map(cnpjFmt).join(", ")}</span>` : "");
+// ---------- janela de pergunta com botões (substitui o confirm do navegador)
+function perguntar(titulo, texto, botoes) {
+  const d = $("#dlgPergunta");
+  $("#pergTit").textContent = titulo; $("#pergTexto").innerHTML = texto;
+  $("#pergBotoes").innerHTML = botoes.map((b, i) => `<button type="button" class="${b.classe || "sec"}" data-i="${i}">${esc(b.rot)}</button>`).join("");
+  d.showModal();
+  $("#pergBotoes button:last-child").focus();
+  return new Promise((ok) => {
+    const fim = (v) => { d.close(); d.onclick = null; d.oncancel = null; ok(v); };
+    d.onclick = (e) => { const b = e.target.closest("#pergBotoes button"); if (b) fim(botoes[Number(b.dataset.i)].v); else if (e.target === d) fim(null); };
+    d.oncancel = () => fim(null);
+  });
 }
 
-// ---------- janela "Selecionar fundos"
-const dlg = { sel: [] };
-function abrirSeletor() { dlg.sel = []; $("#dlgBusca").value = ""; renderSeletor(); $("#seletor").showModal(); $("#dlgBusca").focus(); }
+// ---------- tabela de fundos (lista, colar CNPJs e janela de seleção)
+const COLS_FUNDO = [
+  { k: "NOME", nome: "Fundo", tipo: "txt", filtro: "txt" },
+  { k: "CNPJ", nome: "CNPJ", tipo: "cnpj", filtro: "txt" },
+  { k: "CLASSIFICACAO_CVM", nome: "Classificação CVM", tipo: "txt", filtro: "lista" },
+  { k: "CLASSIFICACAO_ANBIMA", nome: "Classificação ANBIMA", tipo: "txt", filtro: "lista" },
+  { k: "GESTOR", nome: "Gestor", tipo: "txt", filtro: "txt" },
+  { k: "_ini", nome: "1ª cota", tipo: "data" },
+  { k: "_dia", nome: "Última cota", tipo: "data" },
+  { k: "RET_12M", nome: "12 meses", tipo: "pct", filtro: "min" },
+  { k: "ACUMULADO", nome: "Desde a 1ª cota", tipo: "pct", filtro: "min" },
+  { k: "VL_PATRIM_LIQ", nome: "PL (R$ mi)", tipo: "mi", filtro: "min" },
+];
+const valFundo = (f, k) => { if (k === "_ini") return (f._ini ??= f.DATA_PRIMEIRA_COTA ? diaDe(f.DATA_PRIMEIRA_COTA) : null); return f[k]; };
+function celFundo(f, c) {
+  const v = valFundo(f, c.k);
+  if (c.tipo === "cnpj") return `<td>${cnpjFmt(v)}</td>`;
+  if (c.tipo === "data") return `<td>${v ? fmtData(v) : ""}</td>`;
+  if (c.tipo === "pct") return `<td style="${corSinal(v)}">${brPct(v)}</td>`;
+  if (c.tipo === "mi") return `<td>${v != null ? br(v / 1e6, 1) : ""}</td>`;
+  return `<td class="t" title="${esc(v || "")}">${c.k === "NOME" ? esc(v || "") : esc(v || "")}</td>`;
+}
+// cabeçalho clicável (ordenar: 1º clique maior primeiro / A→Z, 2º inverte, 3º volta ao padrão por PL)
+function cabFundos(tab, comFiltros, extraIni = "", extraFim = "") {
+  const o = st.ord[tab];
+  let h = `<thead><tr>${extraIni ? "<th></th>" : ""}${COLS_FUNDO.map((c) => {
+    const at = o && o.col === c.k;
+    return `<th class="${c.tipo === "txt" ? "t" : ""}"${at ? ` aria-sort="${o.dir > 0 ? "ascending" : "descending"}"` : ""}><button class="ord-f" data-tab="${tab}" data-col="${c.k}"
+      data-txt="${c.tipo === "txt" || c.tipo === "cnpj" ? 1 : 0}" title="Ordenar">${esc(c.nome)}${at ? (o.dir > 0 ? " ▲" : " ▼") : ""}</button></th>`; }).join("")}${extraFim ? "<th></th>" : ""}</tr>`;
+  if (comFiltros) {
+    const f = dlg.f;
+    h += `<tr class="filtros">${COLS_FUNDO.map((c) => {
+      if (c.filtro === "txt") return `<th><input data-filtro="${c.k}" type="search" placeholder="filtrar…" value="${esc(f[c.k] || "")}"></th>`;
+      if (c.filtro === "lista") return `<th><select data-filtro="${c.k}"><option value="">Todas</option>${(dlg.opcoes[c.k] || []).map((x) =>
+        `<option${f[c.k] === x ? " selected" : ""}>${esc(x)}</option>`).join("")}</select></th>`;
+      if (c.filtro === "min") return `<th><input data-filtro="${c.k}" type="number" step="any" placeholder="mín. ${c.tipo === "mi" ? "R$ mi" : "%"}" value="${esc(f[c.k] ?? "")}"></th>`;
+      return "<th></th>";
+    }).join("")}</tr>`;
+  }
+  return h + "</thead>";
+}
+function ordenarFundos(lista, tab) {
+  const o = st.ord[tab]; if (!o) return lista;
+  return [...lista].sort((a, b) => {
+    const x = valFundo(a, o.col), y = valFundo(b, o.col);
+    if (x == null || x === "") return 1; if (y == null || y === "") return -1;
+    return (typeof x === "number" ? x - y : String(x).localeCompare(String(y), "pt-BR")) * o.dir;
+  });
+}
+
+// ---------- janela "Lista de fundos": filtros por coluna, ordenação e clique na linha para selecionar
+const dlg = { sel: [], f: {}, opcoes: {} };
+const LIMITE_LISTA = 300;
+function abrirSeletor() {
+  dlg.sel = [...st.sel];
+  if (!dlg.opcoes.CLASSIFICACAO_CVM) for (const k of ["CLASSIFICACAO_CVM", "CLASSIFICACAO_ANBIMA"])
+    dlg.opcoes[k] = [...new Set(st.lista.map((f) => f[k]).filter(Boolean))].sort((a, b) => a.localeCompare(b, "pt-BR"));
+  $("#dlgSoSel").checked = false;
+  renderSeletor(); renderSelDialogo();
+  $("#seletor").showModal(); $("#dlgBusca").focus();
+}
+function filtrarLista() {
+  const f = dlg.f, q = $("#dlgBusca").value.trim().toUpperCase(), dig = q.replace(/\D/g, "");
+  const limiteDia = st.idx.cdi.d[st.idx.cdi.d.length - 1] - 30, ativos = $("#dlgAtivos").checked;
+  const soSel = $("#dlgSoSel").checked, marcados = new Set(dlg.sel);
+  const txt = COLS_FUNDO.filter((c) => c.filtro === "txt" && f[c.k]).map((c) => [c.k, f[c.k].toUpperCase(), f[c.k].replace(/\D/g, "")]);
+  const lst = COLS_FUNDO.filter((c) => c.filtro === "lista" && f[c.k]).map((c) => [c.k, f[c.k]]);
+  const mins = COLS_FUNDO.filter((c) => c.filtro === "min" && f[c.k] !== "" && f[c.k] != null && !Number.isNaN(Number(f[c.k])))
+    .map((c) => [c.k, c.tipo === "mi" ? Number(f[c.k]) * 1e6 : Number(f[c.k]) / 100]);
+  return st.lista.filter((x) => {
+    if (soSel) return marcados.has(x.CNPJ);
+    if (ativos && !(x._dia && x._dia >= limiteDia)) return false;
+    if (q.length >= 3 && !(x._busca.includes(q) || (dig.length >= 3 && x.CNPJ.includes(dig)))) return false;
+    for (const [k, t, d] of txt) { const v = k === "CNPJ" ? x.CNPJ : String(x[k] || "").toUpperCase(); if (!(v.includes(t) || (k === "CNPJ" && d && v.includes(d)))) return false; }
+    for (const [k, v] of lst) if (x[k] !== v) return false;
+    for (const [k, m] of mins) if (!(typeof x[k] === "number" && x[k] >= m)) return false;
+    return true;
+  });
+}
 function renderSeletor() {
-  const q = $("#dlgBusca").value.trim();
-  const ativos = $("#dlgAtivos").checked;
-  const limiteDia = st.idx.cdi.d[st.idx.cdi.d.length - 1] - 30;
-  const filtro = (f) => !ativos || (f._dia && f._dia >= limiteDia);
-  const linhas = q.length >= 3 ? buscar(q, 200, filtro) : st.lista.filter(filtro).slice(0, 200);
-  $("#dlgInfo").textContent = (q.length >= 3 ? `${linhas.length}${linhas.length === 200 ? "+" : ""} fundo(s) encontrado(s)` : "Maiores fundos por patrimônio")
-    + " · marque ✓ para selecionar (mostra até 200)";
-  $("#dlgTabela").innerHTML = `<table class="tb"><thead><tr><th>✓</th><th class="t">Fundo</th><th>CNPJ</th><th>Classificação</th>
-      <th>Gestor</th><th>Início</th><th>Última cota</th><th>Data da cota</th><th>12 meses</th><th>Desde a 1ª cota</th><th>PL (R$ mi)</th></tr></thead><tbody>
-      ${linhas.map((f) => `<tr><td><input type="checkbox" data-c="${f.CNPJ}" ${dlg.sel.includes(f.CNPJ) || st.sel.includes(f.CNPJ) ? "checked" : ""} ${st.sel.includes(f.CNPJ) ? "disabled title='já selecionado'" : ""}></td>
-        <td class="t">${esc(f.NOME)}</td><td>${cnpjFmt(f.CNPJ)}</td><td class="t">${esc(f.CLASSIFICACAO_ANBIMA || f.CLASSIFICACAO_CVM || "")}</td>
-        <td class="t">${esc(f.GESTOR || "")}</td><td>${f.DATA_CONSTITUICAO ? esc(String(f.DATA_CONSTITUICAO).slice(0, 10).split("-").reverse().join("/")) : f.DATA_PRIMEIRA_COTA ? fmtData(diaDe(f.DATA_PRIMEIRA_COTA)) : ""}</td>
-        <td>${br(f.VL_QUOTA, 6)}</td><td>${f._dia ? fmtData(f._dia) : ""}</td>
-        <td style="${corSinal(f.RET_12M)}">${brPct(f.RET_12M)}</td><td style="${corSinal(f.ACUMULADO)}">${brPct(f.ACUMULADO)}</td>
-        <td>${f.VL_PATRIM_LIQ != null ? br(f.VL_PATRIM_LIQ / 1e6, 1) : ""}</td></tr>`).join("")}</tbody></table>`;
-  renderSelDialogo();
+  const todos = ordenarFundos(filtrarLista(), "sel"), linhas = todos.slice(0, LIMITE_LISTA), marcados = new Set(dlg.sel);
+  dlg.visiveis = linhas.map((f) => f.CNPJ);
+  $("#dlgInfo").innerHTML = `<b>${br(todos.length, 0)}</b> fundo(s)` + (todos.length > LIMITE_LISTA ? ` · mostrando os ${LIMITE_LISTA} primeiros (use os filtros ou a ordenação)` : "") +
+    ` · clique no título da coluna para ordenar`;
+  // preserva o foco num campo de filtro enquanto se digita
+  const foco = document.activeElement?.dataset?.filtro, pos = document.activeElement?.selectionStart;
+  $("#dlgTabela").innerHTML = `<table class="tb tab-fundos">${cabFundos("sel", true)}<tbody>${linhas.map((f) =>
+    `<tr class="linha-f${marcados.has(f.CNPJ) ? " marcado" : ""}" data-c="${f.CNPJ}" tabindex="0" title="${marcados.has(f.CNPJ) ? "Selecionado · clique para tirar" : "Clique para selecionar"}">` +
+    COLS_FUNDO.map((c) => celFundo(f, c)).join("") + "</tr>").join("")}</tbody></table>` + (linhas.length ? "" : `<p class="nota" style="padding:12px">Nenhum fundo com esses filtros.</p>`);
+  if (foco) { const el = $(`#dlgTabela [data-filtro="${foco}"]`); if (el) { el.focus(); try { el.setSelectionRange(pos, pos); } catch { /* number */ } } }
+  $("#dlgMarcarVis").textContent = `Selecionar todos os mostrados (${linhas.length})`;
 }
 function renderSelDialogo() {
-  $("#dlgSel").innerHTML = dlg.sel.map((c) => `<span class="chip">${esc(curto(st.porCnpj.get(c).NOME, 40))}<button data-dlgrm="${c}">×</button></span>`).join("")
-    || `<p class="nota">Nenhum marcado ainda.</p>`;
+  const lista = ordenarFundos(dlg.sel.map((c) => st.porCnpj.get(c)).filter(Boolean), "selB");
+  $("#dlgSel").innerHTML = lista.length ? `<table class="tb tab-fundos">${cabFundos("selB", false, "", "x")}<tbody>${lista.map((f) =>
+    `<tr>${COLS_FUNDO.map((c) => celFundo(f, c)).join("")}<td><button class="cart-rm" data-dlgrm="${f.CNPJ}" type="button" title="Tirar da seleção">×</button></td></tr>`).join("")}</tbody></table>`
+    : `<p class="nota" style="padding:10px">Nenhum fundo selecionado. Clique nas linhas da tabela de cima.</p>`;
   $("#dlgN").textContent = dlg.sel.length;
-  $("#dlgAdd").textContent = `＋ Adicionar ${dlg.sel.length} fundo(s)`;
-  $("#dlgAdd").disabled = !dlg.sel.length;
+  $("#dlgAplicar").textContent = `Aplicar seleção (${dlg.sel.length} fundo${dlg.sel.length === 1 ? "" : "s"})`;
 }
+function alternarDlg(c) {
+  dlg.sel = dlg.sel.includes(c) ? dlg.sel.filter((x) => x !== c) : [...dlg.sel, c];
+  const tr = $(`#dlgTabela tr[data-c="${c}"]`);
+  if (tr) { tr.classList.toggle("marcado", dlg.sel.includes(c)); tr.title = dlg.sel.includes(c) ? "Selecionado · clique para tirar" : "Clique para selecionar"; }
+  if ($("#dlgSoSel").checked && !dlg.sel.includes(c)) renderSeletor();
+  renderSelDialogo();
+}
+
+// ---------- janela "Colar CNPJs": confere os fundos antes de importar
+const col = { lista: [], faltam: [] };
+function abrirColar() { $("#colPasso1").hidden = false; $("#colPasso2").hidden = true; $("#colTexto").value = ""; $("#dlgColar").showModal(); $("#colTexto").focus(); }
+function lerCnpjs(txt) {
+  const out = [];
+  for (const m of txt.matchAll(/\d[\d.\/\-]{6,20}\d/g)) { const d = m[0].replace(/\D/g, ""); if (d.length >= 8 && d.length <= 14) out.push(d.padStart(14, "0")); }
+  return [...new Set(out)];
+}
+function buscarColagem() {
+  const cnpjs = lerCnpjs($("#colTexto").value);
+  if (!cnpjs.length) { $("#colTexto").focus(); return; }
+  col.lista = cnpjs.filter((c) => st.porCnpj.has(c)); col.faltam = cnpjs.filter((c) => !st.porCnpj.has(c));
+  $("#colPasso1").hidden = true; $("#colPasso2").hidden = false; $("#colBusca").value = ""; $("#colRes").innerHTML = "";
+  renderColagem();
+}
+function renderColagem() {
+  const lista = ordenarFundos(col.lista.map((c) => st.porCnpj.get(c)), "col"), jaSel = new Set(st.sel);
+  $("#colInfo").innerHTML = `<b>${col.lista.length}</b> fundo(s) encontrado(s)` + (col.lista.some((c) => jaSel.has(c)) ? ` · ${col.lista.filter((c) => jaSel.has(c)).length} já estão selecionados` : "") +
+    (col.faltam.length ? `<br><span class="neg">Não encontrados na base (${col.faltam.length}): ${col.faltam.map(cnpjFmt).join(", ")}</span>` : "");
+  $("#colTabela").innerHTML = lista.length ? `<table class="tb tab-fundos">${cabFundos("col", false, "", "x")}<tbody>${lista.map((f) =>
+    `<tr${jaSel.has(f.CNPJ) ? ' class="marcado" title="Já está selecionado"' : ""}>${COLS_FUNDO.map((c) => celFundo(f, c)).join("")}
+      <td><button class="cart-rm" data-colrm="${f.CNPJ}" type="button" title="Tirar desta importação">×</button></td></tr>`).join("")}</tbody></table>`
+    : `<p class="nota" style="padding:10px">Nenhum fundo para importar.</p>`;
+  $("#colAcrescentar").disabled = $("#colSubstituir").disabled = !col.lista.length;
+  $("#colAcrescentar").textContent = `＋ Acrescentar aos selecionados (${col.lista.length})`;
+  $("#colSubstituir").textContent = `Substituir a seleção (${col.lista.length})`;
+}
+
+// ---------- grupos salvos (neste navegador)
+const lerGrupos = () => pref("grupos", {});
+const gravarGrupos = (g) => salvar("grupos", g);
+function abrirGrupos() { renderGrupos(); $("#dlgGrupos").showModal(); }
+function renderGrupos() {
+  const g = lerGrupos(), nomes = Object.keys(g).sort((a, b) => a.localeCompare(b, "pt-BR"));
+  $("#grN").textContent = st.sel.length;
+  $("#grSalvar").disabled = !st.sel.length;
+  $("#grNomes").innerHTML = nomes.map((n) => `<option value="${esc(n)}">`).join("");
+  $("#grLista").innerHTML = !nomes.length ? `<p class="nota">Nenhum grupo salvo ainda. Selecione fundos e salve acima.</p>` :
+    `<table class="tb gr-tab"><thead><tr><th class="t">Grupo</th><th>Fundos</th><th>Atualizado em</th><th class="t">Carregar</th><th></th></tr></thead><tbody>${nomes.map((n) => {
+      const x = g[n], aberto = renderGrupos.aberto === n;
+      return `<tr><td class="t"><button class="link gr-ver" data-gr="${esc(n)}" title="Ver os fundos">${aberto ? "▾" : "▸"} <b>${esc(n)}</b></button></td><td>${x.cnpjs.length}</td>
+        <td>${x.atualizado ? new Date(x.atualizado).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }) : ""}</td>
+        <td class="t gr-acoes"><button class="sec mini-btn" data-gr-add="${esc(n)}" type="button" title="Junta estes fundos aos já selecionados">＋ Acrescentar</button>
+          <button class="prim mini-btn" data-gr-sub="${esc(n)}" type="button" title="Tira os selecionados e coloca só os do grupo">Substituir</button></td>
+        <td><button class="cart-rm" data-gr-del="${esc(n)}" type="button" title="Excluir grupo">🗑</button></td></tr>` +
+        (aberto ? `<tr class="gr-det"><td colspan="5"><div class="chips">${x.cnpjs.map((c) => `<span class="chip" title="${cnpjFmt(c)}">${esc(curto(st.porCnpj.get(c)?.NOME || cnpjFmt(c) + " (fora da base)", 40))}</span>`).join("")}</div></td></tr>` : "");
+    }).join("")}</tbody></table>`;
+}
+async function salvarGrupo() {
+  const nome = $("#grNome").value.trim();
+  if (!nome) { $("#grNome").focus(); return; }
+  if (!st.sel.length) return;
+  const g = lerGrupos();
+  if (g[nome]) {
+    const r = await perguntar("Substituir o grupo?", `Já existe o grupo <b>${esc(nome)}</b> com ${g[nome].cnpjs.length} fundo(s). Substituir pelos ${st.sel.length} fundos selecionados agora?`,
+      [{ rot: "Cancelar", v: false }, { rot: "Substituir", v: true, classe: "prim" }]);
+    if (!r) return;
+  }
+  g[nome] = { cnpjs: [...st.sel], atualizado: new Date().toISOString() };
+  gravarGrupos(g); $("#grNome").value = ""; renderGrupos();
+  avisoSel(`<span class="ok">Grupo "${esc(nome)}" salvo com ${st.sel.length} fundo(s).</span>`);
+}
+function carregarGrupo(nome, substituir) {
+  const x = lerGrupos()[nome]; if (!x) return;
+  if (substituir) st.sel = [];
+  const { ok, faltam } = adicionar(x.cnpjs);
+  $("#dlgGrupos").close();
+  avisoSel(`<span class="ok">Grupo "${esc(nome)}": ${ok} fundo(s) ${substituir ? "carregado(s)" : "acrescentado(s)"}.</span>` +
+    (faltam.length ? `<br><span class="neg">${faltam.length} fora da base atual: ${faltam.map(cnpjFmt).join(", ")}</span>` : ""));
+}
+function exportarGrupos() {
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([JSON.stringify({ tipo: "grupos-de-fundos", versao: 1, grupos: lerGrupos() }, null, 1)], { type: "application/json" }));
+  a.download = `grupos_de_fundos_${new Date().toISOString().slice(0, 10)}.json`; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+}
+async function importarGrupos(arquivo) {
+  let dados;
+  try { dados = JSON.parse(await arquivo.text()); } catch { await perguntar("Arquivo inválido", "Não foi possível ler este arquivo de grupos.", [{ rot: "OK", v: 1, classe: "prim" }]); return; }
+  const novos = dados?.grupos || {}, g = lerGrupos();
+  const validos = Object.entries(novos).filter(([n, x]) => n && Array.isArray(x?.cnpjs));
+  const repetidos = validos.filter(([n]) => g[n]).map(([n]) => n);
+  let sobrescrever = true;
+  if (repetidos.length) {
+    const r = await perguntar("Grupos com o mesmo nome", `Já existem ${repetidos.length} grupo(s) com o mesmo nome: <b>${repetidos.map(esc).join(", ")}</b>.`,
+      [{ rot: "Cancelar", v: null }, { rot: "Manter os meus", v: false }, { rot: "Substituir pelos do arquivo", v: true, classe: "prim" }]);
+    if (r == null) return; sobrescrever = r;
+  }
+  let n = 0;
+  for (const [nome, x] of validos) if (!g[nome] || sobrescrever) { g[nome] = { cnpjs: x.cnpjs.map((c) => String(c).replace(/\D/g, "").padStart(14, "0")), atualizado: x.atualizado || new Date().toISOString() }; n++; }
+  gravarGrupos(g); renderGrupos();
+  avisoSel(`<span class="ok">${n} grupo(s) importado(s).</span>`);
+}
+
+// ---------- eventos da seleção
+document.addEventListener("click", async (e) => {
+  const t = e.target;
+  if (t.id === "abrirSeletor") return abrirSeletor();
+  if (t.id === "abrirColar") return abrirColar();
+  if (t.id === "abrirGrupos") return abrirGrupos();
+  if (t.closest?.("[data-fechar-dlg]")) return t.closest("dialog").close();
+  const bo = t.closest?.("button.ord-f");
+  if (bo) { clicarOrdem(bo.dataset.tab, bo.dataset.col, bo.dataset.txt === "1"); ({ sel: renderSeletor, selB: renderSelDialogo, col: renderColagem })[bo.dataset.tab]?.(); return; }
+  // janela da lista
+  const lf = t.closest?.("#dlgTabela tr.linha-f");
+  if (lf && !t.closest("input, select, button")) return alternarDlg(lf.dataset.c);
+  if (t.dataset?.dlgrm) { dlg.sel = dlg.sel.filter((c) => c !== t.dataset.dlgrm); renderSeletor(); renderSelDialogo(); return; }
+  if (t.id === "dlgMarcarVis") { dlg.sel = [...new Set([...dlg.sel, ...(dlg.visiveis || [])])]; renderSeletor(); renderSelDialogo(); return; }
+  if (t.id === "dlgLimparSel") { if (dlg.sel.length && !(await perguntar("Limpar a seleção?", `Tirar os ${dlg.sel.length} fundos marcados?`, [{ rot: "Cancelar", v: false }, { rot: "Limpar", v: true, classe: "prim" }]))) return;
+    dlg.sel = []; renderSeletor(); renderSelDialogo(); return; }
+  if (t.id === "dlgLimparFiltros") { dlg.f = {}; $("#dlgBusca").value = ""; $("#dlgSoSel").checked = false; delete st.ord.sel; renderSeletor(); return; }
+  if (t.id === "dlgAplicar") { st.sel = dlg.sel.filter((c) => st.porCnpj.has(c)); atualizarSidebar(); $("#seletor").close(); avisoSel(`<span class="ok">${st.sel.length} fundo(s) selecionado(s).</span>`); return; }
+  if (t.id === "dlgCancelar") return $("#seletor").close();
+  // janela de colar
+  if (t.id === "colBuscar") return buscarColagem();
+  if (t.id === "colVoltar") { $("#colPasso1").hidden = false; $("#colPasso2").hidden = true; return; }
+  if (t.dataset?.colrm) { col.lista = col.lista.filter((c) => c !== t.dataset.colrm); return renderColagem(); }
+  const ca = t.closest?.("#colRes button.add");
+  if (ca) { if (!col.lista.includes(ca.dataset.c)) col.lista.push(ca.dataset.c); $("#colBusca").value = ""; $("#colRes").innerHTML = ""; return renderColagem(); }
+  if (t.id === "colAcrescentar" || t.id === "colSubstituir") {
+    if (t.id === "colSubstituir") st.sel = [];
+    const { ok } = adicionar(col.lista); $("#dlgColar").close();
+    avisoSel(`<span class="ok">${ok} fundo(s) ${t.id === "colSubstituir" ? "importado(s), substituindo a seleção anterior" : "acrescentado(s)"}.</span>`); return;
+  }
+  // grupos
+  if (t.id === "grSalvar") return salvarGrupo();
+  if (t.id === "grExportar") return exportarGrupos();
+  const gv = t.closest?.("[data-gr]");
+  if (gv) { renderGrupos.aberto = renderGrupos.aberto === gv.dataset.gr ? null : gv.dataset.gr; return renderGrupos(); }
+  if (t.dataset?.grAdd) return carregarGrupo(t.dataset.grAdd, false);
+  if (t.dataset?.grSub) {
+    const n = t.dataset.grSub;
+    if (st.sel.length && !(await perguntar("Substituir a seleção?", `Os ${st.sel.length} fundos selecionados agora saem e entram os ${lerGrupos()[n]?.cnpjs.length || 0} do grupo <b>${esc(n)}</b>.`,
+      [{ rot: "Cancelar", v: false }, { rot: "Substituir", v: true, classe: "prim" }]))) return;
+    return carregarGrupo(n, true);
+  }
+  if (t.dataset?.grDel) {
+    const n = t.dataset.grDel;
+    if (!(await perguntar("Excluir o grupo?", `Excluir o grupo <b>${esc(n)}</b>? Os fundos selecionados agora não mudam.`, [{ rot: "Cancelar", v: false }, { rot: "Excluir", v: true, classe: "prim" }]))) return;
+    const g = lerGrupos(); delete g[n]; gravarGrupos(g); return renderGrupos();
+  }
+});
+document.addEventListener("keydown", (e) => {
+  if ((e.key === "Enter" || e.key === " ") && e.target.matches?.("#dlgTabela tr.linha-f")) { e.preventDefault(); alternarDlg(e.target.dataset.c); }
+  if (e.key === "Enter" && e.target.id === "grNome") { e.preventDefault(); salvarGrupo(); }
+});
+let tFiltro;
+document.addEventListener("input", (e) => {
+  const t = e.target;
+  if (t.id === "dlgBusca" || (t.dataset?.filtro && t.closest("#dlgTabela") && t.tagName === "INPUT")) {
+    if (t.dataset?.filtro) dlg.f[t.dataset.filtro] = t.value;
+    clearTimeout(tFiltro); tFiltro = setTimeout(renderSeletor, 220);
+  }
+  if (t.id === "colBusca") {
+    const r = buscar(t.value, 8, (f) => !col.lista.includes(f.CNPJ));
+    $("#colRes").innerHTML = t.value.trim().length < 3 ? "" : r.length ? r.map((f) => `<button class="add" data-c="${f.CNPJ}" title="${esc(f.NOME)}">＋ ${esc(curto(f.NOME, 60))}<small>${cnpjFmt(f.CNPJ)}</small></button>`).join("")
+      : `<p class="nota">Nada encontrado.</p>`;
+  }
+});
+document.addEventListener("change", (e) => {
+  const t = e.target;
+  if (t.dataset?.filtro && t.tagName === "SELECT") { dlg.f[t.dataset.filtro] = t.value; renderSeletor(); }
+  else if (t.id === "dlgAtivos" || t.id === "dlgSoSel") renderSeletor();
+  else if (t.id === "grImportar" && t.files[0]) { importarGrupos(t.files[0]); t.value = ""; }
+});
 
 // ============================== cálculo ==============================
 function apelidos(cnpjs) {
@@ -1108,6 +1359,10 @@ function renderCarteira() {
   if (!c.ini || !c.fim) usarPeriodoAtivo(false);
   $("#cartRebal").value = String(c.rebal); $("#cartValor").value = c.valor; $("#cartIni").value = c.ini; $("#cartFim").value = c.fim;
   $("#cartJmMeses").value = st.cartUI.jmMeses;
+  // janela móvel da carteira: datas próprias (padrão: 5 anos de aplicações até a última cota)
+  if (!st.cartUI.jmFim) st.cartUI.jmFim = isoDe(st.res.fimComum);
+  if (!st.cartUI.jmIni) st.cartUI.jmIni = isoDe(somarMeses(st.res.fimComum, -60));
+  $("#cartJmIni").value = st.cartUI.jmIni; $("#cartJmFim").value = st.cartUI.jmFim;
   definirCombo("cbCartRef", c.ref.rot);
   $("#cartItens").innerHTML = !c.itens.length ? `<p class="nota">Nenhum ativo ainda. Use "Adicionar fundo ou índice" acima ou "Adicionar todos os fundos calculados".</p>` :
     `<div class="tb-wrap cart-lista"><table class="tb"><thead><tr><th class="t">Ativo</th><th>Peso (%)</th><th></th></tr></thead><tbody>${c.itens.map((it, i) => {
@@ -1154,7 +1409,7 @@ function calcularCarteira() {
   const simRef = umSo(serieItem(c.ref), c.ref.rot), eRef = simRef ? est(c.ref, simRef.dias, simRef.valor) : null;
   const rebal = Number(c.rebal), simBH = rebal ? simularCarteira(ativos, pesos, { ini, fim, rebal: 0 }) : null;
   const eBH = simBH ? estatisticas(simBH.dias, simBH.valor, cdiAnual) : null;
-  st.cartRes = { validos, pesos, sim, d0, dN, simRef, eT, eA, eRef, simBH, eBH, cdiAnual, rebal,
+  st.cartRes = { validos, pesos, ativos, sim, d0, dN, simRef, eT, eA, eRef, simBH, eBH, cdiAnual, rebal,
     nomes: validos.map(nomeItem), cores: validos.map(corItem) };
 
   const v0 = Number(c.valor) || 0, pp = (v) => (v == null ? "–" : (v > 0 ? "+" : v < 0 ? "−" : "") + br(Math.abs(v) * 100, 2) + " p.p.");
@@ -1313,22 +1568,29 @@ function calcularCartJM() {
   const b = st.cartUI.jmBench, meses = st.cartUI.jmMeses;
   let bench = b.tipo === "n" ? "" : b.v, nomeB = b.tipo === "n" ? "" : b.rot;
   if (b.tipo === "f") { const g = st.res.fundos.get(b.v); if (g) bench = { fundo: g }; else { bench = "CDI"; nomeB = "CDI"; } }
-  const p = { bench, meses, ini: R.d0, fim: R.dN };
-  const lista = [{ nome: "★ Carteira", cor: corCarteira(), forte: true, f: pseudoFundo(R.sim.dias, R.sim.valor) },
-    ...R.validos.map((it, k) => ({ nome: R.nomes[k], c: it.tipo === "f" ? it.v : null, cor: R.cores[k], fraca: true,
-      f: it.tipo === "f" ? st.res.fundos.get(it.v) : pseudoFundo(R.sim.dias, R.sim.porAtivo[k]) }))]
-    .filter((x) => !(b.tipo === "f" && x.c === b.v));
+  const ini = diaDe(new Date(st.cartUI.jmIni)), fim = diaDe(new Date(st.cartUI.jmFim));
+  // carteira refeita no período da janela móvel (mesmos pesos e rebalanceamento)
+  const simJ = simularCarteira(R.ativos, R.pesos, { ini, fim, rebal: R.rebal });
+  const p = { bench, meses, ini, fim };
+  const lista = [...(simJ ? [{ nome: "★ Carteira", cor: corCarteira(), forte: true, f: pseudoFundo(simJ.dias, simJ.valor) }] : []),
+    ...R.validos.map((it, k) => {
+      const s = R.ativos[k].s;
+      return { nome: R.nomes[k], c: it.tipo === "f" ? it.v : null, cor: R.cores[k], fraca: true,
+        f: it.tipo === "f" ? st.res.fundos.get(it.v) : pseudoFundo(s.d, s.L) };
+    })].filter((x) => !(b.tipo === "f" && x.c === b.v));
   for (const x of lista) { x.linhas = janelaMovel(x.f, st.idx, p); x.resumo = x.linhas.length ? resumoJanela(x.linhas) : null; }
-  R.jm = { p, nomeB, lista: lista.filter((x) => x.resumo) };
+  R.jm = { p, nomeB, lista: lista.filter((x) => x.resumo), simJ };
 }
 function renderCartJM() {
   const jm = st.cartRes?.jm; if (!jm) return;
   const n = jm.lista.reduce((s, x) => s + x.linhas.length, 0);
   $("#cartJmCorpo").hidden = !jm.lista.length;
-  if (!jm.lista.length) { $("#cartJmInfo").innerHTML = `<p class="nota">Nenhuma janela de ${jm.p.meses} meses cabe no período da carteira. Diminua a duração ou aumente o período.</p>`; return; }
+  if (!jm.lista.length) { $("#cartJmInfo").innerHTML = `<p class="nota">Nenhuma janela de ${jm.p.meses} meses cabe entre ${fmtData(jm.p.ini)} e ${fmtData(jm.p.fim)}. Diminua a duração ou amplie as datas.</p>`; return; }
   const prim = Math.min(...jm.lista.map((x) => x.resumo.primeira)), ult = Math.max(...jm.lista.map((x) => x.resumo.ultima));
   $("#cartJmInfo").innerHTML = [`<b>${jm.p.meses} meses</b> de aplicação`, `benchmark: <b>${esc(jm.nomeB || "nenhum")}</b>`,
-    `aplicações de <b>${fmtData(prim)}</b> a <b>${fmtData(ult)}</b>`, `<b>${br(n, 0)}</b> janelas`].map((t) => `<span>${t}</span>`).join("");
+    `aplicações de <b>${fmtData(prim)}</b> a <b>${fmtData(ult)}</b>`, `<b>${br(n, 0)}</b> janelas`].map((t) => `<span>${t}</span>`).join("") +
+    (jm.simJ?.cortadoIni ? `<span class="aviso-chip">a carteira só começa em ${fmtData(jm.simJ.dias[0])}, quando todos os ativos têm cota</span>` : "") +
+    (!jm.simJ ? `<span class="aviso-chip">a carteira não tem dias em comum nesse intervalo; aparecem só os ativos</span>` : "");
   const series = jm.lista.map((x) => { const v = x.linhas.filter((l) => l.dif != null); return { nome: x.nome, c: x.c, cor: x.cor, forte: x.forte, fraca: x.fraca, x: v.map((l) => l.ini), y: v.map((l) => l.dif) }; });
   grafico("gCartJM", series, { ref: 0, xMin: prim, xMax: ult, tituloX: (x) => `Aplicação em ${fmtData(x)}` });
   $("#legCartJM").innerHTML = tabelaLegenda("cartJM", jm.lista.map((x, i) => ({ Fundo: x.nome, _c: x.c, cor: x.cor,
@@ -1353,6 +1615,7 @@ document.addEventListener("change", (e) => {
   else if (t.id === "cartIni" || t.id === "cartFim") { c[t.id === "cartIni" ? "ini" : "fim"] = t.value; salvarCart(); if (c.ini && c.fim) calcularCarteira(); }
   else if (t.id === "cartRelOn") { st.cartUI.rel.on = t.checked; renderCartAcum(); }
   else if (t.id === "cartJmMeses") st.cartUI.jmMeses = Math.max(1, Math.min(240, Number(t.value) || 12));
+  else if (t.id === "cartJmIni" || t.id === "cartJmFim") st.cartUI[t.id === "cartJmIni" ? "jmIni" : "jmFim"] = t.value;
 });
 document.addEventListener("click", (e) => {
   const t = e.target, c = st.cart;
@@ -1373,7 +1636,11 @@ document.addEventListener("click", (e) => {
   else if (t.id === "cartPeriodo") usarPeriodoAtivo(true);
   else if (t.closest?.("#cartRelModo button")) { st.cartUI.rel.modo = t.closest("button").dataset.m; renderCartAcum(); }
   else if (t.closest?.("#cartRiscoEixo button")) { st.cartUI.eixo = t.closest("button").dataset.e; delete st.ord.cartRisco; renderCartRisco(); }
-  else if (t.id === "cartJmAtualizar") { st.cartUI.jmMeses = Math.max(1, Math.min(240, Number($("#cartJmMeses").value) || 12)); calcularCartJM(); renderCartJM(); }
+  else if (t.id === "cartJmAtualizar") {
+    st.cartUI.jmMeses = Math.max(1, Math.min(240, Number($("#cartJmMeses").value) || 12));
+    st.cartUI.jmIni = $("#cartJmIni").value || st.cartUI.jmIni; st.cartUI.jmFim = $("#cartJmFim").value || st.cartUI.jmFim;
+    calcularCartJM(); renderCartJM();
+  }
   else if (t.id === "cartJmBaixar") {
     const jm = st.cartRes?.jm; if (!jm) return;
     baixarCSVJM(jm.lista.map((x) => ({ nome: x.nome, cnpj: x.c ? cnpjFmt(x.c) : "", linhas: x.linhas })), jm.nomeB, jm.p.meses, "janela_movel_carteira");
@@ -1489,23 +1756,13 @@ document.addEventListener("click", (e) => {
   if (t.closest("[data-fechar]") || t.id === "dlgFontes") { $("#dlgFontes").close(); return; }
   if (t.id === "jmAtualizar") { calcularJM(); renderJM(); return; }
   if (t.id === "jmBaixar") { baixarJM(); return; }
-  if (t.closest("button.add")) { adicionar([t.closest("button.add").dataset.c]); }
+  if (t.closest("#resBusca button.add")) { adicionar([t.closest("button.add").dataset.c]); }
   else if (t.dataset.rm) remover(t.dataset.rm);
   else if (t.id === "limpar") { st.sel = []; atualizarSidebar(); }
   else if (t.closest("#periodos button")) {
     const p = t.closest("button").dataset.p;
     st.periodos.has(p) ? st.periodos.delete(p) : st.periodos.add(p); atualizarSidebar();
   }
-  else if (t.closest("#modoAdd button")) {
-    const m = t.closest("button").dataset.m;
-    $$("#modoAdd button").forEach((b) => b.setAttribute("aria-pressed", b.dataset.m === m));
-    $$(".modo").forEach((d) => (d.hidden = d.dataset.m !== m));
-  }
-  else if (t.id === "btnColar") lerColagem();
-  else if (t.id === "abrirSeletor") abrirSeletor();
-  else if (t.dataset.dlgrm) { dlg.sel = dlg.sel.filter((c) => c !== t.dataset.dlgrm); renderSeletor(); }
-  else if (t.id === "dlgAdd") { adicionar(dlg.sel); $("#seletor").close(); }
-  else if (t.id === "dlgCancelar") $("#seletor").close();
   else if (t.id === "calcular") calcular();
   else if (t.closest("#barraPer button")) { st.perAtivo = t.closest("button").dataset.per; renderResultado(); }
   else if (t.closest("#relModo button")) { st.rel.modo = t.closest("button").dataset.m; renderAcum(); }
@@ -1521,11 +1778,7 @@ document.addEventListener("mouseover", (e) => {
 });
 document.addEventListener("change", async (e) => {
   const t = e.target;
-  if (t.matches("#dlgTabela input[type=checkbox]")) {
-    const c = t.dataset.c;
-    dlg.sel = t.checked ? [...new Set([...dlg.sel, c])] : dlg.sel.filter((x) => x !== c); renderSelDialogo();
-  }
-  else if (t.id === "dlgAtivos") renderSeletor();
+  if (false) { /* seleção: tratada no módulo de seleção */ }
   else if (t.dataset.todos) { st.todos[t.dataset.todos] = t.checked; ({ acum: renderAcum, dd: renderDd, jm: renderJM, cartAcum: renderCartAcum, cartDd: renderCartDd, cartJM: renderCartJM })[t.dataset.todos]?.(); }
   else if (t.id === "agrupar") { st.agrupar = t.value; salvar("agrupar", st.agrupar); renderMetricas(); }
   else if (t.id === "relOn") { st.rel.on = t.checked; renderAcum(); }
@@ -1539,7 +1792,6 @@ document.addEventListener("input", (e) => {
   const t = e.target;
   if (t.id === "busca") { clearTimeout(tBusca); tBusca = setTimeout(atualizarSidebar, 150); }
   else if (t.id === "destaque") { clearTimeout(tDest); tDest = setTimeout(() => { st.destaque = t.value; renderResultado(); }, 200); }
-  else if (t.id === "dlgBusca") { clearTimeout(tDlg); tDlg = setTimeout(renderSeletor, 200); }
   else if (t.id === "zIni" || t.id === "zFim") aoMoverSlider(e);
 });
 addEventListener("scroll", () => { $("#btnTopo").hidden = scrollY < 400; }, { passive: true });
