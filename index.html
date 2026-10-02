@@ -52,7 +52,8 @@
 <script>
   // fora do módulo: mostra também erros de carregamento (config.js, DuckDB, etc.)
   const _log = (t) => { document.getElementById("log").textContent += t + "\n"; };
-  window.addEventListener("error", (e) => _log("ERRO: " + (e.message || e.target?.src || "falha ao carregar recurso")), true);
+  window.addEventListener("error", (e) => _log("ERRO: " + (e.message ||
+    ("falha ao carregar " + (e.target?.src || e.target?.href || e.target?.tagName || "recurso")))), true);
   window.addEventListener("unhandledrejection", (e) => {
     _log("ERRO: " + (e.reason?.message || e.reason));
     document.getElementById("status").textContent = "erro ao carregar (veja abaixo)";
@@ -61,7 +62,11 @@
     _log("Ainda carregando após 20 s… se não sair disso, abra o Console (F12) e me mande as mensagens em vermelho."); }, 20000);
 </script>
 <script type="module">
-import { DADOS_URL, DUCKDB_URL } from "./config.js";
+// ===== CONFIGURAÇÃO (único lugar para editar) =====
+const HF_REPO = "Shote/fundos-cvm";                       // usuário/repositório de dados no Hugging Face
+const DADOS_URL = `https://huggingface.co/datasets/${HF_REPO}/resolve/main/`;
+const DUCKDB_URL = "https://cdn.jsdelivr.net/npm/@duckdb/duckdb-wasm@1.32.0/+esm";
+// ===================================================
 document.getElementById("status").textContent = "carregando o DuckDB…";
 const duckdb = await import(DUCKDB_URL);
 
