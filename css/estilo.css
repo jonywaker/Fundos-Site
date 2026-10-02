@@ -470,3 +470,34 @@ dialog.dlg-pergunta { width: min(460px, 92vw); border: 0; border-top: 3px solid 
 .dlg-tab .tab-fundos thead th:first-child { z-index: 4; }
 .dlg-tab .tab-fundos thead tr.filtros th:first-child { background: var(--card); }
 .dlg-medio .dlg-cab { justify-content: space-between; }
+
+/* ============ relatórios ============ */
+#btnRel { white-space: nowrap; }
+.rel-cols { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(280px, 1fr); gap: 18px; overflow: auto; }
+@media (max-width: 800px) { .rel-cols { grid-template-columns: 1fr; } }
+.rel-grupo { display: grid; gap: 6px; margin-bottom: 12px; padding: 8px 10px; border: 1px solid var(--borda); border-radius: 9px; }
+.rel-grupo > b { color: var(--anil); font-size: 13px; }
+@media (prefers-color-scheme: dark) { .rel-grupo > b { color: var(--ouro); } }
+.rel-grupo .tog.indisp { opacity: .55; }
+.rel-grupo small { color: var(--sub); }
+.rel-dir { display: flex; flex-direction: column; gap: 10px; align-items: flex-start; }
+.rel-op { display: grid; gap: 6px; padding: 8px 10px; border-left: 3px solid var(--ouro); background: color-mix(in srgb, var(--azul) 5%, var(--card)); border-radius: 0 8px 8px 0; }
+.rel-op[hidden] { display: none; }
+#relProg { min-height: 1.2em; font-weight: 600; }
+/* área usada só para gerar os PNGs (fora da tela, sempre clara e sem cores calculadas) */
+.rel-render { position: fixed; left: -20000px; top: 0; width: 1400px; background: #ffffff; color: #1b1f3b; font: 13px Manrope, Arial, sans-serif; padding: 0; }
+.rel-render .rel-parte { padding: 24px 28px; background: #ffffff; }
+.rel-render h2 { font: 700 22px Cinzel, Georgia, serif; color: #2b2c78; margin: 0 0 4px; border-bottom: 2px solid #c9a23a; padding-bottom: 6px; }
+.rel-render h3 { font-size: 14px; color: #2b2c78; margin: 16px 0 6px; }
+.rel-render .rel-sub { color: #5b6386; font-size: 12px; margin: 4px 0; }
+.rel-render img { display: block; margin: 10px 0; max-width: 1340px; }
+.rel-render table { border-collapse: collapse; font-size: 12px; }
+.rel-render th { background: #2b2c78; color: #ffffff; padding: 5px 8px; text-align: right; white-space: nowrap; }
+.rel-render th:first-child, .rel-render td.t { text-align: left; }
+.rel-render td { padding: 4px 8px; border-bottom: 1px solid #e3e6ee; text-align: right; white-space: nowrap; color: #1b1f3b; }
+.rel-render tr:nth-child(even) td { background: #f6f8fd; }
+.rel-op label { display: flex; gap: 7px; align-items: center; cursor: pointer; }
+.rel-op input[type=radio] { width: auto; margin: 0; flex: none; accent-color: var(--azul); }
+.rel-dados { border-style: dashed; border-color: color-mix(in srgb, var(--ouro) 60%, var(--borda)); }
+.rel-dados > .nota { margin: -2px 0 2px; }
+#relEstim:empty { display: none; }
