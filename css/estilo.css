@@ -410,3 +410,63 @@ dialog.dlg-texto { width: min(900px, 96vw); max-height: 90vh; border: 1px solid 
 #cartMetricas { margin-bottom: 6px; }
 .jm-ctl .combo .combo-in, .opcoes .combo .combo-in { width: 100%; min-width: 0; box-sizing: border-box; }
 .jm-ctl .combo { min-width: 260px; }
+
+/* ============ seleção de fundos: botões, lista, colar e grupos ============ */
+.botoes-add { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 8px; }
+.botoes-add .sec { flex: 1 1 auto; padding: 6px 9px; font-size: 12.5px; font-weight: 700; }
+#avisoSel:empty { display: none; }
+#avisoSel { margin: 2px 0 6px; }
+dialog#seletor { height: 92vh; }
+dialog#seletor .dlg-cab h2, .dlg-medio .dlg-cab h2 { margin: 0 8px 0 0; font-family: Cinzel, Georgia, serif; font-size: 17px; color: var(--anil); }
+@media (prefers-color-scheme: dark) { dialog#seletor .dlg-cab h2, .dlg-medio .dlg-cab h2 { color: var(--ouro); } }
+.dlg-cab { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; }
+.dlg-cab #dlgBusca { flex: 1 1 260px; }
+.tab-fundos { min-width: 100%; }
+.tab-fundos th button.ord-f { background: none; border: 0; padding: 0; color: inherit; font: inherit; cursor: pointer; text-align: inherit; white-space: nowrap; }
+.tab-fundos th button.ord-f:hover { text-decoration: underline; text-underline-offset: 3px; }
+.tab-fundos th[aria-sort] { box-shadow: inset 0 -3px 0 var(--ouro); }
+.tab-fundos thead tr.filtros th { background: var(--card); padding: 4px 5px; top: 27px; }
+.tab-fundos thead tr.filtros input, .tab-fundos thead tr.filtros select { width: 100%; min-width: 80px; padding: 3px 6px; font-size: 12px; font-weight: 500; }
+.tab-fundos td.t { max-width: 300px; overflow: hidden; text-overflow: ellipsis; }
+.tab-fundos tr.linha-f { cursor: pointer; }
+.tab-fundos tr.linha-f:hover td { background: color-mix(in srgb, var(--azul) 8%, var(--card)); }
+.tab-fundos tr.marcado td { background: color-mix(in srgb, var(--ouro) 20%, var(--card)) !important; font-weight: 600; }
+.tab-fundos tr.marcado td:first-child { box-shadow: inset 4px 0 0 var(--ouro); }
+.tab-fundos tr.linha-f:focus-visible { outline: 2px solid var(--ouro); outline-offset: -2px; }
+.dlg-sel { border-top: 2px solid var(--ouro); padding-top: 6px; display: flex; flex-direction: column; gap: 5px; }
+.dlg-sel-cab { display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center; }
+.dlg-tab.baixa { max-height: 24vh; min-height: 70px; flex: none; }
+dialog.dlg-medio { width: min(1100px, 96vw); max-height: 90vh; border: 1px solid var(--borda); border-radius: 14px; padding: 16px 18px; background: var(--card); color: var(--txt); }
+dialog.dlg-medio[open] { display: flex; flex-direction: column; gap: 8px; }
+dialog.dlg-medio::backdrop, dialog.dlg-pergunta::backdrop { background: rgba(12,16,48,.5); }
+#colTexto { width: 100%; font: 13px/1.5 ui-monospace, Consolas, monospace; }
+#colTabela { max-height: 42vh; }
+.col-add { display: grid; gap: 4px; }
+.col-add label { display: grid; gap: 3px; font-size: 12.5px; color: var(--sub); }
+#colRes { max-height: 160px; }
+.gr-salvar { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px 12px; padding: 10px 12px; }
+.gr-salvar label { display: grid; gap: 4px; flex: 1 1 320px; }
+.gr-salvar input { width: 100%; }
+#grLista { overflow: auto; max-height: 52vh; }
+.gr-tab { width: 100%; }
+.gr-tab .gr-acoes { white-space: nowrap; }
+.gr-tab .gr-acoes button { margin-right: 4px; }
+.gr-tab tr.gr-det td { white-space: normal; background: color-mix(in srgb, var(--azul) 5%, var(--card)); }
+.gr-ver { font-size: 13px; text-align: left; }
+.botao-arquivo { display: inline-flex; align-items: center; cursor: pointer; }
+dialog.dlg-pergunta { width: min(460px, 92vw); border: 0; border-top: 3px solid var(--ouro); border-radius: 14px; padding: 18px 20px; background: var(--card); color: var(--txt);
+  box-shadow: 0 20px 50px -12px rgba(10,14,40,.5); }
+.dlg-pergunta h3 { margin: 0 0 8px; font-family: Cinzel, Georgia, serif; color: var(--anil); font-size: 16px; }
+@media (prefers-color-scheme: dark) { .dlg-pergunta h3 { color: var(--ouro); } }
+.dlg-pergunta p { font-size: 13.5px; line-height: 1.5; margin: 0 0 14px; }
+.dlg-pergunta .botoes { display: flex; justify-content: flex-end; gap: 8px; flex-wrap: wrap; }
+.aviso-chip { border-color: #b7791f !important; color: #b7791f; }
+.jm-info .aviso-chip { font-weight: 600; }
+/* nome do fundo sempre visível nas tabelas de seleção */
+.dlg-tab .tab-fundos th:first-child, .dlg-tab .tab-fundos td:first-child { position: sticky; left: 0; text-align: left; min-width: 260px; max-width: 300px;
+  box-shadow: inset -1px 0 0 var(--borda); }
+.dlg-tab .tab-fundos td:first-child { z-index: 1; background: var(--card); }
+.dlg-tab .tab-fundos tbody tr:nth-child(even) td:first-child { background: var(--zebra); }
+.dlg-tab .tab-fundos thead th:first-child { z-index: 4; }
+.dlg-tab .tab-fundos thead tr.filtros th:first-child { background: var(--card); }
+.dlg-medio .dlg-cab { justify-content: space-between; }
