@@ -347,6 +347,18 @@
       <button id="relBaixar" class="prim" type="button">⬇ Baixar</button>
       <p id="relProg" class="nota" aria-live="polite"></p>
     </div>
+    <details id="relDestBox" class="rel-dest" open>
+      <summary>★ Destacar fundos no relatório (<span id="relDestN">0</span> escolhido<span>s</span>)</summary>
+      <p class="nota">Clique nas linhas para destacar (pode escolher vários). Os destacados saem realçados nos gráficos e nas tabelas, como no site.
+        Sem nenhum escolhido, o relatório sai sem destaque.</p>
+      <div class="rel-dest-ctl">
+        <input id="relDestBusca" type="search" placeholder="Buscar entre os fundos calculados…" autocomplete="off">
+        <label class="tog"><input id="relDestSo" type="checkbox"> Mostrar só os destacados</label>
+        <button id="relDestTela" class="sec mini-btn" type="button" title="Usa os fundos que batem com o campo Destacar fundo do topo">Usar o destaque da tela</button>
+        <button id="relDestLimpar" class="sec mini-btn" type="button">Limpar destaque</button>
+      </div>
+      <div id="relDestTab" class="dlg-tab"></div>
+    </details>
   </div>
 </dialog>
 
