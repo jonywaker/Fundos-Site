@@ -2,8 +2,9 @@
 import Chart from "https://cdn.jsdelivr.net/npm/chart.js@4.5.1/auto/+esm";
 import * as D from "./dados.js";
 import { COLUNAS, PERIODOS, calcularFundo, serieAcumulada, fmtData, diaDe, diaYMD, partes, lowerBound, upperBound, somarMeses } from "./calculos.js";
-import { INDICES, corIndice, nomeIndice, serieIndice, retornoVol } from "./indices.js";
+import { INDICES, corIndice, nomeIndice, serieIndice, retornoVol, nivelEm } from "./indices.js";
 import { janelaMovel, resumoJanela, retornosFundo, retornosDiarios, matrizCorrelacao } from "./analises.js";
+import { simularCarteira, estatisticas, curvaDrawdown } from "./carteira.js";
 
 // ============================== CONFIGURAÇÃO (único lugar para editar) ==============================
 const HF_REPO = "Shote/fundos-cvm";
@@ -39,6 +40,9 @@ const st = {
   minimizados: new Set(pref("minimizados", [])), travar: pref("travar", false),
   idxSel: new Set(pref("indices", ["CDI", "IBOV"])), riscoEixo: pref("riscoEixo", "ret"),
   rel: { on: false, alvo: "CDI", modo: "dif" }, todos: {}, graficos: {},
+  jmBench: { tipo: "i", v: "CDI", rot: "CDI" },
+  cart: Object.assign({ itens: [], rebal: 0, ref: { tipo: "i", v: "CDI", rot: "CDI" }, valor: 10000, ini: "", fim: "" }, pref("carteira", {})),
+  ctx: null,                                            // contexto do último cálculo exibido (período, cores, datas)
 };
 const log = (t) => { const el = $("#log"); if (el) el.textContent = t; };
 
@@ -60,9 +64,7 @@ async function iniciar() {
     $("#pFim").value = isoDe(ultimo);
     for (const k of [...st.idxSel]) if (!st.idx.niveis[k]) st.idxSel.delete(k);
     desenharChipsIndices();
-    $("#jmBench").innerHTML = [["CDI", "CDI"], ["", "Nenhum (retorno absoluto)"],
-      ...st.idx.disponiveis.filter((k) => k !== "CDI").map((k) => [k, nomeIndice(k)])]
-      .map(([v, n]) => `<option value="${v}">${esc(n)}</option>`).join("");
+    montarCombos();
     const daUrl = new URLSearchParams(location.search).get("fundos");
     if (daUrl) adicionar(daUrl.split(",").map((c) => c.replace(/\D/g, "").padStart(14, "0")));
     $("#app").classList.remove("carregando");
@@ -275,15 +277,23 @@ function calcularJM() {
   const res = st.res; if (!res) return;
   const ini = $("#jmIni").value, fim = $("#jmFim").value, meses = Math.max(1, Math.min(240, Number($("#jmMeses").value) || 12));
   if (!ini || !fim) return;
-  const p = { bench: $("#jmBench").value, meses, ini: diaDe(new Date(ini)), fim: diaDe(new Date(fim)) };
+  const b = st.jmBench;
+  let bench = b.tipo === "n" ? "" : b.v, nomeB = b.tipo === "n" ? "" : b.rot, cBench = null;
+  if (b.tipo === "f") {                                   // outro fundo como benchmark (precisa estar calculado)
+    const g = res.fundos.get(b.v);
+    if (!g) { st.jmBench = { tipo: "i", v: "CDI", rot: "CDI" }; definirCombo("cbJmBench", "CDI"); bench = "CDI"; nomeB = "CDI"; }
+    else { bench = { fundo: g }; cBench = b.v; }
+  }
+  const p = { bench, meses, ini: diaDe(new Date(ini)), fim: diaDe(new Date(fim)) };
   const porFundo = [];
   for (const c of res.sel) {
+    if (c === cBench) continue;                           // o próprio benchmark fica de fora
     const f = res.fundos.get(c); if (!f) continue;
     const linhas = janelaMovel(f, st.idx, p);
     const resumo = linhas.length ? resumoJanela(linhas) : null;
     if (resumo) porFundo.push({ c, linhas, resumo });
   }
-  res.jm = { p, porFundo, nomeB: p.bench ? nomeIndice(p.bench) : "" };
+  res.jm = { p, porFundo, nomeB };
 }
 
 // ============================== tabelas ==============================
@@ -335,7 +345,7 @@ function agruparLinhas(linhas, tab, campo, info) {
 function alternarGrupo(chave) {
   st.fechados.has(chave) ? st.fechados.delete(chave) : st.fechados.add(chave);
   salvar("gruposFechados", [...st.fechados]);
-  renderResultado();
+  renderMetricas();
 }
 
 // ---------- tabela HTML: cabeçalho fixo, 1ª(s) colunas fixas, zebra, destaque, ordenação e grupos de linhas
@@ -452,7 +462,9 @@ function tabelaLegenda(chave, itens, colsValor) {
 }
 
 // ============================== gráficos ==============================
-const corTexto = () => getComputedStyle(document.body).getPropertyValue("--txt").trim() || "#333";
+let _corTexto = null;                      // lida uma vez (ler o estilo a cada gráfico força o navegador a recalcular a página)
+const corTexto = () => (_corTexto ||= getComputedStyle(document.body).getPropertyValue("--txt").trim() || "#333");
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => { _corTexto = null; });
 const escuro = () => matchMedia("(prefers-color-scheme: dark)").matches;
 const linhaRef = { id: "linhaRef", afterDraw(ch, _a, o) {
   const ctx = ch.ctx, { left, right, top, bottom } = ch.chartArea;
@@ -460,25 +472,36 @@ const linhaRef = { id: "linhaRef", afterDraw(ch, _a, o) {
   if (o?.y != null) { const y = ch.scales.y.getPixelForValue(o.y); ctx.beginPath(); ctx.moveTo(left, y); ctx.lineTo(right, y); ctx.stroke(); }
   if (o?.x != null) { const x = ch.scales.x.getPixelForValue(o.x); ctx.beginPath(); ctx.moveTo(x, top); ctx.lineTo(x, bottom); ctx.stroke(); }
   ctx.restore(); } };
-// nomes escritos ao lado dos pontos marcados (benchmarks e fundos destacados) no risco × retorno
+// nomes escritos ao lado dos pontos marcados (benchmarks, carteira e fundos destacados) nos gráficos de risco × retorno
 const rotulos = { id: "rotulos", afterDatasetsDraw(ch) {
   const ctx = ch.ctx; ctx.save(); ctx.font = "600 11px Manrope, sans-serif"; ctx.textAlign = "center"; ctx.fillStyle = corTexto();
   ch.data.datasets.forEach((ds, i) => {
-    if (!ds.rotulo || ch.getDatasetMeta(i).hidden) return;
-    const p = ch.getDatasetMeta(i).data[0]; if (p) ctx.fillText(ds.label, p.x, p.y - 11);
+    const meta = ch.getDatasetMeta(i); if (meta.hidden) return;
+    ds.data.forEach((p, k) => { if (p.rotulo && meta.data[k]) ctx.fillText(p.nome, meta.data[k].x, meta.data[k].y - 12); });
   });
   ctx.restore(); } };
 
+// linhas no tempo. s.bench = tracejada; s.fraca = fina e clara (ativos da carteira); s.forte = grossa (carteira)
 function grafico(id, series, { fmtY = (v) => brPct(v, 1), ref = null, xMin, xMax, tituloX = fmtData } = {}) {
-  st.graficos[id]?.destroy();
-  const algum = series.some((s) => !s.bench && casa(st.destaque, s.nome));
+  const algum = series.some((s) => !s.bench && !s.forte && casa(st.destaque, s.nome));
   const datasets = series.map((s) => {
-    const ativo = !algum || s.bench || casa(st.destaque, s.nome);
-    const cor = s.cor + (ativo ? "" : "22");
+    const ativo = !algum || s.bench || s.forte || casa(st.destaque, s.nome);
+    const cor = s.cor + (!ativo ? "22" : s.fraca ? "88" : "");
     return { label: s.nome, data: s.x.map((x, i) => ({ x, y: s.y[i] })), borderColor: cor, backgroundColor: cor,
-      borderWidth: algum && ativo && !s.bench ? 3 : 1.4, borderDash: s.bench ? [6, 4] : [], pointRadius: 0,
-      pointHoverRadius: 4, order: ativo ? 0 : 1 };
+      borderWidth: s.forte ? 3.2 : s.fraca ? 1.1 : algum && ativo && !s.bench ? 3 : 1.4, borderDash: s.bench ? [6, 4] : [], pointRadius: 0,
+      pointHoverRadius: 4, order: s.forte ? -1 : ativo ? 0 : 1 };
   });
+  const ant = st.graficos[id];
+  if (ant && ant.config.type === "line" && ant.canvas === $("#" + id)) {     // já existe: só troca os dados (bem mais rápido)
+    ant.data.datasets = datasets;
+    Object.assign(ant.options.scales.x, { min: xMin, max: xMax });
+    ant.options.scales.y.ticks.callback = (v) => fmtY(v);
+    ant.options.plugins.linhaRef = { y: ref };
+    ant.options.plugins.tooltip.callbacks.title = (it) => tituloX(it[0].parsed.x);
+    ant.options.plugins.tooltip.callbacks.label = (it) => `${it.dataset.label}: ${fmtY(it.parsed.y)}`;
+    ant.update("none");
+    return;
+  }
   st.graficos[id] = new Chart($("#" + id), {
     type: "line", data: { datasets },
     options: {
@@ -495,6 +518,57 @@ function grafico(id, series, { fmtY = (v) => brPct(v, 1), ref = null, xMin, xMax
       },
     },
     plugins: [linhaRef],
+  });
+}
+
+// estrela de 4 pontas preenchida (marcador da carteira)
+function estrela(cor, tam = 28) {
+  const c = document.createElement("canvas"), r = devicePixelRatio || 1;
+  c.width = c.height = tam * r; c.style.width = c.style.height = tam + "px";
+  const g = c.getContext("2d"); g.scale(r, r);
+  const m = tam / 2, a = tam / 2 - 1, q = a * 0.2;
+  g.beginPath(); g.moveTo(m, m - a);
+  g.quadraticCurveTo(m + q, m - q, m + a, m); g.quadraticCurveTo(m + q, m + q, m, m + a);
+  g.quadraticCurveTo(m - q, m + q, m - a, m); g.quadraticCurveTo(m - q, m - q, m, m - a);
+  g.closePath(); g.fillStyle = cor; g.fill(); g.lineWidth = 1.2; g.strokeStyle = escuro() ? "#0b0f2c" : "#ffffff"; g.stroke();
+  return c;
+}
+// dispersão risco × retorno com poucos conjuntos de pontos (rápido mesmo com centenas de fundos)
+// pts: { nome, cor, x, y, tipo: "fundo" | "bench" | "carteira", forte, apagado }
+function graficoRR(id, pts, { fmtX, tituloX, refX = null }) {
+  const grupo = (tipo, estilo) => {
+    const ps = pts.filter((p) => p.tipo === tipo);
+    return { label: tipo, data: ps.map((p) => ({ x: p.x, y: p.y, nome: p.nome, rotulo: p.tipo !== "fundo" || p.forte })),
+      backgroundColor: ps.map((p) => p.cor + (p.apagado ? "33" : "")),
+      borderColor: ps.map((p) => (p.forte ? (escuro() ? "#fff" : ANIL) : tipo === "fundo" ? "#ffffff" : OURO)),
+      borderWidth: ps.map((p) => (p.forte ? 2 : 1)), pointRadius: ps.map((p) => (p.forte ? 9 : estilo.r)), pointHoverRadius: 10,
+      pointStyle: estilo.forma === "estrela" ? ps.map((p) => estrela(p.cor)) : estilo.forma, order: estilo.ordem };
+  };
+  const datasets = [grupo("fundo", { r: 6, forma: "circle", ordem: 2 }), grupo("bench", { r: 8, forma: "rectRot", ordem: 1 }),
+    grupo("carteira", { r: 12, forma: "estrela", ordem: 0 })];
+  const ant = st.graficos[id];
+  if (ant && ant.config.type === "scatter" && ant.canvas === $("#" + id)) {     // já existe: só troca os pontos
+    ant.data.datasets = datasets;
+    ant.options.scales.x.title.text = tituloX; ant.options.scales.x.ticks.callback = fmtX;
+    ant.options.plugins.linhaRef = { x: refX };
+    ant.options.plugins.tooltip.callbacks.label = (it) => `${it.raw.nome}: volatilidade ${brPct(it.parsed.y)} · ${tituloX.startsWith("Retorno") ? "retorno " + brPct(it.parsed.x) + " a.a." : "Sharpe " + br(it.parsed.x, 2)}`;
+    ant.update("none");
+    return;
+  }
+  st.graficos[id] = new Chart($("#" + id), {
+    type: "scatter",
+    data: { datasets },
+    options: {
+      animation: false, responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false }, linhaRef: { x: refX },
+        tooltip: { callbacks: { label: (it) => `${it.raw.nome}: volatilidade ${brPct(it.parsed.y)} · ${tituloX.startsWith("Retorno") ? "retorno " + brPct(it.parsed.x) + " a.a." : "Sharpe " + br(it.parsed.x, 2)}` } } },
+      scales: {
+        x: { title: { display: true, text: tituloX, color: corTexto() }, ticks: { callback: fmtX, color: corTexto() }, grid: { color: "rgba(128,128,128,.15)" } },
+        y: { min: 0, title: { display: true, text: "Volatilidade (risco, % a.a.)", color: corTexto() },
+          ticks: { callback: (v) => brPct(v, 1), color: corTexto() }, grid: { color: "rgba(128,128,128,.15)" } },
+      },
+    },
+    plugins: [linhaRef, rotulos],
   });
 }
 
@@ -521,6 +595,7 @@ function relativa(serie, bench, modo) {
 }
 const coresFundos = () => { const c = {}; (st.res?.sel || st.sel).forEach((x, i) => (c[x] = PALETA[i % PALETA.length])); return c; };
 
+// Redesenho completo (novo cálculo, troca de período ou destaque). As outras ações redesenham só a parte afetada.
 function renderResultado() {
   const res = st.res;
   aplicarMinimizados();
@@ -529,42 +604,47 @@ function renderResultado() {
   $("#barraPer").innerHTML = pers.map((p) => `<button data-per="${p}" aria-pressed="${p === st.perAtivo}">${p}</button>`).join("");
   desenharTravar();
   const dados = res.periodos[st.perAtivo];
-  const cores = coresFundos();
   $("#semDados").innerHTML = dados.semDados.length
     ? `<details><summary>⏳ ${dados.semDados.length} fundo(s) sem dados neste período · ver quais</summary>${dados.semDados.map((c) => esc(st.porCnpj.get(c)?.NOME || c)).join("; ")}</details>` : "";
   $("#vazio").hidden = true;
   renderJM();
-  if (!dados.linhas.length) { $("#resultado").hidden = true; return; }
+  if (!dados.linhas.length) { $("#resultado").hidden = true; st.ctx = null; renderCarteira(); return; }
   $("#resultado").hidden = false;
-  $("#tituloMet").textContent = `Métricas · ${st.perAtivo}`;
-  $("#agrupar").value = st.agrupar;
-  $("#tabMetricas").innerHTML = tabelaMetricas(dados);
-
-  // intervalo (slider) compartilhado pelos gráficos de datas
+  const cores = coresFundos();
   const dIni = Math.min(...dados.linhas.map((l) => l["Data Inicial"])), dFim = Math.max(...dados.linhas.map((l) => l["Data Final"]));
+  const fundosSeries = dados.linhas.map((l) => { const s = dados.series.get(l._c); return { c: l._c, nome: res.apelidos[l._c], cor: cores[l._c], x: s.d, acum: s.acum, dd: s.dd, parado: l._parado }; });
+  st.ctx = { dados, cores, dIni, dFim, fundosSeries };
+  renderMetricas();
   const z = st.zoom[st.perAtivo] || [dIni, dFim];
   st.zoom[st.perAtivo] = z;
   configurarSlider(dIni, dFim, z);
-  const [zi, zf] = z;
-  const corta = (s) => { const a = lowerBound(s.x, zi), b = upperBound(s.x, zf); return { ...s, x: s.x.slice(a, b), y: s.y.slice(a, b) }; };
+  renderAcum(); renderDd(); renderRisco(); renderCorrelacao();
+  renderCarteira();
+  avisoDesatualizado();
+}
+function renderMetricas() {
+  const c = st.ctx; if (!c) return;
+  $("#tituloMet").textContent = `Métricas · ${st.perAtivo}`;
+  $("#agrupar").value = st.agrupar;
+  $("#tabMetricas").innerHTML = tabelaMetricas(c.dados);
+}
+const cortar = (s) => { const [zi, zf] = st.zoom[st.perAtivo]; const a = lowerBound(s.x, zi), b = upperBound(s.x, zf); return { ...s, x: s.x.slice(a, b), y: s.y.slice(a, b) }; };
+const finalDe = (s) => (s.y.length ? s.y[s.y.length - 1] : null);
 
-  const fundosSeries = dados.linhas.map((l) => { const s = dados.series.get(l._c); return { c: l._c, nome: res.apelidos[l._c], cor: cores[l._c], x: s.d, acum: s.acum, dd: s.dd, parado: l._parado }; });
-
-  // rentabilidade acumulada (normal ou relativa)
-  const nomesIdx = st.idx.disponiveis.map(nomeIndice);
-  const opcAlvo = [...nomesIdx, ...fundosSeries.map((s) => s.nome)];
-  if (!opcAlvo.includes(st.rel.alvo)) st.rel.alvo = "CDI";
-  $("#alvo").innerHTML = opcAlvo.map((n) => `<option ${n === st.rel.alvo ? "selected" : ""}>${esc(n)}</option>`).join("");
+function renderAcum() {
+  const c = st.ctx; if (!c) return;
+  const [zi, zf] = st.zoom[st.perAtivo];
   $("#relOn").checked = st.rel.on;
   $("#relCtl").hidden = !st.rel.on;
   $$("#relModo button").forEach((b) => b.setAttribute("aria-pressed", b.dataset.m === st.rel.modo));
-  let seriesAcum = [...fundosSeries.map((s) => ({ nome: s.nome, c: s.c, cor: s.cor, x: s.x, y: s.acum, parado: s.parado })), ...seriesIndices(dIni, dFim)];
+  definirCombo("cbAlvo", st.rel.alvo);
+  let series = [...c.fundosSeries.map((s) => ({ nome: s.nome, c: s.c, cor: s.cor, x: s.x, y: s.acum, parado: s.parado })), ...seriesIndices(c.dIni, c.dFim)];
   let ref = null, fmtY = (v) => brPct(v, 1);
   if (st.rel.on) {
     const kAlvo = st.idx.disponiveis.find((k) => nomeIndice(k) === st.rel.alvo);
-    const bench = kAlvo ? seriesIndices(dIni, dFim, [kAlvo])[0] : seriesAcum.find((s) => s.nome === st.rel.alvo);
+    const bench = kAlvo ? seriesIndices(c.dIni, c.dFim, [kAlvo])[0] : series.find((s) => s.nome === st.rel.alvo);
     if (bench) {
-      seriesAcum = seriesAcum.filter((s) => !s.bench && s.nome !== st.rel.alvo).map((s) => relativa(s, bench, st.rel.modo));
+      series = series.filter((s) => !s.bench && s.nome !== st.rel.alvo).map((s) => relativa(s, bench, st.rel.modo));
       ref = st.rel.modo === "dif" ? 0 : 1;
       if (st.rel.modo === "pct") fmtY = (v) => brPct(v, 0);
     }
@@ -572,23 +652,23 @@ function renderResultado() {
       ? `Rentabilidade acumulada do fundo menos a do ${st.rel.alvo} (ex.: ${st.rel.alvo} + 5%).`
       : `Rentabilidade do fundo ÷ a do ${st.rel.alvo} (ex.: 150% do ${st.rel.alvo}). Início omitido enquanto o benchmark está perto de zero.`;
   } else $("#relNota").textContent = "";
-  seriesAcum = seriesAcum.map(corta);
-  grafico("gAcum", seriesAcum, { fmtY, ref, xMin: zi, xMax: zf });
-  const seriesDd = fundosSeries.map((s) => corta({ nome: s.nome, c: s.c, cor: s.cor, x: s.x, y: s.dd, parado: s.parado }));
-  grafico("gDd", seriesDd, { xMin: zi, xMax: zf });
-
-  const final = (s) => (s.y.length ? s.y[s.y.length - 1] : null);
-  $("#legAcum").innerHTML = tabelaLegenda("acum", seriesAcum.map((s) => ({ Fundo: s.nome, _c: s.c, cor: s.cor, _parado: s.parado, Final: final(s) })), ["Final"]);
-  const mdd = Object.fromEntries(dados.linhas.map((l) => [res.apelidos[l._c], l.Queda]));
-  $("#legDd").innerHTML = tabelaLegenda("dd", seriesDd.map((s) => ({ Fundo: s.nome, _c: s.c, cor: s.cor, _parado: s.parado, Final: final(s), "Máx. queda": mdd[s.nome] })), ["Final", "Máx. queda"]);
-
-  renderRisco(dados, cores, dIni, dFim);
-  renderCorrelacao(dados, cores, dIni, dFim);
-  avisoDesatualizado();
+  series = series.map(cortar);
+  grafico("gAcum", series, { fmtY, ref, xMin: zi, xMax: zf });
+  $("#legAcum").innerHTML = tabelaLegenda("acum", series.map((s) => ({ Fundo: s.nome, _c: s.c, cor: s.cor, _parado: s.parado, Final: finalDe(s) })), ["Final"]);
+}
+function renderDd() {
+  const c = st.ctx; if (!c) return;
+  const [zi, zf] = st.zoom[st.perAtivo];
+  const series = c.fundosSeries.map((s) => cortar({ nome: s.nome, c: s.c, cor: s.cor, x: s.x, y: s.dd, parado: s.parado }));
+  grafico("gDd", series, { xMin: zi, xMax: zf });
+  const mdd = Object.fromEntries(c.dados.linhas.map((l) => [st.res.apelidos[l._c], l.Queda]));
+  $("#legDd").innerHTML = tabelaLegenda("dd", series.map((s) => ({ Fundo: s.nome, _c: s.c, cor: s.cor, _parado: s.parado, Final: finalDe(s), "Máx. queda": mdd[s.nome] })), ["Final", "Máx. queda"]);
 }
 
 // ---------- risco × retorno: volatilidade no eixo Y; retorno a.a. ou Sharpe no eixo X
-function renderRisco(dados, cores, dIni, dFim) {
+function renderRisco() {
+  const ctx = st.ctx; if (!ctx) return;
+  const { dados, cores, dIni, dFim } = ctx;
   const eixo = st.riscoEixo, chaveX = eixo === "ret" ? "ret" : "sharpe";
   $$("#riscoEixo button").forEach((b) => b.setAttribute("aria-pressed", b.dataset.e === eixo));
   const pts = dados.linhas.filter((l) => typeof l.Volatilidade === "number" && typeof l["% Anualizado"] === "number")
@@ -601,70 +681,108 @@ function renderRisco(dados, cores, dIni, dFim) {
     if (rv.fim < dFim - 7) avisos.push(`${nomeIndice(k)} até ${fmtData(rv.fim)}`);
     pts.push({ nome: nomeIndice(k), cor: corIndice(k), ret: rv.ret, vol: rv.vol, sharpe, bench: true });
   }
+  ctx.riscoPts = pts;
   $("#riscoNota").textContent = `Período de ${fmtData(dIni)} a ${fmtData(dFim)} (o controle de datas dos gráficos acima não muda este quadro).` +
     (avisos.length ? ` Índices com dado só ${avisos.join(", ")} (divulgação mensal).` : "") +
     (eixo === "sharpe" ? " Sharpe = (retorno a.a. − CDI a.a.) ÷ volatilidade; inflação e taxas ficam de fora." : "");
   const algum = pts.some((p) => !p.bench && casa(st.destaque, p.nome, p.cnpj));
-  const vis = pts.filter((p) => p[chaveX] != null);
-  const fmtX = chaveX === "ret" ? (v) => brPct(v, 1) : (v) => br(v, 2);
-  st.graficos.gRisco?.destroy();
-  st.graficos.gRisco = new Chart($("#gRisco"), {
-    type: "scatter",
-    data: { datasets: vis.map((p) => {
-      const ativo = !algum || p.bench || casa(st.destaque, p.nome, p.cnpj), forte = algum && ativo && !p.bench;
-      return { label: p.nome, data: [{ x: p[chaveX], y: p.vol }], backgroundColor: p.cor + (ativo ? "" : "33"),
-        borderColor: forte ? (escuro() ? "#fff" : ANIL) : p.bench ? OURO : "#ffffff", borderWidth: forte ? 2 : 1,
-        pointStyle: p.bench ? "rectRot" : "circle", pointRadius: p.bench ? 8 : forte ? 9 : 6, pointHoverRadius: 10,
-        rotulo: p.bench || forte, order: ativo ? 0 : 1 };
-    }) },
-    options: {
-      animation: false, responsive: true, maintainAspectRatio: false,
-      plugins: { legend: { display: false }, linhaRef: { x: chaveX === "sharpe" ? 0 : null },
-        tooltip: { callbacks: { label: (it) => `${it.dataset.label}: volatilidade ${brPct(it.parsed.y)} · ${chaveX === "ret" ? "retorno " + brPct(it.parsed.x) + " a.a." : "Sharpe " + br(it.parsed.x, 2)}` } } },
-      scales: {
-        x: { title: { display: true, text: chaveX === "ret" ? "Retorno (% a.a.)" : "Sharpe (sobre o CDI)", color: corTexto() },
-          ticks: { callback: fmtX, color: corTexto() }, grid: { color: "rgba(128,128,128,.15)" } },
-        y: { min: 0, title: { display: true, text: "Volatilidade (risco, % a.a.)", color: corTexto() },
-          ticks: { callback: (v) => brPct(v, 1), color: corTexto() }, grid: { color: "rgba(128,128,128,.15)" } },
-      },
-    },
-    plugins: [linhaRef, rotulos],
-  });
-  // tabela ao lado
+  graficoRR("gRisco", pts.filter((p) => p[chaveX] != null).map((p) => {
+    const marcado = !p.bench && algum && casa(st.destaque, p.nome, p.cnpj);
+    return { nome: p.nome, cor: p.cor, x: p[chaveX], y: p.vol, tipo: p.bench ? "bench" : "fundo", forte: marcado, apagado: algum && !p.bench && !marcado };
+  }), { fmtX: chaveX === "ret" ? (v) => brPct(v, 1) : (v) => br(v, 2), tituloX: chaveX === "ret" ? "Retorno (% a.a.)" : "Sharpe (sobre o CDI)",
+    refX: chaveX === "sharpe" ? 0 : null });
+  renderTabRisco();
+}
+function renderTabRisco() {
+  const pts = st.ctx?.riscoPts; if (!pts) return;
+  const chaveX = st.riscoEixo === "ret" ? "ret" : "sharpe";
   const colunas = [
     { chave: "nome", nome: "Fundo / índice", tipo: "txt", html: (v, l) => `<span class="sw${l.bench ? " losango" : ""}" style="background:${l.cor}"></span>${marcaParado({ _parado: l.parado })}` +
       (l.c ? `<span data-mini="${esc(l.c)}">${esc(v)}</span>` : `<i>${esc(v)}</i>`) },
     { chave: "ret", nome: "Retorno a.a.", tipo: "pct", cor: true }, { chave: "vol", nome: "Volatilidade", tipo: "pct" },
     { chave: "sharpe", nome: "Sharpe", tipo: "num2", cor: true }];
-  let linhas = st.ord.risco ? ordenar(pts, "risco", colunas)
-    : [...pts].sort((a, b) => (b[chaveX] ?? -Infinity) - (a[chaveX] ?? -Infinity));
+  const linhas = st.ord.risco ? ordenar(pts, "risco", colunas) : [...pts].sort((a, b) => (b[chaveX] ?? -Infinity) - (a[chaveX] ?? -Infinity));
   const dest = linhas.map((p) => !p.bench && casa(st.destaque, p.nome, p.cnpj));
   $("#tabRisco").innerHTML = tabelaHTML({ colunas, linhas, destacar: dest, altura: 420, ordenavel: "risco" });
 }
 
 // ---------- correlação dos retornos diários (fundos + índices de preço escolhidos)
-function renderCorrelacao(dados, cores, dIni, dFim) {
-  const itens = dados.linhas.map((l) => ({ nome: st.res.apelidos[l._c], c: l._c, cor: cores[l._c], cnpj: l.CNPJ,
-    ret: retornosFundo(st.res.fundos.get(l._c), dIni, dFim) }));
-  for (const k of st.idxSel) if (INDICES[k].tipo === "preco") itens.push({ nome: nomeIndice(k), cor: corIndice(k), bench: true, ret: retornosDiarios(st.idx, k, dIni, dFim) });
-  if (itens.length < 2) { $("#tabCorr").innerHTML = `<p class="nota">Selecione pelo menos 2 fundos.</p>`; $("#corrNota").textContent = ""; return; }
-  const m = matrizCorrelacao(itens.map((i) => i.ret)), n = itens.length;
+const LIMITE_TABELA_CORR = 60;            // acima disso a matriz vira uma imagem (uma tabela enorme trava o navegador)
+function renderCorrelacao() {
+  const ctx = st.ctx; if (!ctx) return;
+  const { dados, cores, dIni, dFim } = ctx;
+  const idxPreco = [...st.idxSel].filter((k) => INDICES[k].tipo === "preco");
+  const chave = idxPreco.join(",");
+  if (!dados._corr || dados._corr.chave !== chave) {           // a matriz só é recalculada se mudar o período ou os índices
+    const itens = dados.linhas.map((l) => ({ nome: st.res.apelidos[l._c], c: l._c, cor: cores[l._c], cnpj: l.CNPJ,
+      ret: retornosFundo(st.res.fundos.get(l._c), dIni, dFim) }));
+    for (const k of idxPreco) itens.push({ nome: nomeIndice(k), cor: corIndice(k), bench: true, ret: retornosDiarios(st.idx, k, dIni, dFim) });
+    dados._corr = { chave, itens, m: itens.length >= 2 ? matrizCorrelacao(itens.map((i) => i.ret)) : null };
+  }
+  const { itens, m } = dados._corr, n = itens.length;
+  if (n < 2) { $("#tabCorr").innerHTML = `<p class="nota">Selecione pelo menos 2 fundos.</p>`; $("#corrNota").textContent = ""; return; }
   const marc = itens.map((it) => !it.bench && casa(st.destaque, it.nome, it.cnpj));
+  const r = (i, j) => { const v = m[i * n + j]; return Number.isNaN(v) ? null : v; };
+  $("#corrNota").textContent = `Retornos diários de ${fmtData(dIni)} a ${fmtData(dFim)}, nos dias em que os dois têm dado. 1 = andam juntos; 0 = sem relação; −1 = sentidos opostos.` +
+    (n > LIMITE_TABELA_CORR ? ` ${n} séries: passe o mouse sobre o quadro para ver cada par; destaque um fundo para ver os mais e os menos correlacionados com ele.`
+      : n > 10 ? ` ${n} linhas: role dentro do quadro (os nomes das colunas ficam embaixo).` : "");
+  // fundo destacado: os 5 mais e os 5 menos correlacionados com ele
+  const alvo = marc.indexOf(true);
+  let extremos = "";
+  if (alvo >= 0) {
+    const outros = itens.map((it, j) => ({ it, v: r(alvo, j) })).filter((x, j) => j !== alvo && x.v != null).sort((a, b) => b.v - a.v);
+    const lin = (x) => `<tr><td class="t"><span class="sw${x.it.bench ? " losango" : ""}" style="background:${x.it.cor}"></span>${esc(x.it.nome)}</td><td>${br(x.v, 2)}</td></tr>`;
+    if (outros.length) extremos = `<div class="corr-ext"><div><h3 class="sub">Mais correlacionados com ${esc(itens[alvo].nome)}</h3><table class="tb">${outros.slice(0, 5).map(lin).join("")}</table></div>
+      <div><h3 class="sub">Menos correlacionados</h3><table class="tb">${outros.slice(-5).reverse().map(lin).join("")}</table></div></div>`;
+  }
+  if (n > LIMITE_TABELA_CORR) { corrCanvas(itens, r, marc, extremos); return; }
   const rot = (it, i) => `${i + 1}. ${curto(it.nome, 34)}`;
-  const cel = (r, i, j) => {
+  const cel = (v, i, j) => {
     const hc = marc[j] || marc[i] ? " hc" : "";
     if (i === j) return `<td class="c eu${hc}">1</td>`;
-    if (r == null) return `<td class="c nd${hc}" title="Menos de 20 dias em comum">n/a</td>`;
-    const a = Math.min(0.8, Math.abs(r) * 0.8), fundo = r >= 0 ? `rgba(31,90,166,${a})` : `rgba(208,38,44,${a})`;
-    return `<td class="c${hc}" style="background:${fundo};${Math.abs(r) > 0.6 ? "color:#fff" : ""}" title="${esc(itens[i].nome)} × ${esc(itens[j].nome)}: ${br(r, 2)}">${br(r, 2)}</td>`;
+    if (v == null) return `<td class="c nd${hc}" title="Menos de 20 dias em comum">n/a</td>`;
+    return `<td class="c${hc}" style="background:${corCorr(v)};${Math.abs(v) > 0.6 ? "color:#fff" : ""}" title="${esc(itens[i].nome)} × ${esc(itens[j].nome)}: ${br(v, 2)}">${br(v, 2)}</td>`;
   };
   const corpo = itens.map((it, i) => `<tr${marc[i] ? ' class="hl"' : ""}><th class="rot" title="${esc(it.nome)}"><span class="sw${it.bench ? " losango" : ""}" style="background:${it.cor}"></span>` +
-    (it.c ? `<span data-mini="${esc(it.c)}">${esc(rot(it, i))}</span>` : esc(rot(it, i))) + `</th>${m[i].map((r, j) => cel(r, i, j)).join("")}</tr>`).join("");
+    (it.c ? `<span data-mini="${esc(it.c)}">${esc(rot(it, i))}</span>` : esc(rot(it, i))) + `</th>${itens.map((_, j) => cel(r(i, j), i, j)).join("")}</tr>`).join("");
   const pe = `<tr><th class="canto"></th>${itens.map((it, j) => `<th class="col${marc[j] ? " hl" : ""}" title="${esc(it.nome)}"><span>${esc(rot(it, j))}</span></th>`).join("")}</tr>`;
-  const alturaLinha = 29, rodape = 170;
-  $("#tabCorr").innerHTML = `<div class="corr-wrap" style="max-height:${Math.min(n, 10) * alturaLinha + rodape}px"><table class="corr"><tbody>${corpo}</tbody><tfoot>${pe}</tfoot></table></div>`;
-  $("#corrNota").textContent = `Retornos diários de ${fmtData(dIni)} a ${fmtData(dFim)}, nos dias em que os dois têm dado. 1 = andam juntos; 0 = sem relação; −1 = sentidos opostos.` +
-    (n > 10 ? ` ${n} linhas: role dentro do quadro (os nomes das colunas ficam embaixo).` : "");
+  $("#tabCorr").innerHTML = `<div class="corr-wrap" style="max-height:${Math.min(n, 10) * 29 + 170}px"><table class="corr"><tbody>${corpo}</tbody><tfoot>${pe}</tfoot></table></div>` + extremos;
+}
+const corCorr = (v) => { const a = Math.min(0.8, Math.abs(v) * 0.8); return v >= 0 ? `rgba(31,90,166,${a})` : `rgba(208,38,44,${a})`; };
+
+// matriz grande: desenhada numa imagem (canvas); o par aparece ao passar o mouse
+function corrCanvas(itens, r, marc, extremos) {
+  const n = itens.length, cont = $("#tabCorr");
+  const lado = Math.max(2, Math.min(14, Math.floor(((cont.clientWidth || 1000) - 30) / n))), tam = lado * n, dpr = devicePixelRatio || 1;
+  cont.innerHTML = `<div class="corr-cv"><canvas id="cvCorr" width="${tam * dpr}" height="${tam * dpr}" style="width:${tam}px;height:${tam}px"></canvas></div>
+    <div class="corr-escala"><span>−1</span><i></i><span>+1</span><span class="nota">· dourado = o próprio fundo · cinza = menos de 20 dias em comum</span></div>` + extremos;
+  const cv = $("#cvCorr"), g = cv.getContext("2d"), W = Math.round(tam * dpr), px = W / n;
+  const img = g.createImageData(W, W), buf = img.data;
+  const pinta = (i, j, rr, gg, bb, aa) => {
+    const y0 = Math.round(i * px), y1 = Math.round((i + 1) * px), x0 = Math.round(j * px), x1 = Math.round((j + 1) * px);
+    for (let y = y0; y < y1; y++) for (let x = x0, o = (y * W + x0) * 4; x < x1; x++, o += 4) { buf[o] = rr; buf[o + 1] = gg; buf[o + 2] = bb; buf[o + 3] = aa; }
+  };
+  for (let i = 0; i < n; i++) for (let j = 0; j < n; j++) {
+    const v = i === j ? 1 : r(i, j);
+    if (i === j) pinta(i, j, 201, 162, 58, 255);
+    else if (v == null) pinta(i, j, 127, 127, 127, 64);
+    else if (v >= 0) pinta(i, j, 31, 90, 166, Math.round(255 * (0.08 + Math.min(0.92, v))));
+    else pinta(i, j, 208, 38, 44, Math.round(255 * (0.08 + Math.min(0.92, -v))));
+  }
+  g.putImageData(img, 0, 0);
+  g.scale(dpr, dpr);
+  g.strokeStyle = OURO; g.lineWidth = 2;
+  marc.forEach((mk, i) => { if (mk) { g.strokeRect(0, i * lado, tam, lado); g.strokeRect(i * lado, 0, lado, tam); } });
+  const tip = $("#corrTip");
+  cv.onmousemove = (e) => {
+    const b = cv.getBoundingClientRect(), i = Math.floor((e.clientY - b.top) / lado), j = Math.floor((e.clientX - b.left) / lado);
+    if (i < 0 || j < 0 || i >= n || j >= n) { tip.hidden = true; return; }
+    const v = i === j ? 1 : r(i, j);
+    tip.innerHTML = `<div class="mini-tit">${esc(itens[i].nome)}</div><div class="mini-tit">× ${esc(itens[j].nome)}</div>
+      <div class="mini-rod">Correlação: <b>${v == null ? "n/a" : br(v, 2)}</b></div>`;
+    tip.style.left = Math.min(e.clientX + 14, innerWidth - 270) + "px"; tip.style.top = (e.clientY + 14) + "px"; tip.hidden = false;
+  };
+  cv.onmouseleave = () => { tip.hidden = true; };
 }
 
 // ---------- janela móvel
@@ -672,7 +790,7 @@ function renderJM() {
   const jm = st.res?.jm;
   $("#secJM").hidden = !st.res;
   if (!jm) return;
-  const B = jm.nomeB || "Benchmark", cores = coresFundos();
+  const cores = coresFundos();
   const n = jm.porFundo.reduce((s, x) => s + x.linhas.length, 0);
   $("#jmCorpo").hidden = !jm.porFundo.length;
   if (!jm.porFundo.length) { $("#jmInfo").innerHTML = `<p class="nota">Nenhuma janela completa no intervalo escolhido. Aumente o intervalo ou diminua a duração.</p>`; return; }
@@ -687,8 +805,11 @@ function renderJM() {
   grafico("gJM", series, { ref: 0, xMin: prim, xMax: ult, tituloX: (x) => `Aplicação em ${fmtData(x)}` });
   $("#legJM").innerHTML = tabelaLegenda("jm", jm.porFundo.map(({ c, resumo }, i) => ({ Fundo: series[i].nome, _c: c, cor: series[i].cor,
     Final: series[i].y.length ? series[i].y[series[i].y.length - 1] : null, Mediana: resumo.med.dif })), ["Final", "Mediana"]);
-
-  // resumo por fundo
+  renderTabJM();
+}
+function renderTabJM() {
+  const jm = st.res?.jm; if (!jm || !jm.porFundo.length) return;
+  const B = curto(jm.nomeB || "Benchmark", 24);
   const linhas = jm.porFundo.map(({ c, resumo: r }) => ({ _c: c, Fundo: st.porCnpj.get(c)?.NOME || c, CNPJ: cnpjFmt(c), prim: r.primeira, ult: r.ultima,
     ...Object.fromEntries(["min", "med", "max"].flatMap((f) => Object.entries(r[f]).map(([k, v]) => [`${f}.${k}`, v]))),
     total: r.total, abaixo: r.abaixo, acima: r.acima, negativas: r.negativas, positivas: r.positivas, pAcima: r.pAcima, pPositivas: r.pPositivas }));
@@ -713,7 +834,7 @@ function baixarJM() {
   const jm = st.res?.jm; if (!jm) return;
   const B = jm.nomeB || "Benchmark", pct = (v) => (v == null ? "" : br(v * 100, 4) + "%");
   const cab = ["Fundo", "CNPJ", "Data Inicial", "Data Final", "Dias úteis (ANBIMA)", "Dias com cota na CVM", "Rentabilidade no período",
-    `${B} anualizado`, "Fundo anualizado", `Diferença para o ${B}`];
+    `${B} anualizado`, "Fundo anualizado", `Diferença para o ${B}`].map((x) => x.replace(/;/g, ","));
   const linhas = [cab.join(";")];
   for (const { c, linhas: ls } of jm.porFundo) {
     const nome = (st.porCnpj.get(c)?.NOME || c).replace(/;/g, ",");
@@ -724,6 +845,229 @@ function baixarJM() {
   a.download = `janela_movel_${jm.p.meses}m.csv`;
   a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 2000);
 }
+
+// ============================== caixa de escolha com busca (combo) ==============================
+// Usada em "Relativa a", no benchmark da janela móvel e na carteira. Digite para filtrar; ↑ ↓ Enter escolhem; Esc fecha.
+const combos = {};
+const semAcento = (s) => String(s ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+const LIMITE_COMBO = 80;
+function criarCombo(id, { opcoes, aoEscolher, placeholder = "Digite para buscar…", limpar = false }) {
+  const el = $("#" + id); if (!el) return;
+  el.innerHTML = `<input class="combo-in" type="text" autocomplete="off" spellcheck="false" placeholder="${esc(placeholder)}" aria-autocomplete="list">
+    <span class="combo-seta" aria-hidden="true">▾</span><div class="combo-lista" role="listbox" hidden></div>`;
+  combos[id] = { opcoes, aoEscolher, limpar, rot: "", vis: [], ativo: -1 };
+}
+function definirCombo(id, rot) { const cb = combos[id]; if (!cb) return; cb.rot = rot; const i = $(`#${id} .combo-in`); if (i && document.activeElement !== i) i.value = rot; }
+function abrirCombo(id, filtro) {
+  const cb = combos[id], lista = $(`#${id} .combo-lista`);
+  const q = semAcento(filtro).trim(), dig = q.replace(/\D/g, "");
+  const ok = cb.opcoes().filter((o) => !q || semAcento(o.rot).includes(q) || (dig.length >= 4 && (o.cnpj || "").includes(dig)));
+  cb.vis = ok.slice(0, LIMITE_COMBO); cb.ativo = cb.vis.length ? 0 : -1;
+  let h = "", grupo = null;
+  cb.vis.forEach((o, i) => {
+    if (o.grupo !== grupo) { h += `<div class="combo-g">${esc(o.grupo)}</div>`; grupo = o.grupo; }
+    h += `<div class="combo-op${i === 0 ? " at" : ""}${o.rot === cb.rot ? " atual" : ""}" data-i="${i}" role="option">` +
+      `${o.cor ? `<span class="sw${o.losango ? " losango" : ""}" style="background:${o.cor}"></span>` : ""}${esc(o.rot)}</div>`;
+  });
+  if (ok.length > LIMITE_COMBO) h += `<div class="combo-mais">+${ok.length - LIMITE_COMBO} itens · digite para filtrar</div>`;
+  if (!ok.length) h = `<div class="combo-mais">Nada encontrado</div>`;
+  lista.innerHTML = h; lista.hidden = false;
+}
+function fecharCombo(id) {
+  const cb = combos[id]; if (!cb) return;
+  $(`#${id} .combo-lista`).hidden = true;
+  $(`#${id} .combo-in`).value = cb.limpar ? "" : cb.rot;
+}
+function escolherCombo(id, i) {
+  const cb = combos[id], o = cb.vis[i]; if (!o) return;
+  if (!cb.limpar) cb.rot = o.rot;
+  $(`#${id} .combo-in`).blur(); fecharCombo(id);
+  cb.aoEscolher(o);
+}
+function moverCombo(id, passo) {
+  const cb = combos[id]; if (!cb.vis.length) return;
+  cb.ativo = (cb.ativo + passo + cb.vis.length) % cb.vis.length;
+  $$(`#${id} .combo-op`).forEach((e) => e.classList.toggle("at", Number(e.dataset.i) === cb.ativo));
+  $(`#${id} .combo-op[data-i="${cb.ativo}"]`)?.scrollIntoView({ block: "nearest" });
+}
+document.addEventListener("focusin", (e) => { const c = e.target.closest?.(".combo"); if (c && e.target.matches(".combo-in")) { e.target.select(); abrirCombo(c.id, ""); } });
+document.addEventListener("focusout", (e) => { const c = e.target.closest?.(".combo"); if (c && e.target.matches(".combo-in")) setTimeout(() => fecharCombo(c.id), 150); });
+document.addEventListener("input", (e) => { const c = e.target.closest?.(".combo"); if (c && e.target.matches(".combo-in")) abrirCombo(c.id, e.target.value); });
+document.addEventListener("keydown", (e) => {
+  const c = e.target.closest?.(".combo"); if (!c || !e.target.matches(".combo-in")) return;
+  if (e.key === "ArrowDown") { e.preventDefault(); moverCombo(c.id, 1); }
+  else if (e.key === "ArrowUp") { e.preventDefault(); moverCombo(c.id, -1); }
+  else if (e.key === "Enter") { e.preventDefault(); escolherCombo(c.id, combos[c.id].ativo); }
+  else if (e.key === "Escape") { e.target.blur(); }
+});
+document.addEventListener("mousedown", (e) => {
+  const op = e.target.closest?.(".combo-op"); if (!op) return;
+  e.preventDefault(); escolherCombo(op.closest(".combo").id, Number(op.dataset.i));
+});
+
+// opções comuns: índices e fundos calculados
+const opcoesIndices = () => st.idx.disponiveis.map((k) => ({ tipo: "i", v: k, rot: nomeIndice(k), grupo: "Índices", cor: corIndice(k), losango: true }));
+const opcoesFundos = (lista = st.res?.sel || []) => { const cores = coresFundos();
+  return lista.filter((c) => st.res?.fundos.get(c)).map((c) => ({ tipo: "f", v: c, rot: st.res.apelidos[c], cnpj: c, grupo: "Fundos calculados", cor: cores[c] })); };
+
+function montarCombos() {
+  criarCombo("cbAlvo", { opcoes: () => [...opcoesIndices(), ...opcoesFundos((st.ctx?.dados.linhas || []).map((l) => l._c))],
+    aoEscolher: (o) => { st.rel.alvo = o.rot; renderAcum(); } });
+  criarCombo("cbJmBench", { opcoes: () => [{ tipo: "n", v: "", rot: "Nenhum (retorno absoluto)", grupo: "Sem comparação" }, ...opcoesIndices(), ...opcoesFundos()],
+    aoEscolher: (o) => { st.jmBench = { tipo: o.tipo, v: o.v, rot: o.rot }; calcularJM(); renderJM(); } });
+  criarCombo("cbCartAdd", { limpar: true, placeholder: "Digite o nome, CNPJ ou índice…",
+    opcoes: () => { const tem = new Set(st.cart.itens.map((x) => x.tipo + x.v)); return [...opcoesFundos(), ...opcoesIndices()].filter((o) => !tem.has(o.tipo + o.v)); },
+    aoEscolher: (o) => { st.cart.itens.push({ tipo: o.tipo, v: o.v, peso: st.cart.itens.length ? 10 : 100 }); salvarCart(); renderCarteira(); } });
+  criarCombo("cbCartRef", { opcoes: () => [...opcoesIndices(), ...opcoesFundos()],
+    aoEscolher: (o) => { st.cart.ref = { tipo: o.tipo, v: o.v, rot: o.rot }; salvarCart(); calcularCarteira(); } });
+  definirCombo("cbAlvo", st.rel.alvo); definirCombo("cbJmBench", st.jmBench.rot); definirCombo("cbCartRef", st.cart.ref.rot);
+}
+
+// ============================== montagem de carteira ==============================
+const salvarCart = () => salvar("carteira", st.cart);
+const nomeItem = (it) => (it.tipo === "i" ? nomeIndice(it.v) : st.res?.apelidos[it.v] || curto(st.porCnpj.get(it.v)?.NOME || cnpjFmt(it.v)));
+const corItem = (it) => (it.tipo === "i" ? corIndice(it.v) : coresFundos()[it.v] || "#888888");
+function serieItem(it) {
+  if (it.tipo === "i") return st.idx.niveis[it.v] || null;
+  const f = st.res?.fundos.get(it.v); return f && f.d.length ? { d: f.d, L: f.q } : null;
+}
+const REBAL = { 0: "", 1: "mensal", 3: "trimestral", 6: "semestral", 12: "anual" };
+
+function renderCarteira() {
+  $("#secCart").hidden = !st.res;
+  if (!st.res) return;
+  const c = st.cart;
+  if (!c.ini || !c.fim) usarPeriodoAtivo(false);
+  $("#cartRebal").value = String(c.rebal); $("#cartValor").value = c.valor; $("#cartIni").value = c.ini; $("#cartFim").value = c.fim;
+  definirCombo("cbCartRef", c.ref.rot);
+  $("#cartItens").innerHTML = !c.itens.length ? `<p class="nota">Nenhum ativo ainda. Use "Adicionar fundo ou índice" acima ou "Adicionar todos os fundos calculados".</p>` :
+    `<div class="tb-wrap cart-lista"><table class="tb"><thead><tr><th class="t">Ativo</th><th>Peso (%)</th><th></th></tr></thead><tbody>${c.itens.map((it, i) => {
+      const ok = serieItem(it);
+      return `<tr${ok ? "" : ' class="indisp"'}><td class="t"><span class="sw${it.tipo === "i" ? " losango" : ""}" style="background:${corItem(it)}"></span>` +
+        (it.tipo === "f" && ok ? `<span data-mini="${esc(it.v)}">${esc(nomeItem(it))}</span>` : esc(nomeItem(it))) +
+        (ok ? "" : ` <small>· não calculado: selecione o fundo ao lado e clique em Calcular</small>`) + `</td>
+        <td><input class="cart-peso" data-i="${i}" type="number" min="0" step="1" value="${it.peso}" aria-label="Peso de ${esc(nomeItem(it))}"></td>
+        <td><button class="cart-rm" data-i="${i}" type="button" title="Tirar da carteira">×</button></td></tr>`; }).join("")}</tbody></table></div>`;
+  atualizarSoma();
+  calcularCarteira();
+}
+function atualizarSoma() {
+  const s = st.cart.itens.reduce((a, it) => a + (Number(it.peso) || 0), 0);
+  $("#cartSoma").innerHTML = st.cart.itens.length ? `Soma dos pesos: <b style="color:${Math.abs(s - 100) < 0.01 ? VERDE : VERMELHO}">${br(s, 1)}%</b>` +
+    (Math.abs(s - 100) < 0.01 ? "" : " (o cálculo usa os pesos proporcionais, como se somassem 100%)") : "";
+}
+function usarPeriodoAtivo(recalcular = true) {
+  const c = st.cart, ctx = st.ctx;
+  const fim = ctx ? ctx.dFim : st.res.fimComum, ini = ctx ? ctx.dIni : somarMeses(fim, -36);
+  c.ini = isoDe(ini); c.fim = isoDe(fim); salvarCart();
+  if (recalcular) renderCarteira();
+}
+
+function calcularCarteira() {
+  const c = st.cart, res = $("#cartRes");
+  const validos = c.itens.filter((it) => (Number(it.peso) || 0) > 0 && serieItem(it));
+  $("#cartGraf").hidden = true;
+  ["gCartEvol", "gCartDD", "gCartRR"].forEach((g) => { st.graficos[g]?.destroy(); delete st.graficos[g]; });
+  if (!validos.length) { res.innerHTML = c.itens.length ? `<p class="nota">Dê peso maior que zero a pelo menos um ativo calculado.</p>` : ""; return; }
+  const soma = validos.reduce((a, it) => a + Number(it.peso), 0), pesos = validos.map((it) => Number(it.peso) / soma);
+  const ini = diaDe(new Date(c.ini)), fim = diaDe(new Date(c.fim));
+  const ativos = validos.map((it) => ({ s: serieItem(it), nome: nomeItem(it) }));
+  const sim = simularCarteira(ativos, pesos, { ini, fim, rebal: Number(c.rebal) });
+  if (!sim) { res.innerHTML = `<p class="nota">Sem dias em comum suficientes para todos os ativos entre ${esc(fmtData(ini))} e ${esc(fmtData(fim))}. Tente outro período ou tire o ativo mais novo.</p>`; return; }
+  const d0 = sim.dias[0], dN = sim.dias[sim.dias.length - 1];
+  const umSo = (s, nome) => (s ? simularCarteira([{ s, nome }], [1], { ini: d0, fim: dN }) : null);
+  const simCdi = umSo(st.idx.niveis.CDI, "CDI"), cdiAnual = simCdi ? estatisticas(simCdi.dias, simCdi.valor).anual : null;
+  // índices de taxa e de inflação quase não oscilam: o Sharpe deles não tem sentido e fica de fora
+  const semSharpe = (it) => it.tipo === "i" && INDICES[it.v]?.tipo !== "preco";
+  const est = (it, dias, v) => { const e = estatisticas(dias, v, cdiAnual); if (e && semSharpe(it)) e.sharpe = null; return e; };
+  const eT = estatisticas(sim.dias, sim.valor, cdiAnual), eA = sim.porAtivo.map((v, k) => est(validos[k], sim.dias, v));
+  const simRef = umSo(serieItem(c.ref), c.ref.rot), eRef = simRef ? est(c.ref, simRef.dias, simRef.valor) : null;
+  const rebal = Number(c.rebal), simBH = rebal ? simularCarteira(ativos, pesos, { ini, fim, rebal: 0 }) : null;
+  const eBH = simBH ? estatisticas(simBH.dias, simBH.valor, cdiAnual) : null;
+  const v0 = Number(c.valor) || 0, pp = (v) => (v == null ? "–" : (v > 0 ? "+" : v < 0 ? "−" : "") + br(Math.abs(v) * 100, 2) + " p.p.");
+  const kpi = (rot, val, cor, dest) => `<div class="kpi${dest ? " dest" : ""}"><div class="l">${rot}</div><div class="v" style="${cor || ""}">${val}</div></div>`;
+  const exc = eRef && eT.anual != null && eRef.anual != null ? eT.anual - eRef.anual : null;
+  let h = `<div class="kpis">` +
+    kpi("Retorno no período", brPct(eT.total), corSinal(eT.total)) + kpi("Ao ano", brPct(eT.anual), corSinal(eT.anual)) +
+    kpi(`R$ ${br(v0, 0)} viram`, "R$ " + br(v0 * (1 + eT.total), 2), "", true) +
+    kpi(`Contra ${esc(curto(c.ref.rot, 22))} (ao ano)`, pp(exc), corSinal(exc), true) +
+    kpi("Volatilidade (ao ano)", brPct(eT.vol)) + kpi("Índice de Sharpe", eT.sharpe == null ? "–" : br(eT.sharpe, 2), corSinal(eT.sharpe)) +
+    kpi("Máxima queda", brPct(eT.mdd), corSinal(eT.mdd)) +
+    kpi("Meses positivos", eT.mesesPos == null ? "–" : `${br(eT.mesesPos * 100, 0)}% de ${eT.nMeses}`) +
+    kpi("Melhor / pior mês", `${brPct(eT.melhorMes)} / ${brPct(eT.piorMes)}`) + `</div>`;
+  // tabela por ativo, com a contribuição de cada um (a soma das contribuições é o retorno da carteira)
+  const maxC = Math.max(1e-9, ...sim.contrib.map(Math.abs));
+  const celP = (v) => `<td style="${corSinal(v)}">${brPct(v)}</td>`;
+  const linhasA = validos.map((it, k) => `<tr><td class="t"><span class="sw${it.tipo === "i" ? " losango" : ""}" style="background:${corItem(it)}"></span>${esc(nomeItem(it))}</td>
+    <td>${br(pesos[k] * 100, 1)}%</td>${celP(eA[k].total)}${celP(eA[k].anual)}<td>${brPct(eA[k].vol)}</td><td style="${corSinal(eA[k].sharpe)}">${eA[k].sharpe == null ? "–" : br(eA[k].sharpe, 2)}</td>
+    ${celP(eA[k].mdd)}<td class="contrib"><b style="${corSinal(sim.contrib[k])}">${brPct(sim.contrib[k])}</b>
+    <span class="minibar"><i class="${sim.contrib[k] >= 0 ? "up" : "down"}" style="width:${(Math.abs(sim.contrib[k]) / maxC * 50).toFixed(1)}%"></i></span></td></tr>`).join("");
+  const linhaE = (cls, rot, e, extra = "") => `<tr class="${cls}"><td class="t">${rot}</td><td>${extra}</td>${celP(e.total)}${celP(e.anual)}<td>${brPct(e.vol)}</td>
+    <td style="${corSinal(e.sharpe)}">${e.sharpe == null ? "–" : br(e.sharpe, 2)}</td>${celP(e.mdd)}<td></td></tr>`;
+  const somaC = sim.contrib.reduce((a, b) => a + b, 0);
+  h += `<div class="tb-wrap"><table class="tb cart-tab"><thead><tr><th class="t">Ativo</th><th>Peso</th><th>Retorno</th><th>Ao ano</th><th>Volatilidade</th><th>Sharpe</th>
+    <th>Máx. queda</th><th>Contribuição para o retorno</th></tr></thead><tbody>${linhasA}
+    <tr class="cart-total"><td class="t">Carteira${rebal ? ` (rebalanceamento ${REBAL[rebal]})` : " (comprar e manter)"}</td><td>100%</td>${celP(eT.total)}${celP(eT.anual)}
+      <td>${brPct(eT.vol)}</td><td style="${corSinal(eT.sharpe)}">${eT.sharpe == null ? "–" : br(eT.sharpe, 2)}</td>${celP(eT.mdd)}<td style="${corSinal(somaC)}"><b>${brPct(somaC)}</b></td></tr>` +
+    (eRef ? linhaE("cart-ref", `Referência: ${esc(c.ref.rot)}`, eRef) +
+      `<tr class="cart-ref ef"><td class="t">Carteira contra a referência</td><td></td><td style="${corSinal(eT.total - eRef.total)}">${pp(eT.total - eRef.total)}</td>
+       <td style="${corSinal(exc)}">${pp(exc)}</td><td colspan="4"></td></tr>` : "") +
+    (eBH ? linhaE("cart-ref", "Mesma carteira sem rebalancear", eBH, "100%") +
+      `<tr class="cart-ref ef"><td class="t">Efeito do rebalanceamento ${REBAL[rebal]}</td><td></td><td style="${corSinal(eT.total - eBH.total)}">${pp(eT.total - eBH.total)}</td><td colspan="5"></td></tr>` : "") +
+    `</tbody></table></div>`;
+  const avisos = [];
+  if (sim.cortadoIni) avisos.push(`começa em ${fmtData(d0)} porque algum ativo não tem dado antes disso`);
+  if (sim.cortadoFim) avisos.push(`termina em ${fmtData(dN)}, último dia com dado de ${esc(sim.limitante)}`);
+  if (simRef && simRef.dias[simRef.dias.length - 1] < dN) avisos.push(`a referência só tem dado até ${fmtData(simRef.dias[simRef.dias.length - 1])}`);
+  h += `<p class="nota">Período: ${fmtData(d0)} a ${fmtData(dN)} (${sim.dias.length} dias úteis)${avisos.length ? "; " + avisos.join("; ") : ""}.
+    Contribuição = quanto cada ativo gerou de resultado sobre o valor inicial, considerando o peso que ele tinha a cada dia; a soma é o retorno da carteira.
+    Sharpe sobre o CDI do mesmo período. Não considera impostos, taxas de saída nem prazos de resgate.</p>`;
+  res.innerHTML = h;
+
+  // gráficos
+  $("#cartGraf").hidden = false;
+  const corCart = escuro() ? "#ffffff" : "#141a4a", x = sim.dias;
+  const fracas = validos.map((it, k) => ({ nome: nomeItem(it), cor: corItem(it), x, y: Array.from(sim.porAtivo[k], (v) => v * 100), fraca: true }));
+  const refS = simRef ? [{ nome: "Referência: " + c.ref.rot, cor: corItem(c.ref), x: simRef.dias, y: Array.from(simRef.valor, (v) => v * 100), bench: true }] : [];
+  grafico("gCartEvol", [...fracas, ...refS, { nome: "Carteira", cor: corCart, x, y: Array.from(sim.valor, (v) => v * 100), forte: true }],
+    { fmtY: (v) => br(v, 1), xMin: d0, xMax: dN });
+  grafico("gCartDD", [...validos.map((it, k) => ({ nome: nomeItem(it), cor: corItem(it), x, y: curvaDrawdown(sim.porAtivo[k]), fraca: true })),
+    { nome: "Carteira", cor: corCart, x, y: curvaDrawdown(sim.valor), forte: true }], { xMin: d0, xMax: dN });
+  graficoRR("gCartRR", [...validos.map((it, k) => ({ nome: nomeItem(it), cor: corItem(it), x: eA[k].anual, y: eA[k].vol, tipo: it.tipo === "i" ? "bench" : "fundo" })),
+    ...(eRef ? [{ nome: c.ref.rot, cor: corItem(c.ref), x: eRef.anual, y: eRef.vol, tipo: "bench" }] : []),
+    { nome: "Carteira", cor: OURO, x: eT.anual, y: eT.vol, tipo: "carteira" }], { fmtX: (v) => brPct(v, 1), tituloX: "Retorno (% a.a.)" });
+}
+let tCart;
+const recalcularCarteiraDepois = () => { clearTimeout(tCart); tCart = setTimeout(calcularCarteira, 350); };
+
+document.addEventListener("input", (e) => {
+  const t = e.target;
+  if (t.matches(".cart-peso")) { st.cart.itens[Number(t.dataset.i)].peso = Math.max(0, Number(t.value) || 0); salvarCart(); atualizarSoma(); recalcularCarteiraDepois(); }
+});
+document.addEventListener("change", (e) => {
+  const t = e.target, c = st.cart;
+  if (t.id === "cartRebal") { c.rebal = Number(t.value); salvarCart(); calcularCarteira(); }
+  else if (t.id === "cartValor") { c.valor = Math.max(0, Number(t.value) || 0); salvarCart(); calcularCarteira(); }
+  else if (t.id === "cartIni" || t.id === "cartFim") { c[t.id === "cartIni" ? "ini" : "fim"] = t.value; salvarCart(); if (c.ini && c.fim) calcularCarteira(); }
+});
+document.addEventListener("click", (e) => {
+  const t = e.target, c = st.cart;
+  if (t.matches(".cart-rm")) { c.itens.splice(Number(t.dataset.i), 1); salvarCart(); renderCarteira(); }
+  else if (t.id === "cartIguais" || t.id === "cartNormalizar") {
+    const n = c.itens.length, s = c.itens.reduce((a, it) => a + (Number(it.peso) || 0), 0);
+    if (!n) return;
+    c.itens.forEach((it) => (it.peso = t.id === "cartIguais" || !s ? Math.round(10000 / n) / 100 : Math.round(Number(it.peso) / s * 10000) / 100));
+    salvarCart(); renderCarteira();
+  }
+  else if (t.id === "cartTodos") {
+    const tem = new Set(c.itens.filter((x) => x.tipo === "f").map((x) => x.v));
+    (st.res?.sel || []).forEach((x) => { if (!tem.has(x) && st.res.fundos.get(x)) c.itens.push({ tipo: "f", v: x, peso: 0 }); });
+    const n = c.itens.length; c.itens.forEach((it) => (it.peso = Math.round(10000 / n) / 100));
+    salvarCart(); renderCarteira();
+  }
+  else if (t.id === "cartLimpar") { if (c.itens.length && !confirm("Tirar todos os ativos da carteira?")) return; c.itens = []; salvarCart(); renderCarteira(); }
+  else if (t.id === "cartPeriodo") usarPeriodoAtivo(true);
+});
 
 // ---------- slider de datas (dois cursores)
 function configurarSlider(dIni, dFim, [zi, zf]) {
@@ -741,7 +1085,7 @@ function aoMoverSlider(ev) {
   if (zi > zf) { if (ev.target.id === "zIni") zi = zf; else zf = zi; }
   st.zoom[st.perAtivo] = [zi, zf];
   configurarSlider(Number($("#zIni").min), Number($("#zIni").max), [zi, zf]);
-  clearTimeout(tSlider); tSlider = setTimeout(renderResultado, 120);
+  clearTimeout(tSlider); tSlider = setTimeout(() => { renderAcum(); renderDd(); }, 120);
 }
 
 function atualizarEspaco() {
@@ -813,7 +1157,10 @@ document.addEventListener("click", (e) => {
   const guia = t.closest(".guia"), cabG = !guia && t.closest("tr.grupo");
   if (guia || cabG) { alternarGrupo(guia ? guia.dataset.guia : cabG.dataset.g); return; }
   const ord = t.closest("button.ord");
-  if (ord) { clicarOrdem(ord.dataset.ord, ord.dataset.col, ord.dataset.txt === "1"); renderResultado(); return; }
+  if (ord) {
+    const tab = ord.dataset.ord; clicarOrdem(tab, ord.dataset.col, ord.dataset.txt === "1");
+    ({ met: renderMetricas, risco: renderTabRisco, jm: renderTabJM })[tab]?.(); return;
+  }
   const min = t.closest(".btn-min");
   if (min) {
     const k = min.dataset.min; st.minimizados.has(k) ? st.minimizados.delete(k) : st.minimizados.add(k);
@@ -822,9 +1169,9 @@ document.addEventListener("click", (e) => {
   const bIdx = t.closest("#idxChips button");
   if (bIdx) {
     const k = bIdx.dataset.idx; st.idxSel.has(k) ? st.idxSel.delete(k) : st.idxSel.add(k);
-    salvar("indices", [...st.idxSel]); desenharChipsIndices(); renderResultado(); return;
+    salvar("indices", [...st.idxSel]); desenharChipsIndices(); renderAcum(); renderRisco(); renderCorrelacao(); return;
   }
-  if (t.closest("#riscoEixo button")) { st.riscoEixo = t.closest("button").dataset.e; salvar("riscoEixo", st.riscoEixo); delete st.ord.risco; renderResultado(); return; }
+  if (t.closest("#riscoEixo button")) { st.riscoEixo = t.closest("button").dataset.e; salvar("riscoEixo", st.riscoEixo); delete st.ord.risco; renderRisco(); return; }
   if (t.id === "btnTravar") { st.travar = !st.travar; salvar("travar", st.travar); desenharTravar(); return; }
   if (t.id === "btnTopo") { scrollTo({ top: 0, behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" }); return; }
   if (t.id === "abrirFontes") { $("#dlgFontes").showModal(); return; }
@@ -850,7 +1197,7 @@ document.addEventListener("click", (e) => {
   else if (t.id === "dlgCancelar") $("#seletor").close();
   else if (t.id === "calcular") calcular();
   else if (t.closest("#barraPer button")) { st.perAtivo = t.closest("button").dataset.per; renderResultado(); }
-  else if (t.closest("#relModo button")) { st.rel.modo = t.closest("button").dataset.m; renderResultado(); }
+  else if (t.closest("#relModo button")) { st.rel.modo = t.closest("button").dataset.m; renderAcum(); }
 });
 document.addEventListener("keydown", (e) => {
   if ((e.key === "Enter" || e.key === " ") && e.target.matches?.("tr.grupo")) { e.preventDefault(); alternarGrupo(e.target.dataset.g); }
@@ -868,10 +1215,9 @@ document.addEventListener("change", async (e) => {
     dlg.sel = t.checked ? [...new Set([...dlg.sel, c])] : dlg.sel.filter((x) => x !== c); renderSelDialogo();
   }
   else if (t.id === "dlgAtivos") renderSeletor();
-  else if (t.dataset.todos) { st.todos[t.dataset.todos] = t.checked; renderResultado(); }
-  else if (t.id === "agrupar") { st.agrupar = t.value; salvar("agrupar", st.agrupar); renderResultado(); }
-  else if (t.id === "relOn") { st.rel.on = t.checked; renderResultado(); }
-  else if (t.id === "alvo") { st.rel.alvo = t.value; renderResultado(); }
+  else if (t.dataset.todos) { st.todos[t.dataset.todos] = t.checked; ({ acum: renderAcum, dd: renderDd, jm: renderJM })[t.dataset.todos]?.(); }
+  else if (t.id === "agrupar") { st.agrupar = t.value; salvar("agrupar", st.agrupar); renderMetricas(); }
+  else if (t.id === "relOn") { st.rel.on = t.checked; renderAcum(); }
   else if (t.id === "guardar") { await D.definirGuardar(t.checked); atualizarEspaco(); }
   else if (t.id === "jmIni") st.jmIniAuto = false;
   else if (t.id === "jmFim") st.jmFimAuto = false;
@@ -887,7 +1233,10 @@ document.addEventListener("input", (e) => {
 });
 addEventListener("scroll", () => { $("#btnTopo").hidden = scrollY < 400; }, { passive: true });
 $("#guardar").checked = (() => { try { return JSON.parse(localStorage.getItem("fundos.guardar") ?? "true"); } catch { return true; } })();
-matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => { desenharChipsIndices(); renderResultado(); });
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => {      // troca de tema: recria os gráficos com as cores novas
+  Object.values(st.graficos).forEach((g) => g?.destroy()); st.graficos = {};
+  desenharChipsIndices(); renderResultado();
+});
 
 aplicarMinimizados();
 desenharTravar();
