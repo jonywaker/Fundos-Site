@@ -501,3 +501,16 @@ dialog.dlg-pergunta { width: min(460px, 92vw); border: 0; border-top: 3px solid 
 .rel-dados { border-style: dashed; border-color: color-mix(in srgb, var(--ouro) 60%, var(--borda)); }
 .rel-dados > .nota { margin: -2px 0 2px; }
 #relEstim:empty { display: none; }
+
+/* relatório: marcar por seção e destaque de fundos */
+.rel-g-cab { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.rel-g-cab .link { font-size: 12px; }
+.rel-dest { grid-column: 1 / -1; border: 1px solid color-mix(in srgb, var(--ouro) 60%, var(--borda)); border-radius: 10px; padding: 8px 12px;
+  background: color-mix(in srgb, var(--ouro) 6%, var(--card)); }
+.rel-dest summary { cursor: pointer; font-weight: 800; color: var(--anil); }
+@media (prefers-color-scheme: dark) { .rel-dest summary { color: var(--ouro); } }
+.rel-dest-ctl { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; margin: 6px 0; }
+.rel-dest-ctl input[type=search] { flex: 1 1 260px; }
+#relDestTab { max-height: 300px; }
+.rel-render tr.dest td { background: #ffecb3 !important; font-weight: 700; }
+.rel-grupo .tog { white-space: normal; align-items: flex-start; } .rel-grupo .tog input { margin-top: 1px; }
