@@ -13,7 +13,10 @@
 <div id="app" class="carregando">
   <header class="topo">
     <h1>Análise de Fundos</h1>
-    <div id="status">carregando…</div>
+    <div class="topo-dir">
+      <button id="abrirFontes" class="link-claro" type="button">Fontes e metodologia</button>
+      <div id="status" class="hora" aria-live="polite">carregando…</div>
+    </div>
   </header>
 
   <div class="corpo">
@@ -62,6 +65,12 @@
       </section>
 
       <section class="bloco">
+        <h3>Índices de comparação</h3>
+        <div id="idxChips" class="pilulas"></div>
+        <p class="nota">Entram nos gráficos de rentabilidade e de risco × retorno e na correlação (os de preço). Não precisa recalcular.</p>
+      </section>
+
+      <section class="bloco">
         <h3>Opções</h3>
         <label class="campo">Peso total da carteira (%) <input id="peso" type="number" value="100" min="0" step="1"></label>
         <label class="tog"><input id="guardar" type="checkbox" checked> Guardar dados neste computador</label>
@@ -87,6 +96,7 @@
           <span id="zTxt"></span>
         </div>
         <input id="destaque" type="search" placeholder="Destacar fundo…" autocomplete="off">
+        <button id="btnTravar" class="sec mini-btn" type="button"></button>
       </div>
 
       <div id="semDados"></div>
@@ -95,16 +105,19 @@
       </div>
 
       <div id="resultado" hidden>
-        <section class="cartao">
+        <section class="cartao" data-sec="met">
           <div class="cab">
             <h2 id="tituloMet">Métricas</h2>
-            <label class="ordem">Ordenar por <select id="ordem"></select></label>
-            <label class="tog"><input id="ordemDesc" type="checkbox" checked> maior → menor</label>
+            <label class="ordem">Agrupar por <select id="agrupar">
+              <option value="">Sem agrupamento</option><option>Classificação CVM</option><option>Classificação ANBIMA</option>
+              <option>Objetivo de retorno</option><option>Gestor</option></select></label>
+            <button class="btn-min" type="button" data-min="met" title="Minimizar esta seção">−</button>
           </div>
+          <p class="nota dica">Clique no título de uma coluna para ordenar; clique de novo para inverter e uma terceira vez para voltar à ordem da seleção.</p>
           <div id="tabMetricas"></div>
         </section>
 
-        <section class="cartao">
+        <section class="cartao" data-sec="acum">
           <div class="cab">
             <h2>Rentabilidade acumulada</h2>
             <label class="tog"><input id="relOn" type="checkbox"> Relativa a…</label>
@@ -112,6 +125,7 @@
               <select id="alvo"></select>
               <span id="relModo" class="pilulas mini"><button data-m="dif">Diferença (+)</button><button data-m="pct">% do alvo</button></span>
             </span>
+            <button class="btn-min" type="button" data-min="acum" title="Minimizar esta seção">−</button>
           </div>
           <p id="relNota" class="nota"></p>
           <div class="linha2">
@@ -120,14 +134,57 @@
           </div>
         </section>
 
-        <section class="cartao">
-          <div class="cab"><h2>Drawdown (queda desde o pico)</h2></div>
+        <section class="cartao" data-sec="dd">
+          <div class="cab"><h2>Drawdown (queda desde o pico)</h2>
+            <button class="btn-min" type="button" data-min="dd" title="Minimizar esta seção">−</button></div>
           <div class="linha2">
             <div class="graf"><canvas id="gDd"></canvas></div>
             <div id="legDd" class="leg"></div>
           </div>
         </section>
+
+        <section class="cartao" data-sec="risco">
+          <div class="cab"><h2>Risco × Retorno</h2>
+            <span class="ordem">Eixo horizontal <span id="riscoEixo" class="pilulas mini"><button data-e="ret">Retorno a.a.</button><button data-e="sharpe">Sharpe</button></span></span>
+            <button class="btn-min" type="button" data-min="risco" title="Minimizar esta seção">−</button></div>
+          <p id="riscoNota" class="nota"></p>
+          <div class="linha2">
+            <div class="graf"><canvas id="gRisco"></canvas></div>
+            <div id="tabRisco" class="leg"></div>
+          </div>
+        </section>
+
+        <section class="cartao" data-sec="corr">
+          <div class="cab"><h2>Correlação (retornos diários)</h2>
+            <button class="btn-min" type="button" data-min="corr" title="Minimizar esta seção">−</button></div>
+          <p id="corrNota" class="nota"></p>
+          <div id="tabCorr"></div>
+        </section>
       </div>
+
+      <section id="secJM" class="cartao" data-sec="jm" hidden>
+        <div class="cab"><h2>Janela móvel</h2>
+          <button class="btn-min" type="button" data-min="jm" title="Minimizar esta seção">−</button></div>
+        <p class="nota">Simula aplicações de prazo fixo começando em cada dia: quanto o fundo rendeu ao ano ficando o prazo inteiro investido,
+          comparado ao benchmark no mesmo prazo. Ajuste abaixo e clique em Atualizar (não precisa baixar nada de novo).</p>
+        <div class="jm-ctl">
+          <label>Benchmark <select id="jmBench"></select></label>
+          <label>Duração (meses) <input id="jmMeses" type="number" min="1" max="240" step="1" value="12"></label>
+          <label>Primeira aplicação a partir de <input id="jmIni" type="date"></label>
+          <label>Fim da análise <input id="jmFim" type="date"></label>
+          <button id="jmAtualizar" class="prim" type="button">↻ Atualizar</button>
+        </div>
+        <div id="jmInfo" class="jm-info"></div>
+        <div id="jmCorpo">
+          <div class="linha2">
+            <div class="graf"><canvas id="gJM"></canvas></div>
+            <div id="legJM" class="leg"></div>
+          </div>
+          <h3 class="sub">Resumo das janelas</h3>
+          <div id="tabJM"></div>
+          <p><button id="jmBaixar" class="sec" type="button">⬇ Baixar lista completa (CSV, abre no Excel)</button></p>
+        </div>
+      </section>
     </main>
   </div>
 </div>
@@ -145,6 +202,36 @@
     <div class="botoes"><button id="dlgCancelar" class="sec">Cancelar</button><button id="dlgAdd" class="prim" disabled>Adicionar</button></div>
   </div>
 </dialog>
+
+<dialog id="dlgFontes" class="dlg-texto" aria-labelledby="fontesTit">
+  <div class="dlg-cab"><h2 id="fontesTit">Fontes e metodologia</h2><button class="sec" type="button" data-fechar>Fechar</button></div>
+  <div class="texto">
+    <h3>De onde vêm os dados</h3>
+    <table class="tb"><thead><tr><th class="t">Dado</th><th class="t">Fonte</th><th class="t">Atualização</th></tr></thead><tbody>
+      <tr><td class="t">Cotas, PL, captação e cotistas</td><td class="t">CVM — Informe Diário dos fundos (dados abertos)</td><td class="t">Todo dia às 20h07; a CVM recebe os informes com alguns dias de atraso</td></tr>
+      <tr><td class="t">Nome, classificação, gestor, situação</td><td class="t">CVM — cadastro de fundos e classes</td><td class="t">Diária</td></tr>
+      <tr><td class="t">CDI e Selic</td><td class="t">Banco Central (SGS 4389 e 1178), % a.a. base 252</td><td class="t">Dia útil seguinte</td></tr>
+      <tr><td class="t">IPCA e IGP-M</td><td class="t">Banco Central (SGS 433 e 189), variação mensal</td><td class="t">IPCA cerca de 10 dias após o fim do mês; IGP-M no fim do próprio mês</td></tr>
+      <tr><td class="t">Dólar</td><td class="t">Banco Central (SGS 1), PTAX venda</td><td class="t">Fim da tarde de cada dia útil</td></tr>
+      <tr><td class="t">Ibovespa e S&amp;P 500</td><td class="t">Yahoo Finance (^BVSP e ^GSPC, fechamento, sem dividendos no S&amp;P)</td><td class="t">Diária</td></tr>
+    </tbody></table>
+    <h3>Regras dos cálculos</h3>
+    <ul>
+      <li><b>Mesma regra do macro em VBA</b>: o CDI de cada dia é o do dia útil anterior; na primeira cota do fundo, variação e quota anterior são zero; o fator do CDI é arredondado em 8 casas nas métricas por período.</li>
+      <li><b>Períodos de N meses</b> terminam na cota mais recente entre os fundos selecionados e começam N meses antes, para todos. Fundos que pararam antes (cancelados, em liquidação ou sem envio) aparecem com <span class="parado">⊘</span> e vão até a própria última cota.</li>
+      <li><b>Anualização</b>: 252 dias úteis. Nas métricas usa as linhas com cota; na janela móvel e nos índices, os dias úteis do calendário ANBIMA (feriados nacionais, com 20/11 a partir de 2024).</li>
+      <li><b>Volatilidade</b>: desvio-padrão dos retornos logarítmicos diários × √252. <b>Sharpe</b>: (retorno anualizado − CDI anualizado) ÷ volatilidade.</li>
+      <li><b>IPCA e IGP-M</b> são mensais: no gráfico, a variação de cada mês é distribuída pelos dias úteis do mês. O último mês aparece só depois de divulgado.</li>
+      <li><b>S&amp;P 500 (R$)</b> = S&amp;P 500 em dólar × PTAX do mesmo dia.</li>
+      <li><b>Correlação</b>: retornos diários nos dias em que os dois têm dado (mínimo de 20 dias), dentro do período escolhido.</li>
+      <li><b>Janela móvel</b>: para cada dia de aplicação, o fim é o primeiro dia com cota a partir de N meses depois (uma data que não existe no mês "transborda", como no VBA: 31/05 − 3 meses = 03/03). Mediana com número par de janelas = média das duas do meio.</li>
+    </ul>
+    <p class="nota">Conteúdo informativo, não é recomendação de investimento. Rentabilidade passada não garante rentabilidade futura.</p>
+  </div>
+</dialog>
+
+<div id="mini" class="minigraf" role="tooltip" hidden></div>
+<button id="btnTopo" class="btn-topo" type="button" aria-label="Voltar ao topo" title="Voltar ao topo" hidden>↑</button>
 
 <script>
   // mostra erros de carregamento mesmo que o módulo não rode
