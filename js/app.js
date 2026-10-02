@@ -170,7 +170,7 @@ async function calcular() {
     $("#progTxt").textContent = "baixando cotas…";
     const fundos = await D.carregarFundos(sel, st.idx.cdiAnterior, (feitos, total) => {
       barra.firstElementChild.style.width = `${5 + 75 * feitos / total}%`;
-      $("#progTxt").textContent = `baixando cotas · ${feitos}/${total} arquivo(s)`;
+      $("#progTxt").textContent = `baixando cotas · ${feitos}/${total} fundo(s)`;
     });
     $("#progTxt").textContent = "calculando…";
     await new Promise((r) => setTimeout(r, 0));
