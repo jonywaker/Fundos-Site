@@ -49,13 +49,20 @@
 </main>
 <div class="log" id="log" style="padding:0 24px 24px"></div>
 
+<script>
+  // fora do módulo: mostra também erros de carregamento (config.js, DuckDB, etc.)
+  const _log = (t) => { document.getElementById("log").textContent += t + "\n"; };
+  window.addEventListener("error", (e) => _log("ERRO: " + (e.message || e.target?.src || "falha ao carregar recurso")), true);
+  window.addEventListener("unhandledrejection", (e) => {
+    _log("ERRO: " + (e.reason?.message || e.reason));
+    document.getElementById("status").textContent = "erro ao carregar (veja abaixo)";
+  });
+  setTimeout(() => { if (!document.getElementById("log").textContent)
+    _log("Ainda carregando após 20 s… se não sair disso, abra o Console (F12) e me mande as mensagens em vermelho."); }, 20000);
+</script>
 <script type="module">
 import { DADOS_URL, DUCKDB_URL } from "./config.js";
-window.addEventListener("error", (e) => { document.getElementById("log").textContent += "ERRO: " + e.message + "\n"; });
-window.addEventListener("unhandledrejection", (e) => {
-  document.getElementById("log").textContent += "ERRO: " + (e.reason?.message || e.reason) + "\n";
-  document.getElementById("status").textContent = "erro ao carregar (veja abaixo)";
-});
+document.getElementById("status").textContent = "carregando o DuckDB…";
 const duckdb = await import(DUCKDB_URL);
 
 const $ = (id) => document.getElementById(id);
@@ -95,7 +102,10 @@ async function fonte(caminho) {
 }
 
 // ---- metadados e lista de fundos
-const meta = await (await fetch(DADOS_URL + "meta.json")).json();
+$("status").textContent = "lendo os dados…";
+const rMeta = await fetch(DADOS_URL + "meta.json");
+if (!rMeta.ok) throw new Error(`meta.json não encontrado (HTTP ${rMeta.status}) em ${DADOS_URL} — confira o HF_REPO no config.js e se o envio ao Hugging Face terminou`);
+const meta = await rMeta.json();
 $("status").innerHTML = `dados da CVM até <b>${brData(meta.ultimo_dado)}</b><br>gerado em ${meta.gerado_em.replace("T", " ")}`;
 const t1 = performance.now();
 await conn.query(`CREATE TABLE fundos AS SELECT * FROM ${await fonte("fundos.parquet")}`);
