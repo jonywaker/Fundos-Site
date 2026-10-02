@@ -108,9 +108,9 @@
         <section class="cartao" data-sec="met">
           <div class="cab">
             <h2 id="tituloMet">Métricas</h2>
-            <label class="ordem">Agrupar por <select id="agrupar">
+            <div class="opcoes"><label class="ordem">Agrupar por <select id="agrupar">
               <option value="">Sem agrupamento</option><option>Classificação CVM</option><option>Classificação ANBIMA</option>
-              <option>Objetivo de retorno</option><option>Gestor</option></select></label>
+              <option>Objetivo de retorno</option><option>Gestor</option></select></label></div>
             <button class="btn-min" type="button" data-min="met" title="Minimizar esta seção">−</button>
           </div>
           <p class="nota dica">Clique no título de uma coluna para ordenar; clique de novo para inverter e uma terceira vez para voltar à ordem da seleção.</p>
@@ -120,11 +120,13 @@
         <section class="cartao" data-sec="acum">
           <div class="cab">
             <h2>Rentabilidade acumulada</h2>
-            <label class="tog"><input id="relOn" type="checkbox"> Relativa a…</label>
-            <span id="relCtl" hidden>
-              <select id="alvo"></select>
-              <span id="relModo" class="pilulas mini"><button data-m="dif">Diferença (+)</button><button data-m="pct">% do alvo</button></span>
-            </span>
+            <div class="opcoes">
+              <label class="tog"><input id="relOn" type="checkbox"> Relativa a…</label>
+              <span id="relCtl" hidden>
+                <div id="cbAlvo" class="combo"></div>
+                <span id="relModo" class="pilulas mini"><button data-m="dif">Diferença (+)</button><button data-m="pct">% do alvo</button></span>
+              </span>
+            </div>
             <button class="btn-min" type="button" data-min="acum" title="Minimizar esta seção">−</button>
           </div>
           <p id="relNota" class="nota"></p>
@@ -145,7 +147,7 @@
 
         <section class="cartao" data-sec="risco">
           <div class="cab"><h2>Risco × Retorno</h2>
-            <span class="ordem">Eixo horizontal <span id="riscoEixo" class="pilulas mini"><button data-e="ret">Retorno a.a.</button><button data-e="sharpe">Sharpe</button></span></span>
+            <div class="opcoes"><span class="ordem">Eixo horizontal <span id="riscoEixo" class="pilulas mini"><button data-e="ret">Retorno a.a.</button><button data-e="sharpe">Sharpe</button></span></span></div>
             <button class="btn-min" type="button" data-min="risco" title="Minimizar esta seção">−</button></div>
           <p id="riscoNota" class="nota"></p>
           <div class="linha2">
@@ -167,8 +169,8 @@
           <button class="btn-min" type="button" data-min="jm" title="Minimizar esta seção">−</button></div>
         <p class="nota">Simula aplicações de prazo fixo começando em cada dia: quanto o fundo rendeu ao ano ficando o prazo inteiro investido,
           comparado ao benchmark no mesmo prazo. Ajuste abaixo e clique em Atualizar (não precisa baixar nada de novo).</p>
-        <div class="jm-ctl">
-          <label>Benchmark <select id="jmBench"></select></label>
+        <div class="jm-ctl opcoes">
+          <label>Benchmark (índice ou fundo) <div id="cbJmBench" class="combo"></div></label>
           <label>Duração (meses) <input id="jmMeses" type="number" min="1" max="240" step="1" value="12"></label>
           <label>Primeira aplicação a partir de <input id="jmIni" type="date"></label>
           <label>Fim da análise <input id="jmFim" type="date"></label>
@@ -183,6 +185,41 @@
           <h3 class="sub">Resumo das janelas</h3>
           <div id="tabJM"></div>
           <p><button id="jmBaixar" class="sec" type="button">⬇ Baixar lista completa (CSV, abre no Excel)</button></p>
+        </div>
+      </section>
+
+      <section id="secCart" class="cartao" data-sec="cart" hidden>
+        <div class="cab"><h2>Montagem de carteira</h2>
+          <button class="btn-min" type="button" data-min="cart" title="Minimizar esta seção">−</button></div>
+        <p class="nota">Dê um peso a cada fundo (ou índice) e veja o desempenho da carteira, com rebalanceamento e a contribuição de cada ativo.
+          Usa os fundos já calculados; para incluir outro, selecione-o ao lado e clique em Calcular. A carteira fica guardada neste navegador.</p>
+        <div class="jm-ctl opcoes">
+          <label class="largo">Adicionar fundo ou índice <div id="cbCartAdd" class="combo"></div></label>
+          <label>Referência <div id="cbCartRef" class="combo"></div></label>
+          <label>Rebalanceamento <select id="cartRebal">
+            <option value="0">Nunca (comprar e manter)</option><option value="1">Mensal</option><option value="3">Trimestral</option>
+            <option value="6">Semestral</option><option value="12">Anual</option></select></label>
+          <label>De <input id="cartIni" type="date"></label>
+          <label>Até <input id="cartFim" type="date"></label>
+          <label>Valor inicial (R$) <input id="cartValor" type="number" min="0" step="1000"></label>
+        </div>
+        <div class="cart-acoes">
+          <button id="cartIguais" class="sec" type="button">Pesos iguais</button>
+          <button id="cartNormalizar" class="sec" type="button">Ajustar para somar 100%</button>
+          <button id="cartTodos" class="sec" type="button">Adicionar todos os fundos calculados</button>
+          <button id="cartLimpar" class="sec" type="button">Limpar carteira</button>
+          <button id="cartPeriodo" class="sec" type="button" title="Usa as datas do período escolhido na barra do topo">Usar o período ativo</button>
+          <span id="cartSoma" class="nota"></span>
+        </div>
+        <div id="cartItens"></div>
+        <div id="cartRes"></div>
+        <div id="cartGraf">
+          <div class="linha2 metades">
+            <div><h3 class="sub">Evolução (base 100)</h3><div class="graf baixo"><canvas id="gCartEvol"></canvas></div></div>
+            <div><h3 class="sub">Linha d'água (queda desde o pico)</h3><div class="graf baixo"><canvas id="gCartDD"></canvas></div></div>
+          </div>
+          <h3 class="sub">Risco × retorno dos ativos e da carteira</h3>
+          <div class="graf baixo"><canvas id="gCartRR"></canvas></div>
         </div>
       </section>
     </main>
@@ -231,6 +268,7 @@
 </dialog>
 
 <div id="mini" class="minigraf" role="tooltip" hidden></div>
+<div id="corrTip" class="minigraf corr-tip" role="tooltip" hidden></div>
 <button id="btnTopo" class="btn-topo" type="button" aria-label="Voltar ao topo" title="Voltar ao topo" hidden>↑</button>
 
 <script>
