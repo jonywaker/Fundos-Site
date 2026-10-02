@@ -166,3 +166,122 @@ dialog::backdrop { background: rgba(8, 10, 40, .55); }
 .parado { color: var(--vermelho); font-weight: 800; margin-right: 5px; cursor: help; }
 .parado-dt { color: var(--vermelho); font-weight: 700; cursor: help; }
 .nota-parado { font-size: 12px; color: var(--sub); margin: 8px 2px 0; }
+
+/* ============ etapa 3 e qualidade de vida ============ */
+/* topo: horário dos dados em destaque */
+.topo-dir { display: flex; align-items: center; gap: 14px; }
+.hora { display: grid; justify-items: end; gap: 0; padding: 5px 12px; border: 1px solid rgba(228,201,107,.7); background: rgba(10,14,50,.28);
+  border-radius: 10px; text-align: right; line-height: 1.2; }
+.hora .rot { font-size: 10px; letter-spacing: .12em; text-transform: uppercase; color: #f3e2a6; font-weight: 600; }
+.hora .dt { font-size: 19px; font-weight: 800; font-variant-numeric: tabular-nums; }
+.hora .rel { font-size: 11px; opacity: .85; }
+.link-claro { background: none; border: 0; color: #f3e2a6; font-size: 12px; font-weight: 700; cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
+.link-claro:hover { color: #fff; }
+
+/* barra de período: travar no topo */
+.mini-btn { padding: 4px 10px; font-size: 12px; font-weight: 600; white-space: nowrap; }
+.barra.solta { position: static; }
+
+/* minimizar seções */
+.btn-min { width: 24px; height: 24px; display: inline-grid; place-items: center; padding: 0; border: 1px solid var(--borda); border-radius: 6px;
+  background: var(--card); color: var(--sub); font: 700 15px/1 Manrope, sans-serif; cursor: pointer; }
+.btn-min:hover { border-color: var(--ouro); color: var(--txt); }
+.cartao.min > :not(.cab) { display: none !important; }
+.cartao.min .cab { margin-bottom: 0; }
+.cartao.min h2 { opacity: .75; }
+.dica { margin: -2px 0 8px; }
+h3.sub { font-size: 13.5px; color: var(--anil); margin: 16px 0 8px; }
+@media (prefers-color-scheme: dark) { h3.sub { color: var(--ouro); } }
+
+/* ordenação pelo título da coluna */
+.tb th button.ord { background: none; border: 0; padding: 0; color: inherit; font: inherit; cursor: pointer; text-align: inherit; }
+.tb th button.ord:hover { text-decoration: underline; text-underline-offset: 3px; }
+.tb th[aria-sort] { box-shadow: inset 0 -3px 0 var(--ouro); }
+
+/* grupos de linhas recolhíveis, com linha-guia (estilo VS Code) */
+.tb tbody tr.grupo td { background: color-mix(in srgb, var(--anil) 9%, var(--card)) !important; color: var(--anil); font-weight: 700; text-align: left;
+  font-family: Cinzel, Georgia, serif; letter-spacing: .05em; cursor: pointer; border-left: 3px solid var(--ouro); }
+@media (prefers-color-scheme: dark) { .tb tbody tr.grupo td { color: var(--ouro); } }
+.tb tbody tr.grupo:hover td { filter: brightness(.97); }
+.g-rot { position: sticky; left: 10px; display: inline-block; }
+.g-rot .chev { display: inline-block; width: 14px; color: var(--ouro); font-family: Manrope, sans-serif; }
+.g-info { font-family: Manrope, sans-serif; font-weight: 500; letter-spacing: 0; color: var(--sub); font-size: 11.5px; }
+.tb tbody tr.oculta { display: none; }
+.tb tbody tr.em-grupo > td:first-child { padding-left: 20px; }
+.guia { position: absolute; left: 3px; top: 0; bottom: 0; width: 13px; cursor: pointer; z-index: 2; }
+.guia::before { content: ""; position: absolute; left: 6px; top: 0; bottom: 0; width: 1px; background: var(--borda); transition: width .12s, left .12s, background .12s; }
+tr.guia-ativa .guia::before { left: 5px; width: 3px; background: var(--ouro); border-radius: 2px; }
+.tb tbody tr.em-grupo > td:first-child:not(.fx) { position: relative; }
+@media (prefers-reduced-motion: reduce) { .guia::before { transition: none; } }
+
+/* selos de maior e menor retorno */
+.selo { display: inline-grid; place-items: center; width: 16px; height: 16px; border-radius: 4px; font-size: 9px; color: #fff; margin-right: 5px; cursor: help; vertical-align: 1px; }
+.selo.up { background: var(--verde); } .selo.down { background: var(--vermelho); }
+.tb tbody tr.top-up td.fx:first-child { box-shadow: inset 3px 0 0 var(--verde), inset -1px 0 0 var(--borda); }
+.tb tbody tr.top-down td.fx:first-child { box-shadow: inset 3px 0 0 var(--vermelho), inset -1px 0 0 var(--borda); }
+
+/* índices: chips com cor e losango dos benchmarks */
+#idxChips .sw { width: 9px; height: 9px; margin-right: 5px; }
+.sw.losango { transform: rotate(45deg) scale(.85); border-radius: 1px; }
+
+/* correlação: nomes à esquerda e embaixo (fixos ao rolar), no máximo ~10 linhas visíveis */
+.corr-wrap { overflow: auto; border: 1px solid var(--borda); border-radius: 9px; }
+table.corr { border-collapse: separate; border-spacing: 0; font-size: 12px; width: max-content; min-width: 100%; }
+table.corr td.c { min-width: 48px; height: 29px; padding: 0 6px; text-align: center; font-variant-numeric: tabular-nums; font-weight: 600;
+  border-right: 1px solid var(--card); border-bottom: 1px solid var(--card); }
+table.corr td.eu { background: var(--ouro); color: #141a4a; font-weight: 800; }
+table.corr td.nd { color: var(--sub); font-weight: 500; font-size: 11px;
+  background: repeating-linear-gradient(45deg, transparent 0 4px, rgba(127,127,127,.12) 4px 8px); }
+table.corr th.rot { position: sticky; left: 0; z-index: 2; background: var(--card); text-align: left; padding: 0 10px 0 8px; font-weight: 600;
+  white-space: nowrap; max-width: 300px; overflow: hidden; text-overflow: ellipsis; border-right: 1px solid var(--borda); }
+table.corr tfoot th { position: sticky; bottom: 0; z-index: 2; background: var(--card); border-top: 2px solid var(--ouro); vertical-align: top; }
+table.corr tfoot th.canto { left: 0; z-index: 3; }
+table.corr tfoot th.col { height: 165px; padding: 6px 0 0; font-weight: 600; }
+table.corr tfoot th.col span { display: inline-block; writing-mode: vertical-rl; transform: rotate(180deg); max-height: 155px; overflow: hidden;
+  text-overflow: ellipsis; white-space: nowrap; font-size: 11.5px; }
+table.corr tr.hl th.rot, table.corr tfoot th.hl { color: var(--ouro); }
+table.corr tr.hl td.c { box-shadow: inset 0 2px 0 var(--ouro), inset 0 -2px 0 var(--ouro); }
+table.corr td.hc { box-shadow: inset 2px 0 0 var(--ouro), inset -2px 0 0 var(--ouro); }
+table.corr tr.hl td.hc { box-shadow: inset 0 0 0 2px var(--ouro); }
+
+/* janela móvel */
+.jm-ctl { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px 14px; padding: 10px 12px; border: 1px solid var(--borda); border-radius: 10px; margin: 8px 0; }
+.jm-ctl label { display: grid; gap: 3px; font-size: 12.5px; color: var(--sub); }
+.jm-ctl input, .jm-ctl select { width: auto; min-width: 150px; }
+.jm-ctl #jmMeses { min-width: 90px; width: 90px; }
+.jm-info { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 10px; }
+.jm-info span { border: 1px solid var(--ouro); padding: 2px 9px; font-size: 12.5px; border-radius: 6px; }
+
+/* minigráfico ao passar o mouse */
+.minigraf { position: fixed; z-index: 60; width: 250px; padding: 9px 12px; border-radius: 12px; pointer-events: none; background: var(--card);
+  border: 1px solid rgba(201,162,58,.6); box-shadow: 0 12px 30px -10px rgba(20,26,74,.4); }
+.mini-tit { font-weight: 700; font-size: 12.5px; margin-bottom: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.minigraf svg { display: block; }
+.mini-rod { font-size: 11.5px; color: var(--sub); margin-top: 3px; }
+[data-mini] { cursor: help; }
+
+/* voltar ao topo */
+.btn-topo { position: fixed; right: 22px; bottom: 22px; z-index: 30; width: 44px; height: 44px; border-radius: 50%; border: 1px solid var(--ouro);
+  background: linear-gradient(160deg, var(--azul), var(--anil)); color: #fff; font-size: 20px; font-weight: 800; cursor: pointer;
+  box-shadow: 0 6px 18px rgba(20,26,74,.3); }
+.btn-topo:hover { filter: brightness(1.12); }
+
+/* janela "Fontes e metodologia" */
+dialog.dlg-texto { width: min(900px, 96vw); max-height: 90vh; border: 1px solid var(--borda); border-radius: 14px; padding: 16px 20px; background: var(--card); color: var(--txt); }
+.dlg-texto .dlg-cab { justify-content: space-between; border-bottom: 2px solid var(--ouro); padding-bottom: 8px; }
+.dlg-texto h3 { font-size: 14px; color: var(--anil); margin: 14px 0 8px; }
+@media (prefers-color-scheme: dark) { .dlg-texto h3, .dlg-texto h2 { color: var(--ouro); } }
+.dlg-texto .tb { width: 100%; }
+.dlg-texto .tb td { white-space: normal; vertical-align: top; }
+.dlg-texto li { margin: 5px 0; line-height: 1.5; }
+
+@media (max-width: 800px) {
+  .topo-dir { flex-direction: column-reverse; align-items: flex-end; gap: 4px; }
+  .hora .dt { font-size: 16px; }
+  .jm-ctl input, .jm-ctl select { min-width: 0; width: 100%; }
+  .jm-ctl label { flex: 1 1 140px; }
+}
+.cab .ordem .pilulas { display: inline-flex; flex-wrap: nowrap; }
+#tabRisco .tb td:first-child { max-width: 210px; overflow: hidden; text-overflow: ellipsis; }
+#tabRisco .tb td:nth-child(2) { max-width: none; }
+.linha2 > * { min-width: 0; }
