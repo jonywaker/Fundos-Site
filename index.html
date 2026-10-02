@@ -3,186 +3,153 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Análise de Fundos · teste de dados</title>
+<title>Análise de Fundos</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700&family=Manrope:wght@400;600;700;800&display=swap" rel="stylesheet">
-<style>
-  :root { --anil:#2b2c78; --azul:#1f5aa6; --ouro:#c9a23a; --verde:#0c8a4e; --verm:#d0262c;
-          --bg:#fff; --bg2:#f3f5fb; --txt:#1b1d3a; --borda:#d8dcef; }
-  @media (prefers-color-scheme: dark) {
-    :root { --bg:#0c1030; --bg2:#151b41; --txt:#e8eaf6; --borda:#2a3264; --verde:#34c77b; --verm:#ff6b6b; }
-  }
-  * { box-sizing: border-box; }
-  body { margin:0; font-family:Manrope, system-ui, sans-serif; background:var(--bg); color:var(--txt); }
-  header { padding:18px 24px; border-bottom:2px solid var(--ouro); display:flex; align-items:end; gap:16px; }
-  h1 { font-family:Cinzel, serif; margin:0; font-size:1.8rem; letter-spacing:.04em; }
-  .sub { color:var(--ouro); font-weight:700; letter-spacing:.12em; font-size:.72rem; text-transform:uppercase; }
-  .status { margin-left:auto; text-align:right; font-size:.8rem; opacity:.8; }
-  main { padding:18px 24px; display:grid; grid-template-columns: minmax(0,1fr) minmax(0,2fr); gap:20px; }
-  @media (max-width: 800px) { main { grid-template-columns: 1fr; } }
-  input { width:100%; padding:10px 12px; font:inherit; border:2px solid var(--ouro); background:var(--bg2); color:var(--txt); }
-  ul { list-style:none; padding:0; margin:8px 0; max-height:60vh; overflow:auto; border:1px solid var(--borda); }
-  li { padding:7px 10px; border-bottom:1px solid var(--borda); cursor:pointer; font-size:.86rem; }
-  li:nth-child(even) { background:var(--bg2); }
-  li:hover, li:focus { outline:2px solid var(--anil); }
-  li small { display:block; opacity:.7; }
-  .card { border:1px solid var(--borda); padding:14px; }
-  .kpis { display:flex; gap:10px; flex-wrap:wrap; margin:10px 0; }
-  .kpi { border:1px solid var(--ouro); padding:6px 10px; font-size:.85rem; }
-  .kpi b { display:block; font-size:1.05rem; }
-  .pos { color:var(--verde); } .neg { color:var(--verm); }
-  svg { width:100%; height:260px; background:var(--bg2); }
-  .log { font-family:ui-monospace, monospace; font-size:.75rem; opacity:.75; white-space:pre-wrap; margin-top:10px; }
-</style>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/estilo.css">
 </head>
 <body>
-<header>
-  <div><h1>Análise de Fundos</h1><div class="sub">Etapa 1 · teste de leitura dos dados no navegador</div></div>
-  <div class="status" id="status">carregando…</div>
-</header>
-<main>
-  <section>
-    <input id="busca" placeholder="Buscar fundo por nome ou CNPJ (mín. 3 caracteres)" autocomplete="off" disabled>
-    <ul id="lista"></ul>
-  </section>
-  <section class="card" id="detalhe"><p>Escolha um fundo na lista.</p></section>
-</main>
-<div class="log" id="log" style="padding:0 24px 24px"></div>
+<div id="app" class="carregando">
+  <header class="topo">
+    <h1>Análise de Fundos</h1>
+    <div id="status">carregando…</div>
+  </header>
+
+  <div class="corpo">
+    <!-- ======================= barra lateral ======================= -->
+    <aside class="lateral">
+      <section class="bloco">
+        <h3>Adicionar fundos</h3>
+        <div id="modoAdd" class="pilulas">
+          <button data-m="buscar" aria-pressed="true">Buscar</button>
+          <button data-m="colar" aria-pressed="false">Colar CNPJs</button>
+          <button data-m="lista" aria-pressed="false">Lista</button>
+        </div>
+        <div class="modo" data-m="buscar">
+          <input id="busca" type="search" placeholder="Nome, gestor ou CNPJ (mín. 3 letras)" autocomplete="off">
+          <div id="resBusca" class="resbusca"></div>
+        </div>
+        <div class="modo" data-m="colar" hidden>
+          <textarea id="colar" rows="4" placeholder="Cole CNPJs (um por linha, ou separados por vírgula)"></textarea>
+          <button id="btnColar" class="sec">Adicionar CNPJs</button>
+          <div id="avisoColar" class="nota"></div>
+        </div>
+        <div class="modo" data-m="lista" hidden>
+          <p class="nota">Tabela com detalhes (classificação, gestor, retorno, PL) para escolher vários de uma vez.</p>
+          <button id="abrirSeletor" class="sec">Abrir lista de fundos…</button>
+        </div>
+      </section>
+
+      <section class="bloco">
+        <h3><span>Selecionados (<span id="nSel">0</span>)</span><button id="limpar" class="link" hidden>limpar</button></h3>
+        <div id="selecionados" class="chips"></div>
+      </section>
+
+      <section class="bloco">
+        <h3>Períodos</h3>
+        <div id="periodos" class="pilulas">
+          <button data-p="Mês">Mês</button><button data-p="Ano">Ano</button><button data-p="3 Meses">3 Meses</button>
+          <button data-p="12 Meses">12 Meses</button><button data-p="24 Meses">24 Meses</button><button data-p="36 Meses">36 Meses</button>
+          <button data-p="Vida Toda">Vida Toda</button><button data-p="Personalizado">Personalizado</button>
+        </div>
+        <label id="campoMes" class="campo" hidden>Mês de referência <input id="refMes" type="month"></label>
+        <label id="campoAno" class="campo" hidden>Ano de referência <input id="refAno" type="number" min="2005" max="2100" step="1"></label>
+        <div id="campoPers" class="campo duas" hidden>
+          <label>De <input id="pIni" type="date"></label>
+          <label>Até <input id="pFim" type="date"></label>
+        </div>
+      </section>
+
+      <section class="bloco">
+        <h3>Opções</h3>
+        <label class="campo">Peso total da carteira (%) <input id="peso" type="number" value="100" min="0" step="1"></label>
+        <label class="tog"><input id="guardar" type="checkbox" checked> Guardar dados neste computador</label>
+        <p class="nota">Deixa as próximas consultas mais rápidas (máx. 150 MB, limpa sozinho). Espaço: <span id="espaco">–</span></p>
+      </section>
+
+      <section class="bloco acao">
+        <button id="calcular" class="prim" disabled>Calcular</button>
+        <div id="progresso" class="progresso" hidden><div></div></div>
+        <div id="progTxt" class="nota"></div>
+        <div id="avisoMudou" class="aviso" hidden>Você mudou a seleção — clique em Calcular para atualizar.</div>
+      </section>
+      <div id="log" class="nota"></div>
+    </aside>
+
+    <!-- ======================= resultado ======================= -->
+    <main class="principal">
+      <div class="barra">
+        <div id="barraPer" class="pilulas"></div>
+        <div class="slider">
+          <div class="trilho"><div id="zFaixa" class="faixa"></div>
+            <input id="zIni" type="range" aria-label="data inicial"><input id="zFim" type="range" aria-label="data final"></div>
+          <span id="zTxt"></span>
+        </div>
+        <input id="destaque" type="search" placeholder="Destacar fundo…" autocomplete="off">
+      </div>
+
+      <div id="semDados"></div>
+      <div id="vazio" class="vazio">
+        <p>Escolha os fundos e os períodos ao lado e clique em <b>Calcular</b>.</p>
+      </div>
+
+      <div id="resultado" hidden>
+        <section class="cartao">
+          <div class="cab">
+            <h2 id="tituloMet">Métricas</h2>
+            <label class="ordem">Ordenar por <select id="ordem"></select></label>
+            <label class="tog"><input id="ordemDesc" type="checkbox" checked> maior → menor</label>
+          </div>
+          <div id="tabMetricas"></div>
+        </section>
+
+        <section class="cartao">
+          <div class="cab">
+            <h2>Rentabilidade acumulada</h2>
+            <label class="tog"><input id="relOn" type="checkbox"> Relativa a…</label>
+            <span id="relCtl" hidden>
+              <select id="alvo"></select>
+              <span id="relModo" class="pilulas mini"><button data-m="dif">Diferença (+)</button><button data-m="pct">% do alvo</button></span>
+            </span>
+          </div>
+          <p id="relNota" class="nota"></p>
+          <div class="linha2">
+            <div class="graf"><canvas id="gAcum"></canvas></div>
+            <div id="legAcum" class="leg"></div>
+          </div>
+        </section>
+
+        <section class="cartao">
+          <div class="cab"><h2>Drawdown (queda desde o pico)</h2></div>
+          <div class="linha2">
+            <div class="graf"><canvas id="gDd"></canvas></div>
+            <div id="legDd" class="leg"></div>
+          </div>
+        </section>
+      </div>
+    </main>
+  </div>
+</div>
+
+<dialog id="seletor">
+  <div class="dlg-cab">
+    <h2>Selecionar fundos</h2>
+    <input id="dlgBusca" type="search" placeholder="Nome, gestor ou CNPJ…" autocomplete="off">
+    <label class="tog"><input id="dlgAtivos" type="checkbox" checked> Só fundos ativos (cota nos últimos 30 dias)</label>
+  </div>
+  <p id="dlgInfo" class="nota"></p>
+  <div id="dlgTabela" class="dlg-tab"></div>
+  <div class="dlg-pe">
+    <div><b>Marcados (<span id="dlgN">0</span>)</b><div id="dlgSel" class="chips"></div></div>
+    <div class="botoes"><button id="dlgCancelar" class="sec">Cancelar</button><button id="dlgAdd" class="prim" disabled>Adicionar</button></div>
+  </div>
+</dialog>
 
 <script>
-  // fora do módulo: mostra também erros de carregamento (config.js, DuckDB, etc.)
-  const _log = (t) => { document.getElementById("log").textContent += t + "\n"; };
-  window.addEventListener("error", (e) => _log("ERRO: " + (e.message ||
-    ("falha ao carregar " + (e.target?.src || e.target?.href || e.target?.tagName || "recurso")))), true);
-  window.addEventListener("unhandledrejection", (e) => {
-    _log("ERRO: " + (e.reason?.message || e.reason));
-    document.getElementById("status").textContent = "erro ao carregar (veja abaixo)";
-  });
-  setTimeout(() => { if (!document.getElementById("log").textContent)
-    _log("Ainda carregando após 20 s… se não sair disso, abra o Console (F12) e me mande as mensagens em vermelho."); }, 20000);
+  // mostra erros de carregamento mesmo que o módulo não rode
+  window.addEventListener("error", (e) => { const l = document.getElementById("log"); if (l) l.textContent = "ERRO: " + (e.message || "falha ao carregar " + (e.target?.src || e.target?.href || "recurso")); }, true);
 </script>
-<script type="module">
-// ===== CONFIGURAÇÃO (único lugar para editar) =====
-const HF_REPO = "Shote/fundos-cvm";                       // usuário/repositório de dados no Hugging Face
-const DADOS_URL = `https://huggingface.co/datasets/${HF_REPO}/resolve/main/`;
-const DUCKDB_URL = "https://cdn.jsdelivr.net/npm/@duckdb/duckdb-wasm@1.32.0/+esm";
-// ===================================================
-document.getElementById("status").textContent = "carregando o DuckDB…";
-const duckdb = await import(DUCKDB_URL);
-
-const $ = (id) => document.getElementById(id);
-const log = (t) => { $("log").textContent += t + "\n"; };
-const brPct = (v) => v == null ? "" : (v * 100).toLocaleString("pt-BR", {minimumFractionDigits: 2, maximumFractionDigits: 2}) + "%";
-const brNum = (v, c = 2) => v == null ? "" : Number(v).toLocaleString("pt-BR", {minimumFractionDigits: c, maximumFractionDigits: c});
-const brData = (d) => d ? new Date(d).toLocaleDateString("pt-BR", {timeZone: "UTC"}) : "";
-const cnpjFmt = (c) => c.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, "$1.$2.$3/$4-$5");
-
-// ---- DuckDB no navegador
-const t0 = performance.now();
-const bundles = duckdb.getJsDelivrBundles();
-const bundle = await duckdb.selectBundle(bundles);
-const workerUrl = URL.createObjectURL(new Blob([`importScripts("${bundle.mainWorker}");`], {type: "text/javascript"}));
-const db = new duckdb.AsyncDuckDB(new duckdb.VoidLogger(), new Worker(workerUrl));
-await db.instantiate(bundle.mainModule, bundle.pthreadWorker);
-const conn = await db.connect();
-log(`DuckDB pronto em ${Math.round(performance.now() - t0)} ms`);
-
-// lê um parquet remoto: tenta leitura parcial (só os pedaços necessários); se falhar, baixa o arquivo inteiro
-const registrados = new Set();
-async function fonte(caminho) {
-  const url = DADOS_URL + caminho;
-  try {
-    await conn.query(`SELECT 1 FROM read_parquet('${url}') LIMIT 0`);
-    return `read_parquet('${url}')`;
-  } catch (e) {
-    if (!registrados.has(caminho)) {
-      const r = await fetch(url);
-      if (!r.ok) throw new Error(`${caminho}: HTTP ${r.status}`);
-      await db.registerFileBuffer(caminho, new Uint8Array(await r.arrayBuffer()));
-      registrados.add(caminho);
-      log(`(${caminho}: leitura parcial indisponível, arquivo baixado inteiro)`);
-    }
-    return `read_parquet('${caminho}')`;
-  }
-}
-
-// ---- metadados e lista de fundos
-$("status").textContent = "lendo os dados…";
-const rMeta = await fetch(DADOS_URL + "meta.json");
-if (!rMeta.ok) throw new Error(`meta.json não encontrado (HTTP ${rMeta.status}) em ${DADOS_URL} — confira o HF_REPO no config.js e se o envio ao Hugging Face terminou`);
-const meta = await rMeta.json();
-$("status").innerHTML = `dados da CVM até <b>${brData(meta.ultimo_dado)}</b><br>gerado em ${meta.gerado_em.replace("T", " ")}`;
-const t1 = performance.now();
-const rF = await fetch(DADOS_URL + "fundos.parquet");     // 1 download só (mais rápido que leitura parcial)
-await db.registerFileBuffer("fundos.parquet", new Uint8Array(await rF.arrayBuffer()));
-await conn.query(`CREATE TABLE fundos AS SELECT * FROM read_parquet('fundos.parquet')`);
-const nF = (await conn.query("SELECT count(*) AS n FROM fundos")).toArray()[0].n;
-log(`Lista de fundos (${Number(nF).toLocaleString("pt-BR")}) carregada em ${Math.round(performance.now() - t1)} ms`);
-$("busca").disabled = false;
-$("busca").focus();
-
-// ---- busca
-let tm;
-$("busca").addEventListener("input", () => {
-  clearTimeout(tm);
-  tm = setTimeout(async () => {
-    const q = $("busca").value.trim().toUpperCase().replace(/'/g, "''");
-    if (q.length < 3) { $("lista").innerHTML = ""; return; }
-    const dig = q.replace(/\D/g, "");
-    const cond = `upper(NOME) LIKE '%${q}%'` + (dig.length >= 3 ? ` OR CNPJ LIKE '%${dig}%'` : "");
-    const r = (await conn.query(`SELECT CNPJ, NOME, CLASSIFICACAO_ANBIMA, DT_COMPTC FROM fundos WHERE ${cond}
-                                 ORDER BY VL_PATRIM_LIQ DESC NULLS LAST LIMIT 30`)).toArray();
-    $("lista").innerHTML = r.map(x => `<li tabindex="0" data-c="${x.CNPJ}">${x.NOME}
-        <small>${cnpjFmt(x.CNPJ)} · ${x.CLASSIFICACAO_ANBIMA || ""} · última cota ${brData(x.DT_COMPTC)}</small></li>`).join("");
-  }, 200);
-});
-$("lista").addEventListener("click", (e) => { const li = e.target.closest("li"); if (li) abrir(li.dataset.c); });
-$("lista").addEventListener("keydown", (e) => { if (e.key === "Enter" && e.target.dataset.c) abrir(e.target.dataset.c); });
-
-// ---- histórico de um fundo: baixa de uma vez o arquivo pequeno do grupo do CNPJ (hist + ano atual, em
-//      paralelo) e guarda na memória; abrir de novo um fundo do mesmo grupo é instantâneo
-const grupos = new Map();
-function carregarGrupo(g) {
-  if (!grupos.has(g)) {
-    grupos.set(g, Promise.all(["hist", "ano"].map(async (pasta) => {
-      const nome = `${pasta}_g${g}.parquet`;
-      const r = await fetch(`${DADOS_URL}cotas/${pasta}/g${g}.parquet`);
-      if (!r.ok) return null;                                    // grupo sem dados nessa parte
-      await db.registerFileBuffer(nome, new Uint8Array(await r.arrayBuffer()));
-      return nome;
-    })).then((nomes) => nomes.filter(Boolean)));
-  }
-  return grupos.get(g);
-}
-
-async function abrir(cnpj) {
-  const t = performance.now();
-  const g = String(parseInt(cnpj.slice(-6), 10) % meta.grupos).padStart(4, "0");
-  const nomes = await carregarGrupo(g);
-  const tDown = Math.round(performance.now() - t);
-  const sqlCotas = nomes.map(n => `SELECT * FROM read_parquet('${n}') WHERE CNPJ = '${cnpj}'`).join(" UNION ALL ");
-  const h = nomes.length ? (await conn.query(sqlCotas + " ORDER BY DT_COMPTC")).toArray() : [];
-  const ms = Math.round(performance.now() - t);
-  const f = (await conn.query(`SELECT * FROM fundos WHERE CNPJ = '${cnpj}'`)).toArray()[0];
-  if (!h.length) { $("detalhe").innerHTML = "<p>Sem cotas.</p>"; return; }
-  const q = h.map(x => x.VL_QUOTA), d = h.map(x => Number(x.DT_COMPTC));
-  const acum = q[q.length - 1] / q[0] - 1;
-  const minQ = Math.min(...q), maxQ = Math.max(...q), W = 800, H = 260;
-  const pts = q.map((v, i) => `${(i / (q.length - 1)) * W},${H - 10 - ((v - minQ) / (maxQ - minQ || 1)) * (H - 20)}`).join(" ");
-  $("detalhe").innerHTML = `
-    <h2 style="margin:0 0 4px">${f.NOME}</h2>
-    <div>${cnpjFmt(cnpj)} · ${f.CLASSIFICACAO_ANBIMA || f.CLASSIFICACAO_CVM || ""} · gestor: ${f.GESTOR || "—"}</div>
-    <div class="kpis">
-      <div class="kpi">cotas<b>${h.length.toLocaleString("pt-BR")}</b></div>
-      <div class="kpi">de / até<b>${brData(d[0])} – ${brData(d[d.length - 1])}</b></div>
-      <div class="kpi">última cota<b>${brNum(q[q.length - 1], 6)}</b></div>
-      <div class="kpi">acumulado<b class="${acum >= 0 ? "pos" : "neg"}">${brPct(acum)}</b></div>
-      <div class="kpi">12 meses<b class="${(f.RET_12M ?? 0) >= 0 ? "pos" : "neg"}">${brPct(f.RET_12M)}</b></div>
-      <div class="kpi">tempo de carga<b>${ms.toLocaleString("pt-BR")} ms</b></div>
-    </div>
-    <svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none"><polyline fill="none" stroke="#2b2c78" stroke-width="2" points="${pts}"/></svg>`;
-  log(`${cnpj}: ${h.length} cotas em ${ms} ms (download ${tDown} ms, grupo g${g})`);
-}
-</script>
+<script type="module" src="js/app.js"></script>
 </body>
 </html>
