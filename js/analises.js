@@ -5,8 +5,8 @@ import { diasUteis, nivelEm, retornosDiarios } from "./indices.js";
 /**
  * Para cada data de aplicação >= ini, o retorno de ficar `meses` meses investido no fundo.
  * fim: nenhuma janela passa desta data ("Intervalo de Análise" do macro).
- * bench: "CDI" (CDI do próprio fundo, sem arredondar, como o Acumulado CDI do Access), "" (nenhum)
- *        ou a chave de outro índice (nível do índice entre as mesmas datas).
+ * bench: "CDI" (CDI do próprio fundo, sem arredondar, como o Acumulado CDI do Access), "" (nenhum),
+ *        a chave de outro índice (nível do índice entre as mesmas datas) ou { fundo } (cota de outro fundo).
  * Devolve linhas { ini, fim, du, linhas, ret, retAA, benchAA, dif }.
  */
 export function janelaMovel(f, idx, { meses, ini, fim, bench }) {
@@ -28,6 +28,11 @@ export function janelaMovel(f, idx, { meses, ini, fim, bench }) {
     const ret = f.q[j] / f.q[i], retAA = ret ** (252 / du) - 1;
     let b = 0;
     if (bench === "CDI") b = (fc[j] / fc[i]) ** (252 / du) - 1;
+    else if (bench && bench.fundo) {                       // outro fundo como benchmark: cota dele nas mesmas datas
+      const g = bench.fundo, k0 = upperBound(g.d, f.d[i]) - 1, k1 = upperBound(g.d, f.d[j]) - 1;
+      if (k0 < 0 || g.d[g.d.length - 1] < f.d[j]) continue;
+      b = (g.q[k1] / g.q[k0]) ** (252 / du) - 1;
+    }
     else if (bench) {
       const l0 = nivelEm(idx, bench, f.d[i]), l1 = nivelEm(idx, bench, f.d[j]);
       if (!(l0 && l1 && f.d[j] <= ultimoValido(idx, bench))) continue;   // índice ainda sem dado no fim da janela (ex.: IPCA do mês)
@@ -70,22 +75,30 @@ export function retornosFundo(f, dIni, dFim) {
 }
 export { retornosDiarios };
 
-/** Correlação de Pearson entre séries de retornos (Map dia -> retorno), só nos dias em comum; mínimo de 20 dias. */
+/** Correlação de Pearson entre séries de retornos (Map dia -> retorno), só nos dias em comum; mínimo de 20 dias.
+ *  Devolve Float64Array n×n (NaN = sem dias suficientes). */
 export function matrizCorrelacao(series) {
-  const n = series.length, m = Array.from({ length: n }, () => new Array(n).fill(null));
+  const n = series.length, dias = new Set();
+  for (const s of series) for (const d of s.keys()) dias.add(d);
+  const ord = [...dias].sort((a, b) => a - b), pos = new Map(ord.map((d, i) => [d, i])), T = ord.length;
+  const M = new Float64Array(n * T).fill(NaN);
+  series.forEach((s, a) => { for (const [d, v] of s) if (Number.isFinite(v)) M[a * T + pos.get(d)] = v; });
+  const out = new Float64Array(n * n).fill(NaN);
   for (let a = 0; a < n; a++) {
-    m[a][a] = 1;
+    out[a * n + a] = 1;
+    const oa = a * T;
     for (let b = a + 1; b < n; b++) {
-      const xa = [], xb = [];
-      const [p, q] = series[a].size <= series[b].size ? [series[a], series[b]] : [series[b], series[a]];
-      for (const [dia, v] of p) { const w = q.get(dia); if (w != null && Number.isFinite(v) && Number.isFinite(w)) { xa.push(v); xb.push(w); } }
-      if (xa.length < 20) continue;
-      const ma = xa.reduce((s, v) => s + v, 0) / xa.length, mb = xb.reduce((s, v) => s + v, 0) / xb.length;
-      let sab = 0, saa = 0, sbb = 0;
-      for (let i = 0; i < xa.length; i++) { const da = xa[i] - ma, db = xb[i] - mb; sab += da * db; saa += da * da; sbb += db * db; }
-      const r = saa > 0 && sbb > 0 ? sab / Math.sqrt(saa * sbb) : null;
-      m[a][b] = m[b][a] = r;
+      const ob = b * T;
+      let k = 0, sx = 0, sy = 0, sxx = 0, syy = 0, sxy = 0;
+      for (let t = 0; t < T; t++) {
+        const x = M[oa + t], y = M[ob + t];
+        if (x === x && y === y) { k++; sx += x; sy += y; sxx += x * x; syy += y * y; sxy += x * y; }
+      }
+      if (k < 20) continue;
+      const cov = sxy - sx * sy / k, va = sxx - sx * sx / k, vb = syy - sy * sy / k;
+      const r = va > 1e-30 && vb > 1e-30 ? Math.max(-1, Math.min(1, cov / Math.sqrt(va * vb))) : NaN;
+      out[a * n + b] = out[b * n + a] = r;
     }
   }
-  return m;
+  return out;
 }
