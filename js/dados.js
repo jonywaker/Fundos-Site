@@ -139,13 +139,19 @@ function carregarGrupo(g) {
 
 // carrega vários fundos em paralelo (até 6 downloads ao mesmo tempo)
 export async function carregarFundos(cnpjs, cdiAnterior, aoAvancar) {
-  const fila = [...new Set(cnpjs.map(grupoDe))];
+  // progresso contado em fundos (não em grupos), com total fixo desde o início
+  const porGrupo = new Map();
+  for (const c of new Set(cnpjs)) { const g = grupoDe(c); porGrupo.set(g, (porGrupo.get(g) || 0) + 1); }
+  const fila = [...porGrupo.keys()];
+  const total = [...porGrupo.values()].reduce((a, b) => a + b, 0);
   let feitos = 0;
+  aoAvancar?.(0, total);
   const trabalhar = async () => {
     while (fila.length) {
       const g = fila.shift();
       await carregarGrupo(g);
-      aoAvancar?.(++feitos, feitos + fila.length);
+      feitos += porGrupo.get(g);
+      aoAvancar?.(feitos, total);
     }
   };
   await Promise.all(Array.from({ length: Math.min(6, fila.length) }, trabalhar));
