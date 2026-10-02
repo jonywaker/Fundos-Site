@@ -1,7 +1,7 @@
 // Análise de Fundos — página principal (etapas 2 e 3)
 import Chart from "https://cdn.jsdelivr.net/npm/chart.js@4.5.1/auto/+esm";
 import * as D from "./dados.js";
-import { COLUNAS, PERIODOS, calcularFundo, serieAcumulada, fmtData, diaDe, diaYMD, partes, lowerBound, upperBound, somarMeses } from "./calculos.js";
+import { COLUNAS, PERIODOS, calcularFundo, prepararFundo, serieAcumulada, fmtData, diaDe, diaYMD, partes, lowerBound, upperBound, somarMeses } from "./calculos.js";
 import { INDICES, corIndice, nomeIndice, serieIndice, retornoVol, nivelEm } from "./indices.js";
 import { janelaMovel, resumoJanela, retornosFundo, retornosDiarios, matrizCorrelacao } from "./analises.js";
 import { simularCarteira, estatisticas, curvaDrawdown } from "./carteira.js";
@@ -43,6 +43,8 @@ const st = {
   jmBench: { tipo: "i", v: "CDI", rot: "CDI" },
   cart: Object.assign({ itens: [], rebal: 0, ref: { tipo: "i", v: "CDI", rot: "CDI" }, valor: 10000, ini: "", fim: "" }, pref("carteira", {})),
   ctx: null,                                            // contexto do último cálculo exibido (período, cores, datas)
+  cartRes: null,                                        // último cálculo da carteira
+  cartUI: { rel: { on: false, alvo: "CDI", modo: "dif" }, eixo: "ret", jmBench: { tipo: "i", v: "CDI", rot: "CDI" }, jmMeses: 12, pts: null },
 };
 const log = (t) => { const el = $("#log"); if (el) el.textContent = t; };
 
@@ -218,12 +220,15 @@ async function calcular() {
   try {
     barra.firstElementChild.style.width = "5%";
     $("#progTxt").textContent = "baixando cotas…";
-    const fundos = await D.carregarFundos(sel, st.idx.cdiAnterior, (feitos, total) => {
+    abrirCarga(sel);
+    const fundos = await D.carregarFundos(sel, st.idx.cdiAnterior, (feitos, total, ev) => {
       barra.firstElementChild.style.width = `${5 + 75 * feitos / total}%`;
       $("#progTxt").textContent = `baixando cotas · ${feitos}/${total} fundo(s)`;
+      atualizarCarga(feitos, total, ev);
     });
     $("#progTxt").textContent = "calculando…";
-    await new Promise((r) => setTimeout(r, 0));
+    faseCarga("calculando as métricas…", 92);
+    await new Promise((r) => setTimeout(r, 30));
     const [ma, mm] = $("#refMes").value.split("-").map(Number);
     // data final comum: a cota mais recente entre os fundos selecionados
     let fimComum = -Infinity;
@@ -259,11 +264,15 @@ async function calcular() {
     }
     const url = new URL(location.href); url.searchParams.set("fundos", sel.join(",")); history.replaceState(null, "", url);
     barra.firstElementChild.style.width = "100%";
-    $("#progTxt").textContent = `pronto em ${br((performance.now() - t0) / 1000, 1)} s`;
+    faseCarga("montando tabelas e gráficos…", 96);
+    await new Promise((r) => setTimeout(r, 30));
     renderResultado();
+    $("#progTxt").textContent = `pronto em ${br((performance.now() - t0) / 1000, 1)} s`;
+    fecharCarga();
     atualizarEspaco();
   } catch (e) {
     $("#progTxt").textContent = "erro: " + e.message;
+    fecharCarga(e.message);
     console.error(e);
   }
 }
@@ -458,7 +467,7 @@ function tabelaLegenda(chave, itens, colsValor) {
     ...colsValor.map((c) => ({ chave: c, nome: c, tipo: "pct", cor: true }))];
   const dest = vis.map((it, i) => !seps.has(i) && casa(st.destaque, it.Fundo));
   return `<label class="tog"><input type="checkbox" data-todos="${chave}" ${todos ? "checked" : ""} ${ord.length <= 10 ? "disabled" : ""}>
-      Mostrar todos (${ord.length})</label>` + tabelaHTML({ colunas, linhas: vis, destacar: dest, separadores: seps, altura: 420 });
+      Mostrar todos (${ord.length})</label>` + tabelaHTML({ colunas, linhas: vis, fixas: 2, larguras: [34, 210], destacar: dest, separadores: seps, altura: 420 });
 }
 
 // ============================== gráficos ==============================
@@ -703,11 +712,10 @@ function renderTabRisco() {
     { chave: "sharpe", nome: "Sharpe", tipo: "num2", cor: true }];
   const linhas = st.ord.risco ? ordenar(pts, "risco", colunas) : [...pts].sort((a, b) => (b[chaveX] ?? -Infinity) - (a[chaveX] ?? -Infinity));
   const dest = linhas.map((p) => !p.bench && casa(st.destaque, p.nome, p.cnpj));
-  $("#tabRisco").innerHTML = tabelaHTML({ colunas, linhas, destacar: dest, altura: 420, ordenavel: "risco" });
+  $("#tabRisco").innerHTML = tabelaHTML({ colunas, linhas, fixas: 1, larguras: [210], destacar: dest, altura: 420, ordenavel: "risco" });
 }
 
 // ---------- correlação dos retornos diários (fundos + índices de preço escolhidos)
-const LIMITE_TABELA_CORR = 60;            // acima disso a matriz vira uma imagem (uma tabela enorme trava o navegador)
 function renderCorrelacao() {
   const ctx = st.ctx; if (!ctx) return;
   const { dados, cores, dIni, dFim } = ctx;
@@ -719,70 +727,10 @@ function renderCorrelacao() {
     for (const k of idxPreco) itens.push({ nome: nomeIndice(k), cor: corIndice(k), bench: true, ret: retornosDiarios(st.idx, k, dIni, dFim) });
     dados._corr = { chave, itens, m: itens.length >= 2 ? matrizCorrelacao(itens.map((i) => i.ret)) : null };
   }
-  const { itens, m } = dados._corr, n = itens.length;
-  if (n < 2) { $("#tabCorr").innerHTML = `<p class="nota">Selecione pelo menos 2 fundos.</p>`; $("#corrNota").textContent = ""; return; }
-  const marc = itens.map((it) => !it.bench && casa(st.destaque, it.nome, it.cnpj));
-  const r = (i, j) => { const v = m[i * n + j]; return Number.isNaN(v) ? null : v; };
-  $("#corrNota").textContent = `Retornos diários de ${fmtData(dIni)} a ${fmtData(dFim)}, nos dias em que os dois têm dado. 1 = andam juntos; 0 = sem relação; −1 = sentidos opostos.` +
-    (n > LIMITE_TABELA_CORR ? ` ${n} séries: passe o mouse sobre o quadro para ver cada par; destaque um fundo para ver os mais e os menos correlacionados com ele.`
-      : n > 10 ? ` ${n} linhas: role dentro do quadro (os nomes das colunas ficam embaixo).` : "");
-  // fundo destacado: os 5 mais e os 5 menos correlacionados com ele
-  const alvo = marc.indexOf(true);
-  let extremos = "";
-  if (alvo >= 0) {
-    const outros = itens.map((it, j) => ({ it, v: r(alvo, j) })).filter((x, j) => j !== alvo && x.v != null).sort((a, b) => b.v - a.v);
-    const lin = (x) => `<tr><td class="t"><span class="sw${x.it.bench ? " losango" : ""}" style="background:${x.it.cor}"></span>${esc(x.it.nome)}</td><td>${br(x.v, 2)}</td></tr>`;
-    if (outros.length) extremos = `<div class="corr-ext"><div><h3 class="sub">Mais correlacionados com ${esc(itens[alvo].nome)}</h3><table class="tb">${outros.slice(0, 5).map(lin).join("")}</table></div>
-      <div><h3 class="sub">Menos correlacionados</h3><table class="tb">${outros.slice(-5).reverse().map(lin).join("")}</table></div></div>`;
-  }
-  if (n > LIMITE_TABELA_CORR) { corrCanvas(itens, r, marc, extremos); return; }
-  const rot = (it, i) => `${i + 1}. ${curto(it.nome, 34)}`;
-  const cel = (v, i, j) => {
-    const hc = marc[j] || marc[i] ? " hc" : "";
-    if (i === j) return `<td class="c eu${hc}">1</td>`;
-    if (v == null) return `<td class="c nd${hc}" title="Menos de 20 dias em comum">n/a</td>`;
-    return `<td class="c${hc}" style="background:${corCorr(v)};${Math.abs(v) > 0.6 ? "color:#fff" : ""}" title="${esc(itens[i].nome)} × ${esc(itens[j].nome)}: ${br(v, 2)}">${br(v, 2)}</td>`;
-  };
-  const corpo = itens.map((it, i) => `<tr${marc[i] ? ' class="hl"' : ""}><th class="rot" title="${esc(it.nome)}"><span class="sw${it.bench ? " losango" : ""}" style="background:${it.cor}"></span>` +
-    (it.c ? `<span data-mini="${esc(it.c)}">${esc(rot(it, i))}</span>` : esc(rot(it, i))) + `</th>${itens.map((_, j) => cel(r(i, j), i, j)).join("")}</tr>`).join("");
-  const pe = `<tr><th class="canto"></th>${itens.map((it, j) => `<th class="col${marc[j] ? " hl" : ""}" title="${esc(it.nome)}"><span>${esc(rot(it, j))}</span></th>`).join("")}</tr>`;
-  $("#tabCorr").innerHTML = `<div class="corr-wrap" style="max-height:${Math.min(n, 10) * 29 + 170}px"><table class="corr"><tbody>${corpo}</tbody><tfoot>${pe}</tfoot></table></div>` + extremos;
-}
-const corCorr = (v) => { const a = Math.min(0.8, Math.abs(v) * 0.8); return v >= 0 ? `rgba(31,90,166,${a})` : `rgba(208,38,44,${a})`; };
-
-// matriz grande: desenhada numa imagem (canvas); o par aparece ao passar o mouse
-function corrCanvas(itens, r, marc, extremos) {
-  const n = itens.length, cont = $("#tabCorr");
-  const lado = Math.max(2, Math.min(14, Math.floor(((cont.clientWidth || 1000) - 30) / n))), tam = lado * n, dpr = devicePixelRatio || 1;
-  cont.innerHTML = `<div class="corr-cv"><canvas id="cvCorr" width="${tam * dpr}" height="${tam * dpr}" style="width:${tam}px;height:${tam}px"></canvas></div>
-    <div class="corr-escala"><span>−1</span><i></i><span>+1</span><span class="nota">· dourado = o próprio fundo · cinza = menos de 20 dias em comum</span></div>` + extremos;
-  const cv = $("#cvCorr"), g = cv.getContext("2d"), W = Math.round(tam * dpr), px = W / n;
-  const img = g.createImageData(W, W), buf = img.data;
-  const pinta = (i, j, rr, gg, bb, aa) => {
-    const y0 = Math.round(i * px), y1 = Math.round((i + 1) * px), x0 = Math.round(j * px), x1 = Math.round((j + 1) * px);
-    for (let y = y0; y < y1; y++) for (let x = x0, o = (y * W + x0) * 4; x < x1; x++, o += 4) { buf[o] = rr; buf[o + 1] = gg; buf[o + 2] = bb; buf[o + 3] = aa; }
-  };
-  for (let i = 0; i < n; i++) for (let j = 0; j < n; j++) {
-    const v = i === j ? 1 : r(i, j);
-    if (i === j) pinta(i, j, 201, 162, 58, 255);
-    else if (v == null) pinta(i, j, 127, 127, 127, 64);
-    else if (v >= 0) pinta(i, j, 31, 90, 166, Math.round(255 * (0.08 + Math.min(0.92, v))));
-    else pinta(i, j, 208, 38, 44, Math.round(255 * (0.08 + Math.min(0.92, -v))));
-  }
-  g.putImageData(img, 0, 0);
-  g.scale(dpr, dpr);
-  g.strokeStyle = OURO; g.lineWidth = 2;
-  marc.forEach((mk, i) => { if (mk) { g.strokeRect(0, i * lado, tam, lado); g.strokeRect(i * lado, 0, lado, tam); } });
-  const tip = $("#corrTip");
-  cv.onmousemove = (e) => {
-    const b = cv.getBoundingClientRect(), i = Math.floor((e.clientY - b.top) / lado), j = Math.floor((e.clientX - b.left) / lado);
-    if (i < 0 || j < 0 || i >= n || j >= n) { tip.hidden = true; return; }
-    const v = i === j ? 1 : r(i, j);
-    tip.innerHTML = `<div class="mini-tit">${esc(itens[i].nome)}</div><div class="mini-tit">× ${esc(itens[j].nome)}</div>
-      <div class="mini-rod">Correlação: <b>${v == null ? "n/a" : br(v, 2)}</b></div>`;
-    tip.style.left = Math.min(e.clientX + 14, innerWidth - 270) + "px"; tip.style.top = (e.clientY + 14) + "px"; tip.hidden = false;
-  };
-  cv.onmouseleave = () => { tip.hidden = true; };
+  const { itens, m } = dados._corr;
+  $("#corrNota").textContent = `Retornos diários de ${fmtData(dIni)} a ${fmtData(dFim)}, nos dias em que os dois têm dado. 1 = andam juntos; 0 = sem relação; −1 = sentidos opostos. ` +
+    `Role dentro do quadro para ver os outros fundos; os nomes ficam fixos à esquerda e embaixo. Destaque um fundo (no topo) para ir direto a ele.`;
+  renderMatrizCorr("tabCorr", "corr", itens, m);
 }
 
 // ---------- janela móvel
@@ -809,8 +757,12 @@ function renderJM() {
 }
 function renderTabJM() {
   const jm = st.res?.jm; if (!jm || !jm.porFundo.length) return;
-  const B = curto(jm.nomeB || "Benchmark", 24);
-  const linhas = jm.porFundo.map(({ c, resumo: r }) => ({ _c: c, Fundo: st.porCnpj.get(c)?.NOME || c, CNPJ: cnpjFmt(c), prim: r.primeira, ult: r.ultima,
+  $("#tabJM").innerHTML = htmlResumoJM(jm.porFundo.map(({ c, resumo }) => ({ _c: c, Fundo: st.porCnpj.get(c)?.NOME || c, CNPJ: cnpjFmt(c), resumo })), jm.nomeB, "jm");
+}
+// tabela-resumo da janela móvel. lista: [{ Fundo, CNPJ, _c?, resumo }]
+function htmlResumoJM(lista, nomeB, tab) {
+  const B = curto(nomeB || "Benchmark", 24);
+  const linhas = lista.map(({ resumo: r, ...x }) => ({ ...x, prim: r.primeira, ult: r.ultima,
     ...Object.fromEntries(["min", "med", "max"].flatMap((f) => Object.entries(r[f]).map(([k, v]) => [`${f}.${k}`, v]))),
     total: r.total, abaixo: r.abaixo, acima: r.acima, negativas: r.negativas, positivas: r.positivas, pAcima: r.pAcima, pPositivas: r.pPositivas }));
   const faixa = (f, rot, comData) => [
@@ -818,33 +770,239 @@ function renderTabJM() {
     { chave: `${f}.ret`, nome: "Rentabilidade", tipo: "pct", cor: true, g: rot }, { chave: `${f}.retAA`, nome: "Fundo a.a.", tipo: "pct", cor: true, g: rot },
     { chave: `${f}.benchAA`, nome: `${B} a.a.`, tipo: "pct", cor: true, g: rot }, { chave: `${f}.dif`, nome: "Diferença", tipo: "pct", cor: true, g: rot }];
   const colunas = [
-    { chave: "Fundo", nome: "Fundo", tipo: "txt", g: "Fundo", html: (v, l) => `<span data-mini="${esc(l._c)}">${esc(v)}</span>` }, { chave: "CNPJ", nome: "CNPJ", tipo: "txt", g: "Fundo" },
+    { chave: "Fundo", nome: "Fundo", tipo: "txt", g: "Fundo", html: (v, l) => (l._c ? `<span data-mini="${esc(l._c)}">${esc(v)}</span>` : `<b>${esc(v)}</b>`) },
+    { chave: "CNPJ", nome: "CNPJ", tipo: "txt", g: "Fundo" },
     { chave: "prim", nome: "Primeira aplicação", tipo: "data", g: "Período analisado" }, { chave: "ult", nome: "Última aplicação", tipo: "data", g: "Período analisado" },
     ...faixa("min", "Mínimo", true), ...faixa("med", "Mediana", false), ...faixa("max", "Máximo", true),
     ...["total:Total", "abaixo:Abaixo do " + B, "acima:Acima do " + B, "negativas:Negativas", "positivas:Positivas"]
       .map((x) => { const [k, nm] = x.split(":"); return { chave: k, nome: nm, tipo: "int", g: "Janelas" }; }),
     { chave: "pAcima", nome: `% acima do ${B}`, tipo: "pct", g: "Consistência" }, { chave: "pPositivas", nome: "% positivas", tipo: "pct", g: "Consistência" }];
-  const ord = ordenar(linhas, "jm", colunas);
-  $("#tabJM").innerHTML = tabelaHTML({ colunas, linhas: ord, fixas: 2, grupos: colunas.map((c) => c.g), ordenavel: "jm",
+  const ord = ordenar(linhas, tab, colunas);
+  return tabelaHTML({ colunas, linhas: ord, fixas: 2, grupos: colunas.map((c) => c.g), ordenavel: tab,
     destacar: ord.map((l) => casa(st.destaque, l.Fundo, l.CNPJ)), altura: 420 });
 }
 
 // lista completa de todas as janelas (CSV com ponto e vírgula e vírgula decimal: abre direto no Excel em português)
-function baixarJM() {
-  const jm = st.res?.jm; if (!jm) return;
-  const B = jm.nomeB || "Benchmark", pct = (v) => (v == null ? "" : br(v * 100, 4) + "%");
+// lista: [{ nome, cnpj, linhas }]
+function baixarCSVJM(lista, nomeB, meses, arquivo) {
+  const B = nomeB || "Benchmark", pct = (v) => (v == null ? "" : br(v * 100, 4) + "%");
   const cab = ["Fundo", "CNPJ", "Data Inicial", "Data Final", "Dias úteis (ANBIMA)", "Dias com cota na CVM", "Rentabilidade no período",
     `${B} anualizado`, "Fundo anualizado", `Diferença para o ${B}`].map((x) => x.replace(/;/g, ","));
   const linhas = [cab.join(";")];
-  for (const { c, linhas: ls } of jm.porFundo) {
-    const nome = (st.porCnpj.get(c)?.NOME || c).replace(/;/g, ",");
-    for (const l of ls) linhas.push([nome, cnpjFmt(c), fmtData(l.ini), fmtData(l.fim), l.du, l.linhas, pct(l.ret), pct(l.benchAA), pct(l.retAA), pct(l.dif)].join(";"));
+  for (const { nome, cnpj, linhas: ls } of lista) {
+    const nm = String(nome).replace(/;/g, ",");
+    for (const l of ls) linhas.push([nm, cnpj || "", fmtData(l.ini), fmtData(l.fim), l.du, l.linhas, pct(l.ret), pct(l.benchAA), pct(l.retAA), pct(l.dif)].join(";"));
   }
   const a = document.createElement("a");
   a.href = URL.createObjectURL(new Blob(["\ufeff" + linhas.join("\r\n")], { type: "text/csv;charset=utf-8" }));
-  a.download = `janela_movel_${jm.p.meses}m.csv`;
+  a.download = `${arquivo}_${meses}m.csv`;
   a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 2000);
 }
+function baixarJM() {
+  const jm = st.res?.jm; if (!jm) return;
+  baixarCSVJM(jm.porFundo.map(({ c, linhas }) => ({ nome: st.porCnpj.get(c)?.NOME || c, cnpj: cnpjFmt(c), linhas })), jm.nomeB, jm.p.meses, "janela_movel");
+}
+
+// ============================== painel de carregamento (lista de fundos com situação) ==============================
+const carga = { itens: new Map(), timer: null };
+function abrirCarga(cnpjs) {
+  const lista = $("#cargaLista");
+  lista.innerHTML = cnpjs.map((c) => `<div class="pc-item pend" data-c="${c}" title="Na fila"><span class="pc-st" aria-hidden="true"></span>` +
+    `<span class="pc-nome">${esc(st.porCnpj.get(c)?.NOME || c)}</span><span class="pc-cnpj">${cnpjFmt(c)}</span></div>`).join("");
+  carga.itens = new Map($$(".pc-item", lista).map((e) => [e.dataset.c, e]));
+  $("#cargaTit").textContent = `Carregando ${cnpjs.length} fundo${cnpjs.length > 1 ? "s" : ""}`;
+  $("#cargaFase").textContent = "baixando as cotas…";
+  $("#painelCarga").classList.remove("erro");
+  atualizarCarga(0, cnpjs.length, null);
+  clearTimeout(carga.timer);
+  carga.timer = setTimeout(() => { $("#painelCarga").hidden = false; }, 300);   // não aparece se vier tudo do cache em menos de 0,3 s
+}
+function atualizarCarga(feitos, total, ev) {
+  if (ev) for (const c of ev.cnpjs) {
+    const e = carga.itens.get(c); if (!e) continue;
+    const tipo = ev.tipo === "inicio" ? "baix" : ev.ok.has(c) ? "ok" : "sem";
+    e.className = "pc-item " + tipo;
+    e.title = { baix: "Baixando…", ok: "Carregado", sem: "Sem cotas na base (fundo novo, sem envio à CVM ou CNPJ de outra classe)" }[tipo];
+  }
+  let baix = 0, sem = 0;
+  for (const e of carga.itens.values()) { if (e.classList.contains("baix")) baix++; else if (e.classList.contains("sem")) sem++; }
+  $("#cargaBarra").style.width = `${total ? 4 + 86 * feitos / total : 4}%`;
+  $("#cargaResumo").innerHTML = `<b>${feitos}</b> de <b>${total}</b> carregados` + (baix ? ` · <span class="baix">${baix} baixando</span>` : "") +
+    (total - feitos - baix > 0 ? ` · ${total - feitos - baix} na fila` : "") + (sem ? ` · <span class="sem">${sem} sem cotas</span>` : "");
+}
+function faseCarga(txt, pct) { $("#cargaFase").textContent = txt; if (pct != null) $("#cargaBarra").style.width = pct + "%"; }
+function fecharCarga(erro) {
+  clearTimeout(carga.timer);
+  const p = $("#painelCarga");
+  if (erro) {
+    p.hidden = false; p.classList.add("erro");
+    faseCarga("erro: " + erro);
+    if (!$("#cargaFechar")) $(".pc-cab", p).insertAdjacentHTML("beforeend", `<button id="cargaFechar" class="sec mini-btn" type="button">Fechar</button>`);
+    return;
+  }
+  faseCarga("pronto", 100);
+  setTimeout(() => { p.hidden = true; }, 450);
+}
+
+// ============================== matriz de correlação ==============================
+// 10 linhas visíveis e quantas colunas couberem; nomes fixos à esquerda e embaixo; role dentro do quadro.
+// Só a parte visível é desenhada (funciona com centenas de fundos). "Mostrar tudo" mostra todas as linhas
+// (ou, com muitas séries, a matriz inteira reduzida a uma imagem).
+st.corrTudo = {};
+const MX = { lin: 28, col: 56, rotulo: 240, pe: 150 };
+function textoCabe(g, txt, max) {
+  if (g.measureText(txt).width <= max) return txt;
+  let a = 0, b = txt.length;
+  while (a < b) { const m = (a + b + 1) >> 1; if (g.measureText(txt.slice(0, m) + "…").width <= max) a = m; else b = m - 1; }
+  return txt.slice(0, a) + "…";
+}
+function corPar(v) {
+  if (v == null) return ["rgba(127,127,127,.18)", corTexto()];
+  const a = Math.min(0.85, Math.abs(v) * 0.85);
+  return [v >= 0 ? `rgba(31,90,166,${a})` : `rgba(208,38,44,${a})`, Math.abs(v) > 0.55 ? "#ffffff" : corTexto()];
+}
+// itens: [{ nome, cor, bench, c, cnpj }]; m: Float64Array n×n; chave: "corr" (seção de cima) ou "cart" (carteira)
+function renderMatrizCorr(contId, chave, itens, m) {
+  const cont = $("#" + contId), n = itens.length;
+  const btn = $(`[data-corr-tudo="${chave}"]`);
+  if (n < 2) { cont.innerHTML = `<p class="nota">Selecione pelo menos 2 séries.</p>`; if (btn) btn.closest(".opcoes").hidden = true; return; }
+  const tudo = !!st.corrTudo[chave];
+  if (btn) { btn.closest(".opcoes").hidden = n <= 10; btn.textContent = tudo ? "Mostrar só 10 linhas" : "Mostrar tudo"; }
+  const r = (i, j) => (i === j ? 1 : Number.isNaN(m[i * n + j]) ? null : m[i * n + j]);
+  const marc = itens.map((it) => !it.bench && casa(st.destaque, it.nome, it.cnpj));
+  const ext = extremosCorr(itens, r, marc);
+  if (tudo && n * MX.lin > 1800) { matrizImagem(cont, itens, r, marc, ext); return; }
+  const vis = tudo ? n : Math.min(n, 10), H = vis * MX.lin + MX.pe;
+  cont.innerHTML = `<div class="mx-vp" style="height:${H}px"><div class="mx-esp" style="width:${MX.rotulo + n * MX.col}px;height:${n * MX.lin + MX.pe}px">
+    <canvas class="mx-cv"></canvas></div></div>` + ext;
+  const vp = $(".mx-vp", cont), cv = $(".mx-cv", cont), g = cv.getContext("2d");
+  // fundo destacado: já abre rolado até ele
+  const alvo = marc.indexOf(true);
+  if (alvo >= 0) { vp.scrollTop = Math.max(0, (alvo - 4) * MX.lin); vp.scrollLeft = Math.max(0, (alvo - 3) * MX.col); }
+  const desenhar = () => {
+    const W = vp.clientWidth, Hh = vp.clientHeight, dpr = devicePixelRatio || 1;
+    if (cv.width !== Math.round(W * dpr) || cv.height !== Math.round(Hh * dpr)) {
+      cv.width = Math.round(W * dpr); cv.height = Math.round(Hh * dpr); cv.style.width = W + "px"; cv.style.height = Hh + "px";
+    }
+    g.setTransform(dpr, 0, 0, dpr, 0, 0);
+    const fundo = getComputedStyle(cont).getPropertyValue("--card").trim() || "#fff", txt = corTexto();
+    const sx = vp.scrollLeft, sy = vp.scrollTop, areaH = Hh - MX.pe;
+    g.fillStyle = fundo; g.fillRect(0, 0, W, Hh);
+    const i0 = Math.floor(sy / MX.lin), i1 = Math.min(n - 1, Math.floor((sy + areaH) / MX.lin));
+    const j0 = Math.floor(sx / MX.col), j1 = Math.min(n - 1, Math.floor((sx + W - MX.rotulo) / MX.col));
+    // células
+    g.save(); g.beginPath(); g.rect(MX.rotulo, 0, W - MX.rotulo, areaH); g.clip();
+    g.font = "600 11px Manrope, sans-serif"; g.textAlign = "center"; g.textBaseline = "middle";
+    for (let i = i0; i <= i1; i++) for (let j = j0; j <= j1; j++) {
+      const x = MX.rotulo + j * MX.col - sx, y = i * MX.lin - sy, v = r(i, j);
+      const [bg, fg] = i === j ? [OURO, "#141a4a"] : corPar(v);
+      g.fillStyle = bg; g.fillRect(x + 1, y + 1, MX.col - 2, MX.lin - 2);
+      g.fillStyle = fg; g.fillText(v == null ? "n/a" : i === j ? "1" : br(v, 2), x + MX.col / 2, y + MX.lin / 2 + 1);
+    }
+    g.strokeStyle = OURO; g.lineWidth = 2;
+    for (let i = i0; i <= i1; i++) if (marc[i]) g.strokeRect(MX.rotulo - sx + 1, i * MX.lin - sy + 1, n * MX.col - 2, MX.lin - 2);
+    for (let j = j0; j <= j1; j++) if (marc[j]) g.strokeRect(MX.rotulo + j * MX.col - sx + 1, -sy + 1, MX.col - 2, n * MX.lin - 2);
+    g.restore();
+    // nomes das linhas (fixos à esquerda)
+    g.save(); g.beginPath(); g.rect(0, 0, MX.rotulo, areaH); g.clip();
+    g.fillStyle = fundo; g.fillRect(0, 0, MX.rotulo, areaH);
+    g.textAlign = "left"; g.textBaseline = "middle";
+    for (let i = i0; i <= i1; i++) {
+      const y = i * MX.lin - sy, it = itens[i];
+      g.fillStyle = it.cor; if (it.bench) { g.save(); g.translate(13, y + MX.lin / 2); g.rotate(Math.PI / 4); g.fillRect(-4, -4, 8, 8); g.restore(); } else g.fillRect(8, y + MX.lin / 2 - 5, 10, 10);
+      g.font = marc[i] ? "800 11.5px Manrope, sans-serif" : "600 11.5px Manrope, sans-serif"; g.fillStyle = marc[i] ? OURO : txt;
+      g.fillText(textoCabe(g, `${i + 1}. ${it.nome}`, MX.rotulo - 32), 24, y + MX.lin / 2 + 1);
+    }
+    g.restore();
+    // nomes das colunas (fixos embaixo, na vertical)
+    g.save(); g.beginPath(); g.rect(MX.rotulo, areaH, W - MX.rotulo, MX.pe); g.clip();
+    g.fillStyle = fundo; g.fillRect(MX.rotulo, areaH, W - MX.rotulo, MX.pe);
+    g.textAlign = "right"; g.textBaseline = "middle";
+    for (let j = j0; j <= j1; j++) {
+      const x = MX.rotulo + j * MX.col - sx + MX.col / 2, it = itens[j];
+      g.save(); g.translate(x, areaH + 8); g.rotate(-Math.PI / 2);
+      g.font = marc[j] ? "800 11px Manrope, sans-serif" : "600 11px Manrope, sans-serif"; g.fillStyle = marc[j] ? OURO : txt;
+      g.fillText(textoCabe(g, `${j + 1}. ${it.nome}`, MX.pe - 16), 0, 0);
+      g.restore();
+    }
+    g.restore();
+    // canto e divisórias
+    g.fillStyle = fundo; g.fillRect(0, areaH, MX.rotulo, MX.pe);
+    g.fillStyle = corTexto(); g.globalAlpha = .6; g.font = "500 11px Manrope, sans-serif"; g.textAlign = "left";
+    g.fillText(n > vis || MX.rotulo + n * MX.col > W ? "Role dentro do quadro ↕ ↔" : "", 10, areaH + 20); g.globalAlpha = 1;
+    g.strokeStyle = OURO; g.lineWidth = 1.5;
+    g.beginPath(); g.moveTo(MX.rotulo - .5, 0); g.lineTo(MX.rotulo - .5, Hh); g.moveTo(0, areaH + .5); g.lineTo(W, areaH + .5); g.stroke();
+  };
+  let pedido = 0;
+  vp.addEventListener("scroll", () => { if (!pedido) pedido = requestAnimationFrame(() => { pedido = 0; desenhar(); }); }, { passive: true });
+  new ResizeObserver(() => desenhar()).observe(vp);
+  desenhar();
+  const tip = $("#corrTip");
+  cv.onmousemove = (e) => {
+    const b = cv.getBoundingClientRect(), px = e.clientX - b.left, py = e.clientY - b.top;
+    if (px < MX.rotulo || py > vp.clientHeight - MX.pe) { tip.hidden = true; return; }
+    const i = Math.floor((py + vp.scrollTop) / MX.lin), j = Math.floor((px - MX.rotulo + vp.scrollLeft) / MX.col);
+    if (i < 0 || j < 0 || i >= n || j >= n) { tip.hidden = true; return; }
+    const v = r(i, j);
+    tip.innerHTML = `<div class="mini-tit">${i + 1}. ${esc(itens[i].nome)}</div><div class="mini-tit">× ${j + 1}. ${esc(itens[j].nome)}</div>
+      <div class="mini-rod">Correlação: <b>${v == null ? "n/a (menos de 20 dias em comum)" : br(v, 2)}</b></div>`;
+    tip.style.left = Math.min(e.clientX + 14, innerWidth - 290) + "px"; tip.style.top = (e.clientY + 14) + "px"; tip.hidden = false;
+  };
+  cv.onmouseleave = () => { tip.hidden = true; };
+}
+
+// fundo destacado: os mais correlacionados, os mais próximos de zero e os menos correlacionados com ele
+function extremosCorr(itens, r, marc) {
+  const alvo = marc.indexOf(true); if (alvo < 0) return "";
+  const outros = itens.map((it, j) => ({ it, v: r(alvo, j) })).filter((x, j) => j !== alvo && x.v != null);
+  if (!outros.length) return "";
+  const lin = (x) => `<tr><td class="t"><span class="sw${x.it.bench ? " losango" : ""}" style="background:${x.it.cor}"></span>` +
+    (x.it.c ? `<span data-mini="${esc(x.it.c)}">${esc(x.it.nome)}</span>` : esc(x.it.nome)) + `</td><td>${br(x.v, 2)}</td></tr>`;
+  const ord = [...outros].sort((a, b) => b.v - a.v), zero = [...outros].sort((a, b) => Math.abs(a.v) - Math.abs(b.v));
+  const bloco = (tit, lista) => `<div><h3 class="sub">${tit}</h3><table class="tb">${lista.map(lin).join("")}</table></div>`;
+  return `<div class="corr-ext"><p class="nota">Correlação com <b>${esc(itens[alvo].nome)}</b>:</p>` +
+    bloco("Mais correlacionados (andam juntos)", ord.slice(0, 5)) + bloco("Mais próximos de zero (sem relação)", zero.slice(0, 5)) +
+    bloco("Menos correlacionados (sentidos opostos)", ord.slice(-5).reverse()) + `</div>`;
+}
+
+// matriz inteira reduzida a uma imagem (muitas séries no "Mostrar tudo"); o par aparece ao passar o mouse
+function matrizImagem(cont, itens, r, marc, ext) {
+  const n = itens.length;
+  const lado = Math.max(2, Math.min(14, Math.floor(((cont.clientWidth || 1000) - 30) / n))), tam = lado * n, dpr = devicePixelRatio || 1;
+  cont.innerHTML = `<div class="corr-cv"><canvas width="${Math.round(tam * dpr)}" height="${Math.round(tam * dpr)}" style="width:${tam}px;height:${tam}px"></canvas></div>
+    <div class="corr-escala"><span>−1</span><i></i><span>+1</span><span class="nota">· matriz inteira (${n} séries) · passe o mouse para ver o par · dourado = o próprio fundo · cinza = menos de 20 dias em comum</span></div>` + ext;
+  const cv = $("canvas", cont), g = cv.getContext("2d"), W = cv.width, px = W / n;
+  const img = g.createImageData(W, W), buf = img.data;
+  const pinta = (i, j, rr, gg, bb, aa) => {
+    const y0 = Math.round(i * px), y1 = Math.round((i + 1) * px), x0 = Math.round(j * px), x1 = Math.round((j + 1) * px);
+    for (let y = y0; y < y1; y++) for (let x = x0, o = (y * W + x0) * 4; x < x1; x++, o += 4) { buf[o] = rr; buf[o + 1] = gg; buf[o + 2] = bb; buf[o + 3] = aa; }
+  };
+  for (let i = 0; i < n; i++) for (let j = 0; j < n; j++) {
+    const v = r(i, j);
+    if (i === j) pinta(i, j, 201, 162, 58, 255);
+    else if (v == null) pinta(i, j, 127, 127, 127, 64);
+    else if (v >= 0) pinta(i, j, 31, 90, 166, Math.round(255 * (0.08 + Math.min(0.92, v))));
+    else pinta(i, j, 208, 38, 44, Math.round(255 * (0.08 + Math.min(0.92, -v))));
+  }
+  g.putImageData(img, 0, 0); g.scale(dpr, dpr);
+  g.strokeStyle = OURO; g.lineWidth = 2;
+  marc.forEach((mk, i) => { if (mk) { g.strokeRect(0, i * lado, tam, lado); g.strokeRect(i * lado, 0, lado, tam); } });
+  const tip = $("#corrTip");
+  cv.onmousemove = (e) => {
+    const b = cv.getBoundingClientRect(), i = Math.floor((e.clientY - b.top) / lado), j = Math.floor((e.clientX - b.left) / lado);
+    if (i < 0 || j < 0 || i >= n || j >= n) { tip.hidden = true; return; }
+    const v = r(i, j);
+    tip.innerHTML = `<div class="mini-tit">${i + 1}. ${esc(itens[i].nome)}</div><div class="mini-tit">× ${j + 1}. ${esc(itens[j].nome)}</div>
+      <div class="mini-rod">Correlação: <b>${v == null ? "n/a" : br(v, 2)}</b></div>`;
+    tip.style.left = Math.min(e.clientX + 14, innerWidth - 290) + "px"; tip.style.top = (e.clientY + 14) + "px"; tip.hidden = false;
+  };
+  cv.onmouseleave = () => { tip.hidden = true; };
+}
+document.addEventListener("click", (e) => {
+  const b = e.target.closest?.("[data-corr-tudo]");
+  if (b) { const k = b.dataset.corrTudo; st.corrTudo[k] = !st.corrTudo[k]; (k === "cart" ? renderCartCorr : renderCorrelacao)(); return; }
+  if (e.target.id === "cargaFechar") { $("#painelCarga").hidden = true; e.target.remove(); }
+});
 
 // ============================== caixa de escolha com busca (combo) ==============================
 // Usada em "Relativa a", no benchmark da janela móvel e na carteira. Digite para filtrar; ↑ ↓ Enter escolhem; Esc fecha.
@@ -920,7 +1078,14 @@ function montarCombos() {
     aoEscolher: (o) => { st.cart.itens.push({ tipo: o.tipo, v: o.v, peso: st.cart.itens.length ? 10 : 100 }); salvarCart(); renderCarteira(); } });
   criarCombo("cbCartRef", { opcoes: () => [...opcoesIndices(), ...opcoesFundos()],
     aoEscolher: (o) => { st.cart.ref = { tipo: o.tipo, v: o.v, rot: o.rot }; salvarCart(); calcularCarteira(); } });
+  // carteira: alvo do "Relativa a" (índices e ativos da carteira) e benchmark da janela móvel
+  criarCombo("cbCartAlvo", { opcoes: () => [...opcoesIndices(), ...(st.cartRes?.validos || []).filter((it) => it.tipo === "f")
+      .map((it) => ({ tipo: "f", v: it.v, rot: nomeItem(it), cnpj: it.v, grupo: "Ativos da carteira", cor: corItem(it) }))],
+    aoEscolher: (o) => { st.cartUI.rel.alvo = o.rot; renderCartAcum(); } });
+  criarCombo("cbCartJmBench", { opcoes: () => [{ tipo: "n", v: "", rot: "Nenhum (retorno absoluto)", grupo: "Sem comparação" }, ...opcoesIndices(), ...opcoesFundos()],
+    aoEscolher: (o) => { st.cartUI.jmBench = { tipo: o.tipo, v: o.v, rot: o.rot }; calcularCartJM(); renderCartJM(); } });
   definirCombo("cbAlvo", st.rel.alvo); definirCombo("cbJmBench", st.jmBench.rot); definirCombo("cbCartRef", st.cart.ref.rot);
+  definirCombo("cbCartAlvo", st.cartUI.rel.alvo); definirCombo("cbCartJmBench", st.cartUI.jmBench.rot);
 }
 
 // ============================== montagem de carteira ==============================
@@ -932,6 +1097,9 @@ function serieItem(it) {
   const f = st.res?.fundos.get(it.v); return f && f.d.length ? { d: f.d, L: f.q } : null;
 }
 const REBAL = { 0: "", 1: "mensal", 3: "trimestral", 6: "semestral", 12: "anual" };
+const corCarteira = () => (escuro() ? "#ffffff" : "#141a4a");
+// série diária -> "fundo" no formato do cálculo de métricas (CDI do dia anterior, como no VBA)
+const pseudoFundo = (dias, valores) => prepararFundo(Array.from(dias, (d, t) => ({ d, q: valores[t] })), st.idx.cdiAnterior);
 
 function renderCarteira() {
   $("#secCart").hidden = !st.res;
@@ -939,6 +1107,7 @@ function renderCarteira() {
   const c = st.cart;
   if (!c.ini || !c.fim) usarPeriodoAtivo(false);
   $("#cartRebal").value = String(c.rebal); $("#cartValor").value = c.valor; $("#cartIni").value = c.ini; $("#cartFim").value = c.fim;
+  $("#cartJmMeses").value = st.cartUI.jmMeses;
   definirCombo("cbCartRef", c.ref.rot);
   $("#cartItens").innerHTML = !c.itens.length ? `<p class="nota">Nenhum ativo ainda. Use "Adicionar fundo ou índice" acima ou "Adicionar todos os fundos calculados".</p>` :
     `<div class="tb-wrap cart-lista"><table class="tb"><thead><tr><th class="t">Ativo</th><th>Peso (%)</th><th></th></tr></thead><tbody>${c.itens.map((it, i) => {
@@ -953,8 +1122,9 @@ function renderCarteira() {
 }
 function atualizarSoma() {
   const s = st.cart.itens.reduce((a, it) => a + (Number(it.peso) || 0), 0);
-  $("#cartSoma").innerHTML = st.cart.itens.length ? `Soma dos pesos: <b style="color:${Math.abs(s - 100) < 0.01 ? VERDE : VERMELHO}">${br(s, 1)}%</b>` +
-    (Math.abs(s - 100) < 0.01 ? "" : " (o cálculo usa os pesos proporcionais, como se somassem 100%)") : "";
+  const cem = Math.abs(s - 100) < 0.1;                  // tolerância para arredondamentos (ex.: 7 × 14,29 = 100,03)
+  $("#cartSoma").innerHTML = st.cart.itens.length ? `Soma dos pesos: <b style="color:${cem ? VERDE : VERMELHO}">${br(s, cem ? 0 : 1)}%</b>` +
+    (cem ? "" : " (o cálculo usa os pesos proporcionais, como se somassem 100%)") : "";
 }
 function usarPeriodoAtivo(recalcular = true) {
   const c = st.cart, ctx = st.ctx;
@@ -963,11 +1133,11 @@ function usarPeriodoAtivo(recalcular = true) {
   if (recalcular) renderCarteira();
 }
 
+// ---------- simulação e resumo (indicadores + contribuição de cada ativo)
 function calcularCarteira() {
   const c = st.cart, res = $("#cartRes");
   const validos = c.itens.filter((it) => (Number(it.peso) || 0) > 0 && serieItem(it));
-  $("#cartGraf").hidden = true;
-  ["gCartEvol", "gCartDD", "gCartRR"].forEach((g) => { st.graficos[g]?.destroy(); delete st.graficos[g]; });
+  $("#cartGraf").hidden = true; st.cartRes = null;
   if (!validos.length) { res.innerHTML = c.itens.length ? `<p class="nota">Dê peso maior que zero a pelo menos um ativo calculado.</p>` : ""; return; }
   const soma = validos.reduce((a, it) => a + Number(it.peso), 0), pesos = validos.map((it) => Number(it.peso) / soma);
   const ini = diaDe(new Date(c.ini)), fim = diaDe(new Date(c.fim));
@@ -984,6 +1154,9 @@ function calcularCarteira() {
   const simRef = umSo(serieItem(c.ref), c.ref.rot), eRef = simRef ? est(c.ref, simRef.dias, simRef.valor) : null;
   const rebal = Number(c.rebal), simBH = rebal ? simularCarteira(ativos, pesos, { ini, fim, rebal: 0 }) : null;
   const eBH = simBH ? estatisticas(simBH.dias, simBH.valor, cdiAnual) : null;
+  st.cartRes = { validos, pesos, sim, d0, dN, simRef, eT, eA, eRef, simBH, eBH, cdiAnual, rebal,
+    nomes: validos.map(nomeItem), cores: validos.map(corItem) };
+
   const v0 = Number(c.valor) || 0, pp = (v) => (v == null ? "–" : (v > 0 ? "+" : v < 0 ? "−" : "") + br(Math.abs(v) * 100, 2) + " p.p.");
   const kpi = (rot, val, cor, dest) => `<div class="kpi${dest ? " dest" : ""}"><div class="l">${rot}</div><div class="v" style="${cor || ""}">${val}</div></div>`;
   const exc = eRef && eT.anual != null && eRef.anual != null ? eT.anual - eRef.anual : null;
@@ -995,25 +1168,26 @@ function calcularCarteira() {
     kpi("Máxima queda", brPct(eT.mdd), corSinal(eT.mdd)) +
     kpi("Meses positivos", eT.mesesPos == null ? "–" : `${br(eT.mesesPos * 100, 0)}% de ${eT.nMeses}`) +
     kpi("Melhor / pior mês", `${brPct(eT.melhorMes)} / ${brPct(eT.piorMes)}`) + `</div>`;
-  // tabela por ativo, com a contribuição de cada um (a soma das contribuições é o retorno da carteira)
   const maxC = Math.max(1e-9, ...sim.contrib.map(Math.abs));
   const celP = (v) => `<td style="${corSinal(v)}">${brPct(v)}</td>`;
-  const linhasA = validos.map((it, k) => `<tr><td class="t"><span class="sw${it.tipo === "i" ? " losango" : ""}" style="background:${corItem(it)}"></span>${esc(nomeItem(it))}</td>
+  const nomeFx = (txt) => `<td class="fx t" style="left:0;min-width:240px;max-width:240px" title="${esc(txt.replace(/<[^>]+>/g, ""))}">${txt}</td>`;
+  const linhasA = validos.map((it, k) => `<tr>${nomeFx(`<span class="sw${it.tipo === "i" ? " losango" : ""}" style="background:${corItem(it)}"></span>` +
+      (it.tipo === "f" ? `<span data-mini="${esc(it.v)}">${esc(nomeItem(it))}</span>` : esc(nomeItem(it))))}
     <td>${br(pesos[k] * 100, 1)}%</td>${celP(eA[k].total)}${celP(eA[k].anual)}<td>${brPct(eA[k].vol)}</td><td style="${corSinal(eA[k].sharpe)}">${eA[k].sharpe == null ? "–" : br(eA[k].sharpe, 2)}</td>
     ${celP(eA[k].mdd)}<td class="contrib"><b style="${corSinal(sim.contrib[k])}">${brPct(sim.contrib[k])}</b>
     <span class="minibar"><i class="${sim.contrib[k] >= 0 ? "up" : "down"}" style="width:${(Math.abs(sim.contrib[k]) / maxC * 50).toFixed(1)}%"></i></span></td></tr>`).join("");
-  const linhaE = (cls, rot, e, extra = "") => `<tr class="${cls}"><td class="t">${rot}</td><td>${extra}</td>${celP(e.total)}${celP(e.anual)}<td>${brPct(e.vol)}</td>
+  const linhaE = (cls, rot, e, extra = "") => `<tr class="${cls}">${nomeFx(rot)}<td>${extra}</td>${celP(e.total)}${celP(e.anual)}<td>${brPct(e.vol)}</td>
     <td style="${corSinal(e.sharpe)}">${e.sharpe == null ? "–" : br(e.sharpe, 2)}</td>${celP(e.mdd)}<td></td></tr>`;
   const somaC = sim.contrib.reduce((a, b) => a + b, 0);
-  h += `<div class="tb-wrap"><table class="tb cart-tab"><thead><tr><th class="t">Ativo</th><th>Peso</th><th>Retorno</th><th>Ao ano</th><th>Volatilidade</th><th>Sharpe</th>
-    <th>Máx. queda</th><th>Contribuição para o retorno</th></tr></thead><tbody>${linhasA}
-    <tr class="cart-total"><td class="t">Carteira${rebal ? ` (rebalanceamento ${REBAL[rebal]})` : " (comprar e manter)"}</td><td>100%</td>${celP(eT.total)}${celP(eT.anual)}
+  h += `<div class="tb-wrap"><table class="tb cart-tab"><thead><tr><th class="fx t" style="left:0;min-width:240px;max-width:240px">Ativo</th><th>Peso</th><th>Retorno</th><th>Ao ano</th>
+    <th>Volatilidade</th><th>Sharpe</th><th>Máx. queda</th><th>Contribuição para o retorno</th></tr></thead><tbody>${linhasA}
+    <tr class="cart-total">${nomeFx(`Carteira${rebal ? ` (rebalanceamento ${REBAL[rebal]})` : " (comprar e manter)"}`)}<td>100%</td>${celP(eT.total)}${celP(eT.anual)}
       <td>${brPct(eT.vol)}</td><td style="${corSinal(eT.sharpe)}">${eT.sharpe == null ? "–" : br(eT.sharpe, 2)}</td>${celP(eT.mdd)}<td style="${corSinal(somaC)}"><b>${brPct(somaC)}</b></td></tr>` +
     (eRef ? linhaE("cart-ref", `Referência: ${esc(c.ref.rot)}`, eRef) +
-      `<tr class="cart-ref ef"><td class="t">Carteira contra a referência</td><td></td><td style="${corSinal(eT.total - eRef.total)}">${pp(eT.total - eRef.total)}</td>
+      `<tr class="cart-ref ef">${nomeFx("Carteira contra a referência")}<td></td><td style="${corSinal(eT.total - eRef.total)}">${pp(eT.total - eRef.total)}</td>
        <td style="${corSinal(exc)}">${pp(exc)}</td><td colspan="4"></td></tr>` : "") +
     (eBH ? linhaE("cart-ref", "Mesma carteira sem rebalancear", eBH, "100%") +
-      `<tr class="cart-ref ef"><td class="t">Efeito do rebalanceamento ${REBAL[rebal]}</td><td></td><td style="${corSinal(eT.total - eBH.total)}">${pp(eT.total - eBH.total)}</td><td colspan="5"></td></tr>` : "") +
+      `<tr class="cart-ref ef">${nomeFx(`Efeito do rebalanceamento ${REBAL[rebal]}`)}<td></td><td style="${corSinal(eT.total - eBH.total)}">${pp(eT.total - eBH.total)}</td><td colspan="5"></td></tr>` : "") +
     `</tbody></table></div>`;
   const avisos = [];
   if (sim.cortadoIni) avisos.push(`começa em ${fmtData(d0)} porque algum ativo não tem dado antes disso`);
@@ -1023,23 +1197,151 @@ function calcularCarteira() {
     Contribuição = quanto cada ativo gerou de resultado sobre o valor inicial, considerando o peso que ele tinha a cada dia; a soma é o retorno da carteira.
     Sharpe sobre o CDI do mesmo período. Não considera impostos, taxas de saída nem prazos de resgate.</p>`;
   res.innerHTML = h;
-
-  // gráficos
   $("#cartGraf").hidden = false;
-  const corCart = escuro() ? "#ffffff" : "#141a4a", x = sim.dias;
-  const fracas = validos.map((it, k) => ({ nome: nomeItem(it), cor: corItem(it), x, y: Array.from(sim.porAtivo[k], (v) => v * 100), fraca: true }));
-  const refS = simRef ? [{ nome: "Referência: " + c.ref.rot, cor: corItem(c.ref), x: simRef.dias, y: Array.from(simRef.valor, (v) => v * 100), bench: true }] : [];
-  grafico("gCartEvol", [...fracas, ...refS, { nome: "Carteira", cor: corCart, x, y: Array.from(sim.valor, (v) => v * 100), forte: true }],
-    { fmtY: (v) => br(v, 1), xMin: d0, xMax: dN });
-  grafico("gCartDD", [...validos.map((it, k) => ({ nome: nomeItem(it), cor: corItem(it), x, y: curvaDrawdown(sim.porAtivo[k]), fraca: true })),
-    { nome: "Carteira", cor: corCart, x, y: curvaDrawdown(sim.valor), forte: true }], { xMin: d0, xMax: dN });
-  graficoRR("gCartRR", [...validos.map((it, k) => ({ nome: nomeItem(it), cor: corItem(it), x: eA[k].anual, y: eA[k].vol, tipo: it.tipo === "i" ? "bench" : "fundo" })),
-    ...(eRef ? [{ nome: c.ref.rot, cor: corItem(c.ref), x: eRef.anual, y: eRef.vol, tipo: "bench" }] : []),
-    { nome: "Carteira", cor: OURO, x: eT.anual, y: eT.vol, tipo: "carteira" }], { fmtX: (v) => brPct(v, 1), tituloX: "Retorno (% a.a.)" });
+  renderCartMetricas(); renderCartAcum(); renderCartDd(); renderCartRisco(); renderCartCorr();
+  calcularCartJM(); renderCartJM();
 }
-let tCart;
-const recalcularCarteiraDepois = () => { clearTimeout(tCart); tCart = setTimeout(calcularCarteira, 350); };
 
+// ---------- métricas completas (as mesmas da tabela de cima), para a carteira e cada ativo no período da carteira
+const cacheAtivo = new Map();             // métricas dos ativos não mudam com os pesos: guardadas por ativo + período
+function renderCartMetricas() {
+  const R = st.cartRes; if (!R) return;
+  const peso = Number($("#peso").value) / 100, opc = { ini: R.d0, fim: R.dN };
+  const linhaDe = (nome, f, extra = {}) => { const r = f ? calcularFundo(f, st.idx.ibov, "Personalizado", peso, opc) : null; return r && Object.assign(r, { Fundo: nome }, extra); };
+  const linhas = [linhaDe(`Carteira${R.rebal ? ` (rebalanceamento ${REBAL[R.rebal]})` : ""}`, pseudoFundo(R.sim.dias, R.sim.valor), { _cart: true })];
+  if (R.simBH) linhas.push(linhaDe("Mesma carteira sem rebalancear", pseudoFundo(R.simBH.dias, R.simBH.valor), { _cart: true }));
+  R.validos.forEach((it, k) => {
+    const chave = `${it.tipo}${it.v}|${R.d0}|${R.dN}|${peso}|${R.cores[k]}`;
+    if (!cacheAtivo.has(chave)) {
+      const f = it.tipo === "f" ? st.res.fundos.get(it.v) : pseudoFundo(R.sim.dias, R.sim.porAtivo[k]);
+      cacheAtivo.set(chave, linhaDe(R.nomes[k], f, { _c: it.tipo === "f" ? it.v : null, _cor: R.cores[k], _idx: it.tipo === "i" }));
+    }
+    linhas.push(cacheAtivo.get(chave));
+  });
+  if (cacheAtivo.size > 3000) cacheAtivo.clear();
+  const fora = new Set(["CNPJ", "Classificação CVM", "Classificação ANBIMA", "Cota Inicial", "Cota Final", "Captação Líquida no Período", "Objetivo de retorno"]);
+  const cols = COLUNAS.filter(([, n]) => !fora.has(n));
+  const colunas = cols.map(([, n, t]) => {
+    const c = { chave: n, nome: n, tipo: t, cor: t === "pct" };
+    if (n === "Fundo") { c.nome = "Carteira / ativo"; c.html = (v, l) => (l._cart ? `<b>★ ${esc(v)}</b>` :
+      `<span class="sw${l._idx ? " losango" : ""}" style="background:${l._cor}"></span>` + (l._c ? `<span data-mini="${esc(l._c)}">${esc(v)}</span>` : esc(v))); }
+    return c;
+  });
+  const vis = linhas.filter(Boolean);
+  const ord = [...vis.filter((l) => l._cart), ...ordenar(vis.filter((l) => !l._cart), "cartMet", colunas)];
+  $("#cartMetricas").innerHTML = tabelaHTML({ colunas, linhas: ord, fixas: 1, larguras: [240], grupos: cols.map(([g]) => g), ordenavel: "cartMet",
+    destacar: ord.map((l) => !l._cart && casa(st.destaque, l.Fundo)), classes: ord.map((l) => (l._cart ? "cart-total" : "")), altura: 420 });
+}
+
+// ---------- rentabilidade acumulada (com "Relativa a") e drawdown
+function seriesCarteira(campo) {     // campo: "acum" (retorno acumulado) ou "dd" (queda desde o pico)
+  const R = st.cartRes, x = R.sim.dias, conv = (v) => (campo === "acum" ? Array.from(v, (y) => y - 1) : curvaDrawdown(v));
+  const s = R.validos.map((it, k) => ({ nome: R.nomes[k], c: it.tipo === "f" ? it.v : null, cor: R.cores[k], x, y: conv(R.sim.porAtivo[k]), fraca: true }));
+  if (campo === "acum" && R.simRef) s.push({ nome: "Referência: " + st.cart.ref.rot, cor: corItem(st.cart.ref), x: R.simRef.dias, y: conv(R.simRef.valor), bench: true });
+  s.push({ nome: "Carteira", cor: corCarteira(), x, y: conv(R.sim.valor), forte: true });
+  return s;
+}
+function renderCartAcum() {
+  const R = st.cartRes; if (!R) return;
+  const u = st.cartUI.rel;
+  $("#cartRelOn").checked = u.on; $("#cartRelCtl").hidden = !u.on;
+  $$("#cartRelModo button").forEach((b) => b.setAttribute("aria-pressed", b.dataset.m === u.modo));
+  definirCombo("cbCartAlvo", u.alvo);
+  let series = seriesCarteira("acum"), ref = null, fmtY = (v) => brPct(v, 1);
+  if (u.on) {
+    const k = st.idx.disponiveis.find((x) => nomeIndice(x) === u.alvo);
+    let bench = null;
+    if (k) { const s1 = simularCarteira([{ s: st.idx.niveis[k], nome: u.alvo }], [1], { ini: R.d0, fim: R.dN }); if (s1) bench = { x: s1.dias, y: Array.from(s1.valor, (v) => v - 1) }; }
+    else bench = series.find((s) => s.nome === u.alvo);
+    if (bench) {
+      series = series.filter((s) => !s.bench && s.nome !== u.alvo).map((s) => relativa(s, bench, u.modo));
+      ref = u.modo === "dif" ? 0 : 1; if (u.modo === "pct") fmtY = (v) => brPct(v, 0);
+    }
+    $("#cartRelNota").textContent = u.modo === "dif" ? `Rentabilidade acumulada menos a do ${u.alvo}.` : `Rentabilidade ÷ a do ${u.alvo}. Início omitido enquanto o alvo está perto de zero.`;
+  } else $("#cartRelNota").textContent = "";
+  grafico("gCartEvol", series, { fmtY, ref, xMin: R.d0, xMax: R.dN });
+  $("#legCartEvol").innerHTML = tabelaLegenda("cartAcum", series.map((s) => ({ Fundo: s.nome, _c: s.c, cor: s.cor, Final: finalDe(s) })), ["Final"]);
+}
+function renderCartDd() {
+  const R = st.cartRes; if (!R) return;
+  const series = seriesCarteira("dd");
+  grafico("gCartDD", series, { xMin: R.d0, xMax: R.dN });
+  const mdd = (s) => Math.min(0, ...s.y);
+  $("#legCartDD").innerHTML = tabelaLegenda("cartDd", series.map((s) => ({ Fundo: s.nome, _c: s.c, cor: s.cor, Final: finalDe(s), "Máx. queda": mdd(s) })), ["Final", "Máx. queda"]);
+}
+
+// ---------- risco × retorno (eixo retorno ou Sharpe) com a tabela ao lado
+function renderCartRisco() {
+  const R = st.cartRes; if (!R) return;
+  const eixo = st.cartUI.eixo, chaveX = eixo === "ret" ? "anual" : "sharpe";
+  $$("#cartRiscoEixo button").forEach((b) => b.setAttribute("aria-pressed", b.dataset.e === eixo));
+  const pts = R.validos.map((it, k) => ({ nome: R.nomes[k], c: it.tipo === "f" ? it.v : null, cor: R.cores[k], anual: R.eA[k].anual, vol: R.eA[k].vol, sharpe: R.eA[k].sharpe, tipo: it.tipo === "i" ? "bench" : "fundo" }));
+  if (R.eRef) pts.push({ nome: "Referência: " + st.cart.ref.rot, cor: corItem(st.cart.ref), anual: R.eRef.anual, vol: R.eRef.vol, sharpe: R.eRef.sharpe, tipo: "bench" });
+  pts.push({ nome: "Carteira", cor: OURO, anual: R.eT.anual, vol: R.eT.vol, sharpe: R.eT.sharpe, tipo: "carteira" });
+  st.cartUI.pts = pts;
+  const algum = pts.some((p) => p.tipo === "fundo" && casa(st.destaque, p.nome));
+  graficoRR("gCartRR", pts.filter((p) => p[chaveX] != null).map((p) => {
+    const m = p.tipo === "fundo" && algum && casa(st.destaque, p.nome);
+    return { nome: p.nome, cor: p.cor, x: p[chaveX], y: p.vol, tipo: p.tipo, forte: m, apagado: algum && p.tipo === "fundo" && !m };
+  }), { fmtX: chaveX === "anual" ? (v) => brPct(v, 1) : (v) => br(v, 2), tituloX: chaveX === "anual" ? "Retorno (% a.a.)" : "Sharpe (sobre o CDI)", refX: chaveX === "sharpe" ? 0 : null });
+  renderTabCartRisco();
+}
+function renderTabCartRisco() {
+  const pts = st.cartUI.pts; if (!pts) return;
+  const chaveX = st.cartUI.eixo === "ret" ? "anual" : "sharpe";
+  const colunas = [
+    { chave: "nome", nome: "Ativo", tipo: "txt", html: (v, l) => (l.tipo === "carteira" ? `<b>★ ${esc(v)}</b>` :
+      `<span class="sw${l.tipo === "bench" ? " losango" : ""}" style="background:${l.cor}"></span>` + (l.c ? `<span data-mini="${esc(l.c)}">${esc(v)}</span>` : `<i>${esc(v)}</i>`)) },
+    { chave: "anual", nome: "Retorno a.a.", tipo: "pct", cor: true }, { chave: "vol", nome: "Volatilidade", tipo: "pct" }, { chave: "sharpe", nome: "Sharpe", tipo: "num2", cor: true }];
+  const linhas = st.ord.cartRisco ? ordenar(pts, "cartRisco", colunas) : [...pts].sort((a, b) => (b[chaveX] ?? -Infinity) - (a[chaveX] ?? -Infinity));
+  $("#tabCartRisco").innerHTML = tabelaHTML({ colunas, linhas, fixas: 1, larguras: [210], ordenavel: "cartRisco", altura: 420,
+    destacar: linhas.map((p) => p.tipo === "fundo" && casa(st.destaque, p.nome)), classes: linhas.map((p) => (p.tipo === "carteira" ? "cart-total" : "")) });
+}
+
+// ---------- correlação entre os ativos e a carteira
+function renderCartCorr() {
+  const R = st.cartRes; if (!R) return;
+  const rets = (v) => { const m = new Map(); for (let t = 1; t < v.length; t++) m.set(R.sim.dias[t], v[t] / v[t - 1] - 1); return m; };
+  const itens = R.validos.map((it, k) => ({ nome: R.nomes[k], c: it.tipo === "f" ? it.v : null, cnpj: it.tipo === "f" ? it.v : "", cor: R.cores[k], bench: it.tipo === "i", ret: rets(R.sim.porAtivo[k]) }));
+  itens.push({ nome: "★ Carteira", cor: OURO, bench: true, ret: rets(R.sim.valor) });
+  renderMatrizCorr("tabCartCorr", "cart", itens, matrizCorrelacao(itens.map((i) => i.ret)));
+}
+
+// ---------- janela móvel da carteira e dos ativos (no período da carteira)
+function calcularCartJM() {
+  const R = st.cartRes; if (!R) return;
+  const b = st.cartUI.jmBench, meses = st.cartUI.jmMeses;
+  let bench = b.tipo === "n" ? "" : b.v, nomeB = b.tipo === "n" ? "" : b.rot;
+  if (b.tipo === "f") { const g = st.res.fundos.get(b.v); if (g) bench = { fundo: g }; else { bench = "CDI"; nomeB = "CDI"; } }
+  const p = { bench, meses, ini: R.d0, fim: R.dN };
+  const lista = [{ nome: "★ Carteira", cor: corCarteira(), forte: true, f: pseudoFundo(R.sim.dias, R.sim.valor) },
+    ...R.validos.map((it, k) => ({ nome: R.nomes[k], c: it.tipo === "f" ? it.v : null, cor: R.cores[k], fraca: true,
+      f: it.tipo === "f" ? st.res.fundos.get(it.v) : pseudoFundo(R.sim.dias, R.sim.porAtivo[k]) }))]
+    .filter((x) => !(b.tipo === "f" && x.c === b.v));
+  for (const x of lista) { x.linhas = janelaMovel(x.f, st.idx, p); x.resumo = x.linhas.length ? resumoJanela(x.linhas) : null; }
+  R.jm = { p, nomeB, lista: lista.filter((x) => x.resumo) };
+}
+function renderCartJM() {
+  const jm = st.cartRes?.jm; if (!jm) return;
+  const n = jm.lista.reduce((s, x) => s + x.linhas.length, 0);
+  $("#cartJmCorpo").hidden = !jm.lista.length;
+  if (!jm.lista.length) { $("#cartJmInfo").innerHTML = `<p class="nota">Nenhuma janela de ${jm.p.meses} meses cabe no período da carteira. Diminua a duração ou aumente o período.</p>`; return; }
+  const prim = Math.min(...jm.lista.map((x) => x.resumo.primeira)), ult = Math.max(...jm.lista.map((x) => x.resumo.ultima));
+  $("#cartJmInfo").innerHTML = [`<b>${jm.p.meses} meses</b> de aplicação`, `benchmark: <b>${esc(jm.nomeB || "nenhum")}</b>`,
+    `aplicações de <b>${fmtData(prim)}</b> a <b>${fmtData(ult)}</b>`, `<b>${br(n, 0)}</b> janelas`].map((t) => `<span>${t}</span>`).join("");
+  const series = jm.lista.map((x) => { const v = x.linhas.filter((l) => l.dif != null); return { nome: x.nome, c: x.c, cor: x.cor, forte: x.forte, fraca: x.fraca, x: v.map((l) => l.ini), y: v.map((l) => l.dif) }; });
+  grafico("gCartJM", series, { ref: 0, xMin: prim, xMax: ult, tituloX: (x) => `Aplicação em ${fmtData(x)}` });
+  $("#legCartJM").innerHTML = tabelaLegenda("cartJM", jm.lista.map((x, i) => ({ Fundo: x.nome, _c: x.c, cor: x.cor,
+    Final: series[i].y.length ? series[i].y[series[i].y.length - 1] : null, Mediana: x.resumo.med.dif })), ["Final", "Mediana"]);
+  renderTabCartJM();
+}
+function renderTabCartJM() {
+  const jm = st.cartRes?.jm; if (!jm || !jm.lista.length) return;
+  $("#tabCartJM").innerHTML = htmlResumoJM(jm.lista.map((x) => ({ _c: x.c, Fundo: x.nome, CNPJ: x.c ? cnpjFmt(x.c) : "", resumo: x.resumo })), jm.nomeB, "cartJM");
+}
+
+let tCart;
+const recalcularCarteiraDepois = () => { clearTimeout(tCart); tCart = setTimeout(calcularCarteira, 400); };
 document.addEventListener("input", (e) => {
   const t = e.target;
   if (t.matches(".cart-peso")) { st.cart.itens[Number(t.dataset.i)].peso = Math.max(0, Number(t.value) || 0); salvarCart(); atualizarSoma(); recalcularCarteiraDepois(); }
@@ -1049,6 +1351,8 @@ document.addEventListener("change", (e) => {
   if (t.id === "cartRebal") { c.rebal = Number(t.value); salvarCart(); calcularCarteira(); }
   else if (t.id === "cartValor") { c.valor = Math.max(0, Number(t.value) || 0); salvarCart(); calcularCarteira(); }
   else if (t.id === "cartIni" || t.id === "cartFim") { c[t.id === "cartIni" ? "ini" : "fim"] = t.value; salvarCart(); if (c.ini && c.fim) calcularCarteira(); }
+  else if (t.id === "cartRelOn") { st.cartUI.rel.on = t.checked; renderCartAcum(); }
+  else if (t.id === "cartJmMeses") st.cartUI.jmMeses = Math.max(1, Math.min(240, Number(t.value) || 12));
 });
 document.addEventListener("click", (e) => {
   const t = e.target, c = st.cart;
@@ -1067,6 +1371,13 @@ document.addEventListener("click", (e) => {
   }
   else if (t.id === "cartLimpar") { if (c.itens.length && !confirm("Tirar todos os ativos da carteira?")) return; c.itens = []; salvarCart(); renderCarteira(); }
   else if (t.id === "cartPeriodo") usarPeriodoAtivo(true);
+  else if (t.closest?.("#cartRelModo button")) { st.cartUI.rel.modo = t.closest("button").dataset.m; renderCartAcum(); }
+  else if (t.closest?.("#cartRiscoEixo button")) { st.cartUI.eixo = t.closest("button").dataset.e; delete st.ord.cartRisco; renderCartRisco(); }
+  else if (t.id === "cartJmAtualizar") { st.cartUI.jmMeses = Math.max(1, Math.min(240, Number($("#cartJmMeses").value) || 12)); calcularCartJM(); renderCartJM(); }
+  else if (t.id === "cartJmBaixar") {
+    const jm = st.cartRes?.jm; if (!jm) return;
+    baixarCSVJM(jm.lista.map((x) => ({ nome: x.nome, cnpj: x.c ? cnpjFmt(x.c) : "", linhas: x.linhas })), jm.nomeB, jm.p.meses, "janela_movel_carteira");
+  }
 });
 
 // ---------- slider de datas (dois cursores)
@@ -1159,7 +1470,7 @@ document.addEventListener("click", (e) => {
   const ord = t.closest("button.ord");
   if (ord) {
     const tab = ord.dataset.ord; clicarOrdem(tab, ord.dataset.col, ord.dataset.txt === "1");
-    ({ met: renderMetricas, risco: renderTabRisco, jm: renderTabJM })[tab]?.(); return;
+    ({ met: renderMetricas, risco: renderTabRisco, jm: renderTabJM, cartMet: renderCartMetricas, cartRisco: renderTabCartRisco, cartJM: renderTabCartJM })[tab]?.(); return;
   }
   const min = t.closest(".btn-min");
   if (min) {
@@ -1215,7 +1526,7 @@ document.addEventListener("change", async (e) => {
     dlg.sel = t.checked ? [...new Set([...dlg.sel, c])] : dlg.sel.filter((x) => x !== c); renderSelDialogo();
   }
   else if (t.id === "dlgAtivos") renderSeletor();
-  else if (t.dataset.todos) { st.todos[t.dataset.todos] = t.checked; ({ acum: renderAcum, dd: renderDd, jm: renderJM })[t.dataset.todos]?.(); }
+  else if (t.dataset.todos) { st.todos[t.dataset.todos] = t.checked; ({ acum: renderAcum, dd: renderDd, jm: renderJM, cartAcum: renderCartAcum, cartDd: renderCartDd, cartJM: renderCartJM })[t.dataset.todos]?.(); }
   else if (t.id === "agrupar") { st.agrupar = t.value; salvar("agrupar", st.agrupar); renderMetricas(); }
   else if (t.id === "relOn") { st.rel.on = t.checked; renderAcum(); }
   else if (t.id === "guardar") { await D.definirGuardar(t.checked); atualizarEspaco(); }
