@@ -1484,6 +1484,7 @@ function renderCartMetricas() {
   });
   const vis = linhas.filter(Boolean);
   const ord = [...vis.filter((l) => l._cart), ...ordenar(vis.filter((l) => !l._cart), "cartMet", colunas)];
+  R.metricas = { colunas, linhas: ord };
   $("#cartMetricas").innerHTML = tabelaHTML({ colunas, linhas: ord, fixas: 1, larguras: [240], grupos: cols.map(([g]) => g), ordenavel: "cartMet",
     destacar: ord.map((l) => !l._cart && casa(st.destaque, l.Fundo)), classes: ord.map((l) => (l._cart ? "cart-total" : "")), altura: 420 });
 }
@@ -1559,7 +1560,8 @@ function renderCartCorr() {
   const rets = (v) => { const m = new Map(); for (let t = 1; t < v.length; t++) m.set(R.sim.dias[t], v[t] / v[t - 1] - 1); return m; };
   const itens = R.validos.map((it, k) => ({ nome: R.nomes[k], c: it.tipo === "f" ? it.v : null, cnpj: it.tipo === "f" ? it.v : "", cor: R.cores[k], bench: it.tipo === "i", ret: rets(R.sim.porAtivo[k]) }));
   itens.push({ nome: "★ Carteira", cor: OURO, bench: true, ret: rets(R.sim.valor) });
-  renderMatrizCorr("tabCartCorr", "cart", itens, matrizCorrelacao(itens.map((i) => i.ret)));
+  R.corr = { itens, m: matrizCorrelacao(itens.map((i) => i.ret)) };
+  renderMatrizCorr("tabCartCorr", "cart", itens, R.corr.m);
 }
 
 // ---------- janela móvel da carteira e dos ativos (no período da carteira)
@@ -1645,6 +1647,543 @@ document.addEventListener("click", (e) => {
     const jm = st.cartRes?.jm; if (!jm) return;
     baixarCSVJM(jm.lista.map((x) => ({ nome: x.nome, cnpj: x.c ? cnpjFmt(x.c) : "", linhas: x.linhas })), jm.nomeB, jm.p.meses, "janela_movel_carteira");
   }
+});
+
+// ============================== relatórios: PDF, PNG e Excel ==============================
+// As bibliotecas só são baixadas na hora de gerar o arquivo (não pesam no uso normal do site).
+const CDN = "https://cdn.jsdelivr.net/npm/";
+const LIBS = {
+  pdf: [CDN + "jspdf@2.5.2/dist/jspdf.umd.min.js", () => window.jspdf?.jsPDF],
+  tabelaPdf: [CDN + "jspdf-autotable@3.8.4/dist/jspdf.plugin.autotable.min.js", () => window.jspdf?.jsPDF?.API?.autoTable],
+  imagem: [CDN + "html2canvas@1.4.1/dist/html2canvas.min.js", () => window.html2canvas],
+  zip: [CDN + "jszip@3.10.1/dist/jszip.min.js", () => window.JSZip],
+  excel: [CDN + "exceljs@4.4.0/dist/exceljs.min.js", () => window.ExcelJS],
+};
+const libsPromessas = {};
+function carregarLib(k) {
+  const [url, pronto] = LIBS[k];
+  if (pronto()) return Promise.resolve();
+  return (libsPromessas[k] ||= new Promise((ok, erro) => {
+    const s = document.createElement("script"), limite = setTimeout(() => { delete libsPromessas[k]; erro(new Error("tempo esgotado ao baixar a biblioteca de " + k)); }, 45000);
+    s.src = url; s.async = true;
+    s.onload = () => { clearTimeout(limite); pronto() ? ok() : (delete libsPromessas[k], erro(new Error("a biblioteca de " + k + " não carregou"))); };
+    s.onerror = () => { clearTimeout(limite); delete libsPromessas[k]; erro(new Error("não foi possível baixar a biblioteca de " + k + " (confira a internet)")); };
+    document.head.appendChild(s);
+  }));
+}
+const pausa = () => new Promise((r) => setTimeout(r, 15));
+
+// ---------- o que pode entrar no relatório
+const SECOES_REL = [
+  { k: "fundos", g: "Fundos", nome: "Lista dos fundos analisados", ok: () => !!st.ctx },
+  { k: "met", g: "Fundos", nome: "Métricas (todos os períodos calculados)", ok: () => !!st.ctx },
+  { k: "acum", g: "Fundos", nome: "Rentabilidade acumulada", ok: () => !!st.ctx && !!st.graficos.gAcum },
+  { k: "dd", g: "Fundos", nome: "Drawdown", ok: () => !!st.ctx && !!st.graficos.gDd },
+  { k: "risco", g: "Fundos", nome: "Risco × retorno", ok: () => !!st.ctx?.riscoPts },
+  { k: "corr", g: "Fundos", nome: "Correlação", ok: () => !!st.ctx?.dados._corr?.m },
+  { k: "jm", g: "Fundos", nome: "Janela móvel", ok: () => !!st.res?.jm?.porFundo.length },
+  { k: "cartResumo", g: "Carteira", nome: "Resumo (indicadores, pesos e contribuição)", ok: () => !!st.cartRes },
+  { k: "cartMet", g: "Carteira", nome: "Métricas da carteira e dos ativos", ok: () => !!st.cartRes?.metricas },
+  { k: "cartAcum", g: "Carteira", nome: "Rentabilidade acumulada", ok: () => !!st.cartRes && !!st.graficos.gCartEvol },
+  { k: "cartDd", g: "Carteira", nome: "Drawdown", ok: () => !!st.cartRes && !!st.graficos.gCartDD },
+  { k: "cartRisco", g: "Carteira", nome: "Risco × retorno", ok: () => !!st.cartUI.pts && !!st.cartRes },
+  { k: "cartCorr", g: "Carteira", nome: "Correlação", ok: () => !!st.cartRes?.corr },
+  { k: "cartJm", g: "Carteira", nome: "Janela móvel", ok: () => !!st.cartRes?.jm?.lista.length },
+  { k: "rawCotas", g: "Dados", bruto: true, nome: "Cotas diárias dos fundos (cota, variação, CDI do dia, captação, resgate, PL, cotistas)", ok: () => !!st.ctx },
+  { k: "rawIdx", g: "Dados", bruto: true, nome: "Índices diários (CDI, Selic, Ibovespa, IPCA, IGP-M, dólar, S&P 500)", ok: () => !!st.ctx },
+  { k: "rawJm", g: "Dados", bruto: true, nome: "Janela móvel dos fundos: todas as janelas", ok: () => !!st.res?.jm?.porFundo.length },
+  { k: "rawCart", g: "Dados", bruto: true, nome: "Carteira dia a dia: valor, peso e ganho de cada ativo", ok: () => !!st.cartRes },
+  { k: "rawCartJm", g: "Dados", bruto: true, nome: "Janela móvel da carteira: todas as janelas", ok: () => !!st.cartRes?.jm?.lista.length },
+];
+const disponivel = (s) => s.ok() && (!s.bruto || rel.fmt === "xlsx");
+const rel = { sel: new Set(pref("relSel", ["fundos", "met", "acum", "risco"])), fmt: pref("relFmt", "pdf"), pngUm: false, xlsImg: true };
+
+function abrirRelatorio() {
+  const grupos = [...new Set(SECOES_REL.map((s) => s.g))];
+  const titulo = { Fundos: "Análise dos fundos · " + esc(st.perAtivo || ""), Carteira: "Montagem de carteira", Dados: "Dados usados nos cálculos · só no Excel" };
+  $("#relSecoes").innerHTML = grupos.map((g) => `<div class="rel-grupo${g === "Dados" ? " rel-dados" : ""}"><b>${titulo[g]}</b>` +
+    (g === "Dados" ? `<span class="nota">Uma linha por fundo (ou ativo) e por dia, "um embaixo do outro": bom para tabela dinâmica e filtros.</span>` : "") +
+    SECOES_REL.filter((s) => s.g === g).map((s) => `<label class="tog" data-sec-rel="${s.k}"><input type="checkbox" data-rel="${s.k}"> ${esc(s.nome)} <small></small></label>`).join("") + `</div>`).join("");
+  desenharFormatoRel();
+  $("#relProg").textContent = ""; $("#relBaixar").disabled = false;
+  $("#dlgRel").showModal();
+}
+function desenharFormatoRel() {
+  $$("#relFmt button").forEach((b) => b.setAttribute("aria-pressed", b.dataset.f === rel.fmt));
+  $("#relOpPng").hidden = rel.fmt !== "png"; $("#relOpXls").hidden = rel.fmt !== "xlsx"; $("#relOpPdf").hidden = rel.fmt !== "pdf";
+  for (const s of SECOES_REL) {               // marca e libera cada parte conforme o que foi calculado e o formato
+    const lab = $(`[data-sec-rel="${s.k}"]`); if (!lab) continue;
+    const ok = disponivel(s), inp = $("input", lab);
+    inp.disabled = !ok; inp.checked = ok && rel.sel.has(s.k); lab.classList.toggle("indisp", !ok);
+    $("small", lab).textContent = !s.ok() ? `(calcule ${s.g === "Carteira" || s.k.startsWith("rawCart") ? "a carteira" : "os fundos"} antes)` : !ok ? "(só no Excel)" : "";
+  }
+  const escolhidas = SECOES_REL.filter((s) => disponivel(s) && rel.sel.has(s.k));
+  const brutos = escolhidas.filter((s) => s.bruto);
+  $("#relEstim").textContent = brutos.length ? `Dados usados nos cálculos: cerca de ${br(contarLinhasBrutas(brutos.map((s) => s.k)), 0)} linhas.` : "";
+  $("#relBaixar").textContent = `⬇ Baixar ${({ pdf: "PDF", png: "PNG", xlsx: "Excel" })[rel.fmt]} (${escolhidas.length} parte${escolhidas.length === 1 ? "" : "s"})`;
+  $("#relBaixar").disabled = !escolhidas.length;
+}
+
+// ---------- blocos de cada parte: títulos, imagens dos gráficos e tabelas completas (valores brutos + tipo)
+// tabela: { nome, colunas: [{ nome, tipo }], linhas: [[...]], soExcel?, nota? }
+const tipoCol = (t) => (t === "valor" ? "valor" : t);
+function imagemGrafico(id) {
+  const g = st.graficos[id]; if (!g) return null;
+  const c = g.canvas, out = document.createElement("canvas");
+  out.width = c.width; out.height = c.height;
+  const ctx = out.getContext("2d");
+  ctx.fillStyle = getComputedStyle(document.body).getPropertyValue("--card").trim() || "#fff"; ctx.fillRect(0, 0, out.width, out.height);
+  ctx.drawImage(c, 0, 0);
+  return { url: out.toDataURL("image/png"), w: c.clientWidth || c.width, h: c.clientHeight || c.height };
+}
+// séries de um gráfico de linhas lado a lado: Data | série 1 | série 2 …
+function tabelaDoGrafico(id, nome, tipo = "pct", rotuloX = "Data") {
+  const g = st.graficos[id]; if (!g) return null;
+  const dss = g.data.datasets.filter((d) => d.label !== "Zero"), xs = new Set();
+  for (const d of dss) for (const p of d.data) xs.add(p.x);
+  const ord = [...xs].sort((a, b) => a - b), pos = new Map(ord.map((x, i) => [x, i]));
+  const linhas = ord.map((x) => [x, ...dss.map(() => null)]);
+  dss.forEach((d, j) => { for (const p of d.data) linhas[pos.get(p.x)][j + 1] = p.y; });
+  return { nome, soExcel: true, colunas: [{ nome: rotuloX, tipo: "data" }, ...dss.map((d) => ({ nome: d.label, tipo }))], linhas,
+    nota: "Valores de cada dia, como no gráfico (respeita o controle de datas e o modo relativo, se ligados)." };
+}
+function tabelaFinal(id, nome, extra) {      // valor no último dia de cada série (a legenda do gráfico, completa)
+  const g = st.graficos[id]; if (!g) return null;
+  const linhas = g.data.datasets.filter((d) => d.label !== "Zero").map((d) => [d.label, d.data.length ? d.data[d.data.length - 1].y : null, ...(extra ? [extra(d)] : [])])
+    .sort((a, b) => (b[1] ?? -Infinity) - (a[1] ?? -Infinity));
+  return { nome, colunas: [{ nome: "Fundo / série", tipo: "txt" }, { nome: "No fim do período", tipo: "pct" }, ...(extra ? [{ nome: "Máxima queda", tipo: "pct" }] : [])], linhas };
+}
+const minimoSerie = (d) => d.data.reduce((m, p) => Math.min(m, p.y), 0);
+function tabelaMatriz(nome, itens, m) {
+  const n = itens.length, nomes = itens.map((it, i) => `${i + 1}. ${it.nome}`);
+  return { nome, soExcel: n > 14, colunas: [{ nome: "Correlação", tipo: "txt" }, ...nomes.map((x) => ({ nome: x, tipo: "num2" }))],
+    linhas: itens.map((_, i) => [nomes[i], ...itens.map((__, j) => (i === j ? 1 : Number.isNaN(m[i * n + j]) ? null : m[i * n + j]))]) };
+}
+// matriz inteira desenhada numa imagem (com nomes até 40 séries; acima disso, só as cores)
+function imagemMatriz(itens, m) {
+  const n = itens.length, r = (i, j) => (i === j ? 1 : Number.isNaN(m[i * n + j]) ? null : m[i * n + j]);
+  const fundo = getComputedStyle(document.body).getPropertyValue("--card").trim() || "#fff", txt = corTexto();
+  const cv = document.createElement("canvas"), g = cv.getContext("2d"), esc2 = 2;
+  if (n > 40) {
+    const lado = Math.max(2, Math.min(10, Math.floor(1200 / n))), tam = lado * n;
+    cv.width = cv.height = tam * esc2; g.scale(esc2, esc2); g.fillStyle = fundo; g.fillRect(0, 0, tam, tam);
+    for (let i = 0; i < n; i++) for (let j = 0; j < n; j++) { const v = r(i, j); g.fillStyle = i === j ? OURO : corPar(v)[0]; g.fillRect(j * lado, i * lado, lado, lado); }
+    return { url: cv.toDataURL("image/png"), w: tam, h: tam };
+  }
+  const L = 250, C = 46, H = 24, P = 160, W = L + n * C, A = n * H + P;
+  cv.width = W * esc2; cv.height = A * esc2; g.scale(esc2, esc2); g.fillStyle = fundo; g.fillRect(0, 0, W, A);
+  g.font = "600 11px Manrope, sans-serif"; g.textBaseline = "middle";
+  for (let i = 0; i < n; i++) {
+    g.textAlign = "left"; g.fillStyle = txt; g.fillText(textoCabe(g, `${i + 1}. ${itens[i].nome}`, L - 12), 6, i * H + H / 2);
+    for (let j = 0; j < n; j++) {
+      const v = r(i, j), [bg, fg] = i === j ? [OURO, "#141a4a"] : corPar(v);
+      g.fillStyle = bg; g.fillRect(L + j * C + 1, i * H + 1, C - 2, H - 2);
+      g.fillStyle = fg; g.textAlign = "center"; g.fillText(v == null ? "n/a" : i === j ? "1" : br(v, 2), L + j * C + C / 2, i * H + H / 2);
+    }
+  }
+  g.textAlign = "right"; g.fillStyle = txt;
+  for (let j = 0; j < n; j++) { g.save(); g.translate(L + j * C + C / 2, n * H + 8); g.rotate(-Math.PI / 2); g.fillText(textoCabe(g, `${j + 1}. ${itens[j].nome}`, P - 14), 0, 0); g.restore(); }
+  return { url: cv.toDataURL("image/png"), w: W, h: A };
+}
+function tabelaResumoJM(nome, lista, nomeB) {        // lista: [{ nome, cnpj, resumo }]
+  const B = nomeB || "Benchmark", faixa = (rot, comData) => [...(comData ? [{ nome: `${rot}: data de início`, tipo: "data" }] : []),
+    { nome: `${rot}: rentabilidade`, tipo: "pct" }, { nome: `${rot}: fundo a.a.`, tipo: "pct" }, { nome: `${rot}: ${B} a.a.`, tipo: "pct" }, { nome: `${rot}: diferença`, tipo: "pct" }];
+  const val = (f, comData) => [...(comData ? [f.data] : []), f.ret, f.retAA, f.benchAA, f.dif];
+  return { nome, colunas: [{ nome: "Fundo", tipo: "txt" }, { nome: "CNPJ", tipo: "txt" }, { nome: "Primeira aplicação", tipo: "data" }, { nome: "Última aplicação", tipo: "data" },
+      ...faixa("Mínimo", true), ...faixa("Mediana", false), ...faixa("Máximo", true),
+      { nome: "Janelas", tipo: "int" }, { nome: `Abaixo do ${B}`, tipo: "int" }, { nome: `Acima do ${B}`, tipo: "int" }, { nome: "Negativas", tipo: "int" }, { nome: "Positivas", tipo: "int" },
+      { nome: `% acima do ${B}`, tipo: "pct" }, { nome: "% positivas", tipo: "pct" }],
+    linhas: lista.map(({ nome: n, cnpj, resumo: r }) => [n, cnpj || "", r.primeira, r.ultima, ...val(r.min, true), ...val(r.med, false), ...val(r.max, true),
+      r.total, r.abaixo, r.acima, r.negativas, r.positivas, r.pAcima, r.pPositivas]) };
+}
+const tabelaMetricasRel = (nome, linhas, colunas) => ({ nome, colunas: colunas.map((c) => ({ nome: c.nome, tipo: tipoCol(c.tipo) })),
+  linhas: linhas.map((l) => colunas.map((c) => (c.chave === "Fundo" ? (l._parado ? `${l.Fundo} (${l._parado.rot.toLowerCase()})` : l.Fundo) : l[c.chave]))) });
+
+// ---------- dados usados nos cálculos ("um embaixo do outro")
+function faixasFundos() {                      // período de cada fundo: da menor data inicial à maior data final entre os períodos calculados
+  const fx = new Map();
+  for (const p of Object.values(st.res.periodos)) for (const l of p.linhas) {
+    const a = fx.get(l._c); fx.set(l._c, a ? [Math.min(a[0], l["Data Inicial"]), Math.max(a[1], l["Data Final"])] : [l["Data Inicial"], l["Data Final"]]);
+  }
+  return fx;
+}
+function faixaIndices() {
+  let a = Infinity, b = -Infinity;
+  for (const [x, y] of faixasFundos().values()) { a = Math.min(a, x); b = Math.max(b, y); }
+  if (st.cartRes) { a = Math.min(a, st.cartRes.d0); b = Math.max(b, st.cartRes.dN); }
+  return [a, b];
+}
+function contarLinhasBrutas(ks) {
+  let n = 0;
+  for (const k of ks) {
+    if (k === "rawCotas") for (const [c, [a, b]] of faixasFundos()) { const f = st.res.fundos.get(c); if (f) n += upperBound(f.d, b) - lowerBound(f.d, a); }
+    else if (k === "rawIdx") { const [a, b] = faixaIndices(); for (const x of st.idx.disponiveis) { const nv = st.idx.niveis[x]; n += upperBound(nv.d, b) - lowerBound(nv.d, a); } }
+    else if (k === "rawJm") n += st.res.jm.porFundo.reduce((s, x) => s + x.linhas.length, 0);
+    else if (k === "rawCart") n += st.cartRes.sim.dias.length * (st.cartRes.validos.length + 1);
+    else if (k === "rawCartJm") n += st.cartRes.jm.lista.reduce((s, x) => s + x.linhas.length, 0);
+  }
+  return n;
+}
+const linhasJanelas = (lista) => lista.flatMap(({ nome, cnpj, linhas }) => linhas.map((l) => [nome, cnpj || "", l.ini, l.fim, l.du, l.linhas, l.ret, l.retAA, l.benchAA, l.dif]));
+const colsJanelas = (B) => [{ nome: "Fundo", tipo: "txt" }, { nome: "CNPJ", tipo: "txt" }, { nome: "Data inicial", tipo: "data" }, { nome: "Data final", tipo: "data" },
+  { nome: "Dias úteis (ANBIMA)", tipo: "int" }, { nome: "Dias com cota na CVM", tipo: "int" }, { nome: "Rentabilidade no período", tipo: "pct6" },
+  { nome: "Fundo anualizado", tipo: "pct6" }, { nome: `${B || "Benchmark"} anualizado`, tipo: "pct6" }, { nome: `Diferença para o ${B || "benchmark"}`, tipo: "pct6" }];
+function blocosBrutos(k) {
+  const B = [], bruto = (t) => B.push({ tipo: "tabela", soExcel: true, bruto: true, ...t });
+  if (k === "rawCotas") {
+    const linhas = [];
+    for (const [c, [a, b]] of faixasFundos()) {
+      const f = st.res.fundos.get(c); if (!f) continue;
+      const nome = st.porCnpj.get(c)?.NOME || c, cn = cnpjFmt(c);
+      for (let i = lowerBound(f.d, a), fim = upperBound(f.d, b); i < fim; i++)
+        linhas.push([nome, cn, f.d[i], f.q[i], i ? f.qa[i] : null, i ? f.vari[i] : null, Number.isNaN(f.cdi[i]) ? null : f.cdi[i] / 100,
+          f.capt[i], f.resg[i], Number.isNaN(f.pl[i]) ? null : f.pl[i], Number.isNaN(f.cot[i]) ? null : f.cot[i]]);
+    }
+    bruto({ nome: "Dados - cotas diárias", nota: "CDI do dia = taxa do dia útil anterior (% a.a.), como no cálculo das métricas. Inclui todos os períodos calculados.",
+      colunas: [{ nome: "Fundo", tipo: "txt" }, { nome: "CNPJ", tipo: "txt" }, { nome: "Data", tipo: "data" }, { nome: "Cota", tipo: "cota" }, { nome: "Cota anterior", tipo: "cota" },
+        { nome: "Variação do dia", tipo: "pct6" }, { nome: "CDI do dia (a.a.)", tipo: "pct6" }, { nome: "Captação", tipo: "valor" }, { nome: "Resgate", tipo: "valor" },
+        { nome: "Patrimônio líquido", tipo: "valor" }, { nome: "Cotistas", tipo: "int" }], linhas });
+    return { titulo: "Dados · cotas diárias dos fundos", blocos: B };
+  }
+  if (k === "rawIdx") {
+    const [a, b] = faixaIndices(), linhas = [];
+    for (const x of st.idx.disponiveis) {
+      const nv = st.idx.niveis[x], tipo = INDICES[x].tipo;
+      for (let i = lowerBound(nv.d, a), fim = upperBound(nv.d, b); i < fim; i++) {
+        const v = i ? nv.L[i] / nv.L[i - 1] - 1 : null;
+        linhas.push([nomeIndice(x), nv.d[i], nv.L[i], v, tipo === "taxa" && v != null ? (1 + v) ** 252 - 1 : null]);
+      }
+    }
+    bruto({ nome: "Dados - índices diários", nota: "Nível = preço (Ibovespa, dólar, S&P) ou índice acumulado (CDI, Selic, IPCA e IGP-M, com a inflação do mês distribuída pelos dias úteis).",
+      colunas: [{ nome: "Índice", tipo: "txt" }, { nome: "Data", tipo: "data" }, { nome: "Nível", tipo: "cota" }, { nome: "Variação do dia", tipo: "pct6" }, { nome: "Taxa ao ano (CDI e Selic)", tipo: "pct6" }], linhas });
+    return { titulo: "Dados · índices diários", blocos: B };
+  }
+  if (k === "rawJm") {
+    const jm = st.res.jm;
+    bruto({ nome: "Dados - janelas dos fundos", colunas: colsJanelas(jm.nomeB),
+      linhas: linhasJanelas(jm.porFundo.map(({ c, linhas }) => ({ nome: st.porCnpj.get(c)?.NOME || c, cnpj: cnpjFmt(c), linhas }))) });
+    return { titulo: `Dados · janela móvel dos fundos (${jm.p.meses} meses)`, blocos: B };
+  }
+  if (k === "rawCart") {
+    const R = st.cartRes, c = st.cart;
+    const det = simularCarteira(R.ativos, R.pesos, { ini: diaDe(new Date(c.ini)), fim: diaDe(new Date(c.fim)), rebal: R.rebal, detalhe: true });
+    const v0 = Number(c.valor) || 0, linhas = [];
+    for (let t = 0; t < det.dias.length; t++) {
+      R.validos.forEach((it, k2) => linhas.push([det.dias[t], R.nomes[k2], det.porAtivo[k2][t], det.posDia[k2][t] * v0, det.posDia[k2][t] / det.valor[t], det.ganhoDia[k2][t] * v0]));
+      linhas.push([det.dias[t], "Carteira", det.valor[t], det.valor[t] * v0, 1, t ? (det.valor[t] - det.valor[t - 1]) * v0 : 0]);
+    }
+    bruto({ nome: "Dados - carteira diária", nota: `Valores em R$ para R$ ${br(v0, 0)} aplicados. Peso no fim do dia, antes do rebalanceamento.`,
+      colunas: [{ nome: "Data", tipo: "data" }, { nome: "Ativo", tipo: "txt" }, { nome: "Nível do ativo (base 1)", tipo: "cota" }, { nome: "Valor na carteira (R$)", tipo: "valor" },
+        { nome: "Peso no dia", tipo: "pct6" }, { nome: "Ganho do dia (R$)", tipo: "valor" }], linhas });
+    return { titulo: "Dados · carteira dia a dia", blocos: B };
+  }
+  if (k === "rawCartJm") {
+    const jm = st.cartRes.jm;
+    bruto({ nome: "Dados - janelas da carteira", colunas: colsJanelas(jm.nomeB), linhas: linhasJanelas(jm.lista.map((x) => ({ nome: x.nome, cnpj: x.c ? cnpjFmt(x.c) : "", linhas: x.linhas }))) });
+    return { titulo: `Dados · janela móvel da carteira (${jm.p.meses} meses)`, blocos: B };
+  }
+  return null;
+}
+
+function blocosRel(k) {
+  if (k.startsWith("raw")) return blocosBrutos(k);
+  const res = st.res, R = st.cartRes, apel = res?.apelidos || {};
+  const per = st.perAtivo, B = [];
+  const img = (id, titulo) => { const i = imagemGrafico(id); if (i) B.push({ tipo: "img", titulo, ...i }); };
+  switch (k) {
+    case "fundos": {
+      const fim = res.fimComum;
+      B.push({ tipo: "tabela", nome: "Fundos analisados", colunas: [{ nome: "Fundo", tipo: "txt" }, { nome: "CNPJ", tipo: "txt" }, { nome: "Classificação CVM", tipo: "txt" },
+          { nome: "Classificação ANBIMA", tipo: "txt" }, { nome: "Gestor", tipo: "txt" }, { nome: "1ª cota", tipo: "data" }, { nome: "Última cota", tipo: "data" }, { nome: "Situação", tipo: "txt" }],
+        linhas: res.sel.map((c) => { const f = res.fundos.get(c), cad = st.porCnpj.get(c) || {}, pa = f ? situacaoParado(f, cad, fim) : null;
+          return [cad.NOME || c, cnpjFmt(c), cad.CLASSIFICACAO_CVM || "", cad.CLASSIFICACAO_ANBIMA || "", cad.GESTOR || "", f ? f.d[0] : null, f ? f.d[f.d.length - 1] : null,
+            !f ? "sem cotas na base" : pa ? pa.txt : "ativo"]; }) });
+      return { titulo: "Fundos analisados", blocos: B };
+    }
+    case "met": {
+      const cols = COLUNAS.map(([, n, t]) => ({ chave: n, nome: n, tipo: t }));
+      for (const p of Object.keys(res.periodos)) B.push({ tipo: "tabela", ...tabelaMetricasRel(`Métricas ${p}`, res.periodos[p].linhas, cols) });
+      return { titulo: "Métricas", blocos: B, nota: "Uma tabela por período calculado." };
+    }
+    case "acum": img("gAcum", "Rentabilidade acumulada"); B.push({ tipo: "tabela", ...tabelaFinal("gAcum", "Rentab. acumulada - final") }, { tipo: "tabela", ...tabelaDoGrafico("gAcum", "Rentab. acumulada - diária") });
+      return { titulo: `Rentabilidade acumulada · ${per}${st.rel.on ? ` · relativa a ${st.rel.alvo} (${st.rel.modo === "dif" ? "diferença" : "% do alvo"})` : ""}`, blocos: B };
+    case "dd": img("gDd", "Drawdown"); B.push({ tipo: "tabela", ...tabelaFinal("gDd", "Drawdown - final", minimoSerie) }, { tipo: "tabela", ...tabelaDoGrafico("gDd", "Drawdown - diário") });
+      return { titulo: `Drawdown · ${per}`, blocos: B };
+    case "risco": img("gRisco", "Risco × retorno");
+      B.push({ tipo: "tabela", nome: "Risco x retorno", colunas: [{ nome: "Fundo / índice", tipo: "txt" }, { nome: "Retorno a.a.", tipo: "pct" }, { nome: "Volatilidade a.a.", tipo: "pct" }, { nome: "Sharpe", tipo: "num2" }],
+        linhas: st.ctx.riscoPts.map((p) => [p.nome, p.ret, p.vol, p.sharpe]) });
+      return { titulo: `Risco × retorno · ${per}`, blocos: B };
+    case "corr": { const { itens, m } = st.ctx.dados._corr; B.push({ tipo: "img", titulo: "Correlação", ...imagemMatriz(itens, m) }, { tipo: "tabela", ...tabelaMatriz("Correlação", itens, m) });
+      return { titulo: `Correlação dos retornos diários · ${per}`, blocos: B }; }
+    case "jm": { const jm = res.jm; img("gJM", "Janela móvel");
+      B.push({ tipo: "tabela", ...tabelaResumoJM("Janela móvel - resumo", jm.porFundo.map(({ c, resumo }) => ({ nome: st.porCnpj.get(c)?.NOME || c, cnpj: cnpjFmt(c), resumo })), jm.nomeB) },
+        { tipo: "tabela", ...tabelaDoGrafico("gJM", "Janela móvel - gráfico", "pct", "Data de aplicação") });
+      return { titulo: `Janela móvel · ${jm.p.meses} meses · benchmark ${jm.nomeB || "nenhum"}`, blocos: B }; }
+    case "cartResumo": {
+      const e = R.eT, v0 = Number(st.cart.valor) || 0;
+      B.push({ tipo: "tabela", nome: "Carteira - indicadores", colunas: [{ nome: "Indicador", tipo: "txt" }, { nome: "Valor", tipo: "txt" }], linhas: [
+        ["Período", `${fmtData(R.d0)} a ${fmtData(R.dN)}`], ["Rebalanceamento", R.rebal ? REBAL[R.rebal] : "nunca (comprar e manter)"], ["Referência", st.cart.ref.rot],
+        ["Retorno no período", brPct(e.total)], ["Retorno ao ano", brPct(e.anual)], [`R$ ${br(v0, 0)} viram`, "R$ " + br(v0 * (1 + e.total), 2)],
+        ["Volatilidade ao ano", brPct(e.vol)], ["Índice de Sharpe", e.sharpe == null ? "–" : br(e.sharpe, 2)], ["Máxima queda", brPct(e.mdd)],
+        ["Meses positivos", e.mesesPos == null ? "–" : `${br(e.mesesPos * 100, 0)}% de ${e.nMeses}`], ["Melhor mês", brPct(e.melhorMes)], ["Pior mês", brPct(e.piorMes)]] });
+      const lin = R.validos.map((it, k2) => [R.nomes[k2], R.pesos[k2], R.eA[k2].total, R.eA[k2].anual, R.eA[k2].vol, R.eA[k2].sharpe, R.eA[k2].mdd, R.sim.contrib[k2]]);
+      lin.push(["Carteira", 1, e.total, e.anual, e.vol, e.sharpe, e.mdd, R.sim.contrib.reduce((a, b) => a + b, 0)]);
+      if (R.eRef) lin.push([`Referência: ${st.cart.ref.rot}`, null, R.eRef.total, R.eRef.anual, R.eRef.vol, R.eRef.sharpe, R.eRef.mdd, null]);
+      if (R.eBH) lin.push(["Mesma carteira sem rebalancear", 1, R.eBH.total, R.eBH.anual, R.eBH.vol, R.eBH.sharpe, R.eBH.mdd, null]);
+      B.push({ tipo: "tabela", nome: "Carteira - ativos", colunas: [{ nome: "Ativo", tipo: "txt" }, { nome: "Peso", tipo: "pct" }, { nome: "Retorno", tipo: "pct" }, { nome: "Ao ano", tipo: "pct" },
+        { nome: "Volatilidade", tipo: "pct" }, { nome: "Sharpe", tipo: "num2" }, { nome: "Máx. queda", tipo: "pct" }, { nome: "Contribuição", tipo: "pct" }], linhas: lin });
+      return { titulo: "Montagem de carteira · resumo", blocos: B };
+    }
+    case "cartMet": B.push({ tipo: "tabela", ...tabelaMetricasRel("Carteira - métricas", R.metricas.linhas.map((l) => ({ ...l, Fundo: String(l.Fundo) })), R.metricas.colunas) });
+      return { titulo: "Montagem de carteira · métricas", blocos: B };
+    case "cartAcum": img("gCartEvol", "Carteira - rentabilidade"); B.push({ tipo: "tabela", ...tabelaFinal("gCartEvol", "Carteira - rentab. final") }, { tipo: "tabela", ...tabelaDoGrafico("gCartEvol", "Carteira - rentab. diária") });
+      return { titulo: `Montagem de carteira · rentabilidade acumulada${st.cartUI.rel.on ? ` · relativa a ${st.cartUI.rel.alvo}` : ""}`, blocos: B };
+    case "cartDd": img("gCartDD", "Carteira - drawdown"); B.push({ tipo: "tabela", ...tabelaFinal("gCartDD", "Carteira - drawdown final", minimoSerie) }, { tipo: "tabela", ...tabelaDoGrafico("gCartDD", "Carteira - drawdown diário") });
+      return { titulo: "Montagem de carteira · drawdown", blocos: B };
+    case "cartRisco": img("gCartRR", "Carteira - risco x retorno");
+      B.push({ tipo: "tabela", nome: "Carteira - risco x retorno", colunas: [{ nome: "Ativo", tipo: "txt" }, { nome: "Retorno a.a.", tipo: "pct" }, { nome: "Volatilidade a.a.", tipo: "pct" }, { nome: "Sharpe", tipo: "num2" }],
+        linhas: st.cartUI.pts.map((p) => [p.nome, p.anual, p.vol, p.sharpe]) });
+      return { titulo: "Montagem de carteira · risco × retorno", blocos: B };
+    case "cartCorr": B.push({ tipo: "img", titulo: "Carteira - correlação", ...imagemMatriz(R.corr.itens, R.corr.m) }, { tipo: "tabela", ...tabelaMatriz("Carteira - correlação", R.corr.itens, R.corr.m) });
+      return { titulo: "Montagem de carteira · correlação", blocos: B };
+    case "cartJm": { const jm = R.jm; img("gCartJM", "Carteira - janela móvel");
+      B.push({ tipo: "tabela", ...tabelaResumoJM("Carteira - janela móvel", jm.lista.map((x) => ({ nome: x.nome, cnpj: x.c ? cnpjFmt(x.c) : "", resumo: x.resumo })), jm.nomeB) },
+        { tipo: "tabela", ...tabelaDoGrafico("gCartJM", "Carteira - janela gráfico", "pct", "Data de aplicação") });
+      return { titulo: `Montagem de carteira · janela móvel · ${jm.p.meses} meses · benchmark ${jm.nomeB || "nenhum"}`, blocos: B }; }
+  }
+  return null;
+}
+
+// ---------- formatação de texto (PDF e PNG)
+const dataJs = (dia) => new Date(dia * 86400000);
+const NF8 = new Intl.NumberFormat("pt-BR", { minimumFractionDigits: 8, maximumFractionDigits: 8, useGrouping: false });
+function fmtCel(v, tipo) {
+  if (v == null || v === "") return "";
+  if (typeof v !== "number") return String(v);
+  return ({ pct: brPct(v), pct6: brPct(v, 4), data: fmtData(v), int: br(v, 0), num2: br(v, 2), num: br(v, 4), valor: br(v, 2), cota: NF8.format(v) })[tipo] ?? String(v);
+}
+// a fonte padrão do PDF só tem os caracteres latinos básicos
+const pdfTxt = (s) => String(s ?? "").replace(/−/g, "-").replace(/[–—]/g, "-").replace(/★/g, "*").replace(/⊘/g, "(!)").replace(/▲/g, "+").replace(/▼/g, "-")
+  .replace(/…/g, "...").replace(/[“”]/g, '"').replace(/[‘’]/g, "'").replace(/≈/g, "~").replace(/[^\x00-\xFF]/g, "");
+const cabecalhoRel = () => {
+  const m = st.meta, n = st.res?.sel.length || 0;
+  return `Gerado em ${new Date().toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" })} · dados da CVM até ${fmtData(diaDe(new Date(m.ultimo_dado)))} · ${n} fundo(s)`;
+};
+
+// ---------- PDF (A4 deitado; tabelas largas continuam na página seguinte, repetindo a 1ª coluna)
+async function gerarPDF(partes, prog) {
+  prog("baixando a biblioteca de PDF…"); await carregarLib("pdf"); await carregarLib("tabelaPdf");
+  const doc = new window.jspdf.jsPDF({ orientation: "landscape", unit: "mm", format: "a4", compress: true });
+  const W = doc.internal.pageSize.getWidth(), H = doc.internal.pageSize.getHeight(), M = 10;
+  doc.setFont("helvetica", "bold"); doc.setFontSize(20); doc.setTextColor(43, 44, 120); doc.text("Análise de Fundos", M, 24);
+  doc.setFont("helvetica", "normal"); doc.setFontSize(11); doc.setTextColor(80); doc.text(pdfTxt(cabecalhoRel()), M, 32);
+  doc.setDrawColor(201, 162, 58); doc.setLineWidth(0.8); doc.line(M, 36, W - M, 36);
+  doc.setFontSize(10); doc.text(pdfTxt("Conteúdo: " + partes.map((p) => p.titulo).join(" · ")), M, 44, { maxWidth: W - 2 * M });
+  doc.setFontSize(8); doc.setTextColor(120); doc.text("Conteúdo informativo, não é recomendação de investimento. Rentabilidade passada não garante rentabilidade futura.", M, H - 8);
+  for (let i = 0; i < partes.length; i++) {
+    const p = partes[i]; prog(`montando o PDF: ${p.titulo} (${i + 1} de ${partes.length})…`); await pausa();
+    doc.addPage(); let y = 16;
+    doc.setFont("helvetica", "bold"); doc.setFontSize(14); doc.setTextColor(43, 44, 120); doc.text(pdfTxt(p.titulo), M, y); y += 3;
+    doc.setDrawColor(201, 162, 58); doc.line(M, y, W - M, y); y += 5;
+    if (p.nota) { doc.setFont("helvetica", "normal"); doc.setFontSize(8.5); doc.setTextColor(90); doc.text(pdfTxt(p.nota), M, y); y += 5; }
+    for (const b of p.blocos) {
+      if (b.tipo === "img") {
+        let w = W - 2 * M, h = w * b.h / b.w;
+        if (h > H - y - 12) { h = Math.max(60, H - y - 12); w = h * b.w / b.h; }
+        if (y + h > H - 10) { doc.addPage(); y = 14; }
+        doc.addImage(b.url, "PNG", M, y, w, h, undefined, "FAST"); y += h + 5;
+      } else if (b.tipo === "tabela" && !b.soExcel) {
+        doc.setFont("helvetica", "bold"); doc.setFontSize(9.5); doc.setTextColor(43, 44, 120);
+        if (y > H - 30) { doc.addPage(); y = 14; }
+        doc.text(pdfTxt(b.nome), M, y); y += 2;
+        doc.autoTable({ startY: y, margin: { left: M, right: M, top: 12, bottom: 12 }, theme: "grid",
+          head: [b.colunas.map((c) => pdfTxt(c.nome))], body: b.linhas.map((l) => l.map((v, j) => pdfTxt(fmtCel(v, b.colunas[j].tipo)))),
+          styles: { fontSize: 6.5, cellPadding: 1.2, overflow: "linebreak", minCellWidth: 15, lineColor: [221, 226, 239], lineWidth: 0.1 },
+          headStyles: { fillColor: [43, 44, 120], textColor: 255, fontStyle: "bold", fontSize: 6.5, overflow: "linebreak" },
+          alternateRowStyles: { fillColor: [246, 248, 253] }, columnStyles: { 0: { cellWidth: 55, fontStyle: "bold" } },
+          horizontalPageBreak: true, horizontalPageBreakRepeat: 0,
+          didParseCell: (d) => { if (d.section === "body" && d.column.index > 0 && b.colunas[d.column.index]?.tipo !== "txt") d.cell.styles.halign = "right";
+            const v = b.linhas[d.row.index]?.[d.column.index];
+            if (d.section === "body" && b.colunas[d.column.index]?.tipo === "pct" && typeof v === "number") d.cell.styles.textColor = v > 0 ? [12, 138, 78] : v < 0 ? [208, 38, 44] : [40, 40, 40]; } });
+        y = doc.lastAutoTable.finalY + 6;
+      }
+    }
+    if (p.blocos.some((b) => b.soExcel)) { doc.setFont("helvetica", "italic"); doc.setFontSize(8); doc.setTextColor(110);
+      if (y > H - 14) { doc.addPage(); y = 14; } doc.text("As séries diárias e as tabelas muito largas desta parte saem completas no Excel.", M, y); }
+  }
+  const n = doc.getNumberOfPages();
+  for (let i = 1; i <= n; i++) { doc.setPage(i); doc.setFont("helvetica", "normal"); doc.setFontSize(8); doc.setTextColor(130); doc.text(`Página ${i} de ${n}`, W - M, H - 5, { align: "right" }); }
+  prog("salvando…");
+  return doc.output("blob");
+}
+
+// ---------- PNG (cada parte vira uma imagem; várias vão num .zip)
+const LIMITE_LINHAS_PNG = 80;
+function htmlParte(p) {
+  let h = `<section class="rel-parte"><h2>${esc(p.titulo)}</h2><p class="rel-sub">${esc(cabecalhoRel())}</p>` + (p.nota ? `<p class="rel-sub">${esc(p.nota)}</p>` : "");
+  for (const b of p.blocos) {
+    if (b.tipo === "img") h += `<img src="${b.url}" style="width:${Math.min(1300, b.w)}px;height:auto" alt="">`;
+    else if (b.tipo === "tabela" && !b.soExcel) {
+      const lin = b.linhas.slice(0, LIMITE_LINHAS_PNG);
+      h += `<h3>${esc(b.nome)}</h3><table><thead><tr>${b.colunas.map((c) => `<th>${esc(c.nome)}</th>`).join("")}</tr></thead><tbody>${lin.map((l) => `<tr>${l.map((v, j) => {
+        const t = b.colunas[j].tipo, cor = t === "pct" && typeof v === "number" ? (v > 0 ? "color:#0c8a4e" : v < 0 ? "color:#d0262c" : "") : "";
+        return `<td class="${t === "txt" ? "t" : ""}" style="${cor}">${esc(fmtCel(v, t))}</td>`; }).join("")}</tr>`).join("")}</tbody></table>` +
+        (b.linhas.length > LIMITE_LINHAS_PNG ? `<p class="rel-sub">Mostrando ${LIMITE_LINHAS_PNG} de ${b.linhas.length} linhas; a tabela completa sai no Excel.</p>` : "");
+    }
+  }
+  return h + "</section>";
+}
+async function gerarPNG(partes, prog, umaSo) {
+  prog("baixando a biblioteca de imagem…"); await carregarLib("imagem"); if (!umaSo && partes.length > 1) await carregarLib("zip");
+  const area = document.createElement("div"); area.className = "rel-render";
+  area.innerHTML = partes.map(htmlParte).join("");
+  document.body.appendChild(area);
+  try {
+    await Promise.all($$("img", area).map((im) => (im.complete ? 1 : new Promise((r) => { im.onload = im.onerror = r; }))));
+    const capturar = async (el) => (await window.html2canvas(el, { backgroundColor: "#ffffff", scale: 1.5, logging: false, useCORS: true }));
+    const blob = (cv) => new Promise((r) => cv.toBlob(r, "image/png"));
+    if (umaSo || partes.length === 1) { prog("desenhando a imagem…"); await pausa(); return { blob: await blob(await capturar(area)), ext: "png" }; }
+    const zip = new window.JSZip(), secoes = $$(".rel-parte", area);
+    for (let i = 0; i < secoes.length; i++) {
+      prog(`desenhando ${partes[i].titulo} (${i + 1} de ${secoes.length})…`); await pausa();
+      zip.file(`${String(i + 1).padStart(2, "0")} ${nomeArquivo(partes[i].titulo)}.png`, await blob(await capturar(secoes[i])));
+    }
+    prog("compactando…");
+    return { blob: await zip.generateAsync({ type: "blob" }), ext: "zip" };
+  } finally { area.remove(); }
+}
+const nomeArquivo = (s) => pdfTxt(s).replace(/[\\/:*?"<>|·]+/g, " ").replace(/\s+/g, " ").trim().slice(0, 80);
+
+// ---------- Excel (uma aba por tabela, com formatos, filtro e cabeçalho fixo; gráficos numa aba própria)
+async function gerarExcel(partes, prog, comImagens) {
+  prog("baixando a biblioteca do Excel…"); await carregarLib("excel");
+  const wb = new window.ExcelJS.Workbook(); wb.creator = "Análise de Fundos"; wb.created = new Date();
+  const usados = new Set(), nomeAba = (s) => {
+    let base = pdfTxt(s).replace(/[\\/:*?\[\]]/g, " ").replace(/\s+/g, " ").trim().slice(0, 28) || "Aba", n = base, k = 2;
+    while (usados.has(n.toLowerCase())) n = `${base.slice(0, 26)} ${k++}`;
+    usados.add(n.toLowerCase()); return n;
+  };
+  const FMT = { pct: "0.00%", pct6: "0.0000%", data: "dd/mm/yyyy", int: "0", num2: "0.00", num: "0.0000", valor: "#,##0.00", cota: "0.00000000" };
+  // capa com o índice das abas
+  const capa = wb.addWorksheet(nomeAba("Sobre"));
+  capa.addRow(["Análise de Fundos"]).font = { bold: true, size: 16, color: { argb: "FF2B2C78" } };
+  capa.addRow([cabecalhoRel()]); capa.addRow([]);
+  capa.addRow(["Aba", "Conteúdo"]).font = { bold: true };
+  capa.getColumn(1).width = 34; capa.getColumn(2).width = 90;
+  for (let i = 0; i < partes.length; i++) {
+    const p = partes[i]; prog(`montando o Excel: ${p.titulo} (${i + 1} de ${partes.length})…`); await pausa();
+    for (const b of p.blocos.filter((x) => x.tipo === "tabela")) {
+      const ws = wb.addWorksheet(nomeAba(b.nome), { views: [{ state: "frozen", xSplit: 1, ySplit: 1 }] });
+      capa.addRow([ws.name, p.titulo + (b.nota ? " · " + b.nota : "")]);
+      ws.columns = b.colunas.map((c, j) => ({ header: c.nome, width: j === 0 ? 44 : Math.min(24, Math.max(12, c.nome.length + 2)), style: FMT[c.tipo] ? { numFmt: FMT[c.tipo] } : {} }));
+      const cab = ws.getRow(1); cab.font = { bold: true, color: { argb: "FFFFFFFF" } }; cab.alignment = { vertical: "middle", wrapText: true }; cab.height = 32;
+      cab.eachCell((c) => { c.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF2B2C78" } }; });
+      for (let r = 0; r < b.linhas.length; r++) {
+        ws.addRow(b.linhas[r].map((v, j) => (v == null ? null : b.colunas[j].tipo === "data" && typeof v === "number" ? dataJs(v) : v)));
+        if (r % 4000 === 3999) await pausa();
+      }
+      ws.autoFilter = { from: { row: 1, column: 1 }, to: { row: 1, column: b.colunas.length } };
+    }
+  }
+  if (comImagens) {
+    const imgs = partes.flatMap((p) => p.blocos.filter((b) => b.tipo === "img").map((b) => ({ ...b, parte: p.titulo })));
+    if (imgs.length) {
+      prog("colocando os gráficos…"); await pausa();
+      const ws = wb.addWorksheet(nomeAba("Gráficos")); capa.addRow([ws.name, "Imagens dos gráficos"]);
+      let linha = 1;
+      for (const im of imgs) {
+        ws.getCell(linha, 1).value = im.parte; ws.getCell(linha, 1).font = { bold: true, size: 13, color: { argb: "FF2B2C78" } };
+        const largura = Math.min(1100, im.w), altura = largura * im.h / im.w;
+        ws.addImage(wb.addImage({ base64: im.url, extension: "png" }), { tl: { col: 0, row: linha }, ext: { width: largura, height: altura } });
+        linha += Math.ceil(altura / 20) + 3;
+      }
+    }
+  }
+  prog("salvando…"); await pausa();
+  return new Blob([await wb.xlsx.writeBuffer()], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+}
+
+// ---------- CSV (dados grandes demais para o Excel): ponto e vírgula, vírgula decimal, datas dd/mm/aaaa
+const NF_CSV = new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 10, useGrouping: false });
+async function csvDeTabela(b) {
+  const q = (s) => (/[;"\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s);
+  const cel = (v, t) => (v == null || v === "" ? "" : typeof v !== "number" ? q(String(v)) : t === "data" ? fmtData(v) : NF_CSV.format(v));
+  const partes = ["\ufeff" + b.colunas.map((c) => q(c.nome + (c.tipo === "pct" || c.tipo === "pct6" ? " (decimal)" : ""))).join(";") + "\r\n"];
+  for (let i = 0; i < b.linhas.length; i += 20000) {
+    partes.push(b.linhas.slice(i, i + 20000).map((l) => l.map((v, j) => cel(v, b.colunas[j].tipo)).join(";")).join("\r\n") + "\r\n");
+    await pausa();
+  }
+  return new Blob(partes, { type: "text/csv;charset=utf-8" });
+}
+
+// ---------- gerar e baixar
+async function baixarRelatorio() {
+  const escolhidas = SECOES_REL.filter((s) => disponivel(s) && rel.sel.has(s.k));
+  if (!escolhidas.length) return;
+  const btn = $("#relBaixar"), prog = (t) => { $("#relProg").textContent = t; };
+  btn.disabled = true;
+  try {
+    prog("preparando…"); await pausa();
+    const partes = escolhidas.map((s) => blocosRel(s.k)).filter(Boolean);
+    // proteção contra arquivos enormes (o navegador pode travar)
+    const tabs = partes.flatMap((p) => p.blocos.filter((b) => b.tipo === "tabela"));
+    const celulas = tabs.filter((b) => !b.bruto || b.linhas.length * b.colunas.length <= 3e6).reduce((s, b) => s + b.linhas.length * b.colunas.length, 0);
+    const celPdf = tabs.filter((b) => !b.soExcel).reduce((s, b) => s + b.linhas.length * b.colunas.length, 0);
+    if (rel.fmt === "xlsx" && celulas > 12e6) throw new Error(`o Excel teria ${br(celulas / 1e6, 1)} milhões de células, mais do que o navegador consegue montar. Escolha menos partes ou um período mais curto.`);
+    if (rel.fmt === "xlsx" && celulas > 2.5e6 && !(await perguntar("Arquivo grande", `O Excel terá cerca de <b>${br(celulas / 1e6, 1)} milhões</b> de células. Pode levar alguns minutos e usar bastante memória. Continuar?`,
+      [{ rot: "Cancelar", v: false }, { rot: "Continuar", v: true, classe: "prim" }]))) { prog(""); return; }
+    if (rel.fmt === "pdf" && celPdf > 150000 && !(await perguntar("PDF grande", `As tabelas somam cerca de ${br(celPdf / 1000, 0)} mil células (centenas de páginas). Continuar?`,
+      [{ rot: "Cancelar", v: false }, { rot: "Continuar", v: true, classe: "prim" }]))) { prog(""); return; }
+    let blob, ext = rel.fmt;
+    if (rel.fmt === "xlsx") {
+      // dados usados nos cálculos: se não couberem bem no Excel, vão em CSV dentro de um .zip junto com o Excel
+      const brutos = tabs.filter((b) => b.bruto), linBrutas = brutos.reduce((s2, b) => s2 + b.linhas.length, 0);
+      if (linBrutas > 8e6) throw new Error(`os dados brutos teriam ${br(linBrutas / 1e6, 1)} milhões de linhas, mais do que o navegador consegue montar. Escolha um período mais curto ou menos fundos.`);
+      const grandes = brutos.filter((b) => b.linhas.length > 1e6 || b.linhas.length * b.colunas.length > 3e6);
+      if (grandes.length) {
+        const nLin = grandes.reduce((s2, b) => s2 + b.linhas.length, 0), passa = grandes.some((b) => b.linhas.length > 1048575);
+        if (!(await perguntar("Dados grandes demais para o Excel", `Os dados de <b>${grandes.map((b) => esc(b.nome.replace("Dados - ", ""))).join(", ")}</b> têm ${br(nLin, 0)} linhas` +
+            (passa ? " (o Excel aceita até 1.048.576 por aba)" : ", volume que o navegador demoraria muito para montar como Excel") +
+            `. Vou gerar um <b>.zip</b> com o Excel do relatório e esses dados em <b>CSV</b> (ponto e vírgula, vírgula decimal), que também abre no Excel.`,
+          [{ rot: "Cancelar", v: false }, { rot: "Gerar .zip", v: true, classe: "prim" }]))) { prog(""); return; }
+        await carregarLib("zip");
+        for (const p of partes) p.blocos = p.blocos.map((b) => (grandes.includes(b) ? { ...b, foraDoExcel: true } : b));
+        const zip = new window.JSZip(), restantes = partes.map((p) => ({ ...p, blocos: p.blocos.filter((b) => !b.foraDoExcel) })).filter((p) => p.blocos.length);
+        if (restantes.length) zip.file("relatorio_fundos.xlsx", await gerarExcel(restantes, prog, rel.xlsImg));
+        for (const b of grandes) { prog(`escrevendo ${b.nome} em CSV (${br(b.linhas.length, 0)} linhas)…`); zip.file(`${nomeArquivo(b.nome)}.csv`, await csvDeTabela(b)); }
+        prog("compactando…");
+        blob = await zip.generateAsync({ type: "blob", compression: "DEFLATE", compressionOptions: { level: 3 } }, (m) => prog(`compactando… ${Math.round(m.percent)}%`));
+        ext = "zip";
+      } else blob = await gerarExcel(partes, prog, rel.xlsImg);
+    }
+    else if (rel.fmt === "pdf") blob = await gerarPDF(partes.filter((p) => p.blocos.some((b) => !b.bruto)), prog);
+    else ({ blob, ext } = await gerarPNG(partes.filter((p) => p.blocos.some((b) => !b.bruto)), prog, rel.pngUm));
+    const a = document.createElement("a"), hoje = new Date().toISOString().slice(0, 10);
+    a.href = URL.createObjectURL(blob); a.download = `relatorio_fundos_${hoje}.${ext}`; a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+    prog(`pronto: arquivo de ${br(blob.size / 1024 / 1024, 1)} MB baixado.`);
+  } catch (e) {
+    console.error(e); prog("erro: " + (e?.message || e));
+  } finally { btn.disabled = false; }
+}
+
+document.addEventListener("click", (e) => {
+  const t = e.target;
+  if (t.id === "btnRel") return abrirRelatorio();
+  const f = t.closest?.("#relFmt button"); if (f) { rel.fmt = f.dataset.f; salvar("relFmt", rel.fmt); return desenharFormatoRel(); }
+  if (t.id === "relTudo" || t.id === "relNada") {
+    $$("#relSecoes input[data-rel]:not(:disabled)").forEach((i) => { const sec = SECOES_REL.find((s) => s.k === i.dataset.rel);
+      const marca = t.id === "relTudo" && !sec.bruto;          // "marcar tudo" não inclui os dados brutos (podem ser grandes)
+      i.checked = marca; marca ? rel.sel.add(i.dataset.rel) : rel.sel.delete(i.dataset.rel); });
+    salvar("relSel", [...rel.sel]); return desenharFormatoRel();
+  }
+  if (t.id === "relBaixar") return baixarRelatorio();
+});
+document.addEventListener("change", (e) => {
+  const t = e.target;
+  if (t.dataset?.rel) { t.checked ? rel.sel.add(t.dataset.rel) : rel.sel.delete(t.dataset.rel); salvar("relSel", [...rel.sel]); desenharFormatoRel(); }
+  else if (t.name === "relPng") rel.pngUm = t.value === "um";
+  else if (t.id === "relXlsImg") rel.xlsImg = t.checked;
 });
 
 // ---------- slider de datas (dois cursores)
