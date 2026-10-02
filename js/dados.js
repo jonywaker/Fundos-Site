@@ -2,6 +2,7 @@
 import { parquetReadObjects } from "https://cdn.jsdelivr.net/npm/hyparquet@1.31.2/+esm";
 import { compressors } from "https://cdn.jsdelivr.net/npm/hyparquet-compressors@1.1.2/+esm";
 import { diaDe, prepararFundo } from "./calculos.js";
+import { montarIndices } from "./indices.js";
 
 const LIMITE_CACHE = 150 * 1024 * 1024;          // no máximo ~150 MB guardados no computador
 const PREF_GUARDAR = "fundos.guardar";
@@ -95,14 +96,7 @@ export async function carregarLista() {
 
 export async function carregarIndices() {
   const linhas = await lerParquet(await baixar("indices.parquet"));
-  const serie = (nome) => {
-    const v = linhas.filter((r) => r.INDICE === nome).sort((a, b) => a.DATA - b.DATA);
-    return { d: Int32Array.from(v.map((r) => diaDe(r.DATA))), v: Float64Array.from(v.map((r) => r.VALOR)) };
-  };
-  const cdi = serie("CDI"), ibov = serie("IBOV");
-  const cdiAnterior = new Map();                     // CDI do dia ANTERIOR da série (regra do VBA)
-  for (let i = 1; i < cdi.d.length; i++) cdiAnterior.set(cdi.d[i], cdi.v[i - 1]);
-  return { cdi, ibov, cdiAnterior };
+  return montarIndices(linhas.map((r) => ({ INDICE: r.INDICE, dia: diaDe(r.DATA), VALOR: r.VALOR })));
 }
 
 // ---------------------------------------------------------------------------- cotas dos fundos
