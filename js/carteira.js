@@ -9,7 +9,7 @@ const nivelAsof = (s, dia) => { const i = upperBound(s.d, dia) - 1; return i >= 
  * ativos: [{ s: { d, L }, nome }]; pesos: frações que somam 1; ini/fim: dias; rebal: meses entre rebalanceamentos (0 = nunca).
  * O período efetivo começa quando todos os ativos têm dado e termina no último dia em que todos têm dado.
  */
-export function simularCarteira(ativos, pesos, { ini, fim, rebal = 0 }) {
+export function simularCarteira(ativos, pesos, { ini, fim, rebal = 0, detalhe = false }) {
   const comeco = Math.max(ini, ...ativos.map((a) => a.s.d[0]));
   const ultimos = ativos.map((a) => a.s.d[a.s.d.length - 1]);
   const termino = Math.min(fim, ...ultimos);
@@ -21,11 +21,15 @@ export function simularCarteira(ativos, pesos, { ini, fim, rebal = 0 }) {
   let pos = pesos.slice(), total = 1;
   const ganho = new Float64Array(n), valor = new Float64Array(T);
   valor[0] = 1;
+  // detalhe (só para baixar os dados): posição de cada ativo no fim de cada dia e o ganho do dia
+  const posDia = detalhe ? ativos.map(() => new Float64Array(T)) : null, ganhoDia = detalhe ? ativos.map(() => new Float64Array(T)) : null;
+  if (detalhe) for (let k = 0; k < n; k++) posDia[k][0] = pos[k];
   const mesDe = (x) => { const [a, m] = partes(x); return a * 12 + m - 1; };
   for (let t = 1; t < T; t++) {
     for (let k = 0; k < n; k++) {
       const r = niveis[k][t] / niveis[k][t - 1] - 1;
       const g = pos[k] * r; ganho[k] += g; pos[k] += g;
+      if (detalhe) { ganhoDia[k][t] = g; posDia[k][t] = pos[k]; }
     }
     total = pos.reduce((s, v) => s + v, 0);
     valor[t] = total;
@@ -33,7 +37,7 @@ export function simularCarteira(ativos, pesos, { ini, fim, rebal = 0 }) {
     if (rebal && t < T - 1 && mesDe(dias[t + 1]) !== mesDe(dias[t]) && (mesDe(dias[t]) % 12 + 1) % rebal === 0) pos = pesos.map((w) => w * total);
   }
   const porAtivo = niveis.map((L) => Float64Array.from(L, (v) => v / L[0]));
-  return { dias, valor, contrib: Array.from(ganho), porAtivo, cortadoIni: comeco > ini, cortadoFim: termino < fim,
+  return { dias, valor, contrib: Array.from(ganho), porAtivo, posDia, ganhoDia, cortadoIni: comeco > ini, cortadoFim: termino < fim,
     limitante: termino < fim ? ativos[ultimos.indexOf(termino)].nome : null };
 }
 
