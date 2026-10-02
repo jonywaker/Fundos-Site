@@ -285,3 +285,85 @@ dialog.dlg-texto { width: min(900px, 96vw); max-height: 90vh; border: 1px solid 
 #tabRisco .tb td:first-child { max-width: 210px; overflow: hidden; text-overflow: ellipsis; }
 #tabRisco .tb td:nth-child(2) { max-width: none; }
 .linha2 > * { min-width: 0; }
+
+/* ============ opções em destaque (o que pode ser mudado) ============ */
+.opcoes { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; padding: 5px 10px 5px 8px;
+  border: 1px solid color-mix(in srgb, var(--azul) 45%, var(--borda)); background: color-mix(in srgb, var(--azul) 7%, var(--card));
+  border-radius: 10px; }
+.opcoes::before { content: "⚙"; color: var(--ouro); font-size: 14px; line-height: 1; }
+.jm-ctl.opcoes { display: flex; padding: 10px 12px; }
+.jm-ctl.opcoes::before { align-self: center; }
+.opcoes label, .opcoes .ordem { font-weight: 600; color: var(--azul); }
+@media (prefers-color-scheme: dark) { .opcoes label, .opcoes .ordem { color: #9cc2ff; } }
+.opcoes select, .opcoes input[type=date], .opcoes input[type=number], .opcoes .combo-in { border: 1.5px solid color-mix(in srgb, var(--azul) 60%, var(--borda)); font-weight: 600; }
+.opcoes select:hover, .opcoes input:hover { border-color: var(--azul); }
+.pilulas button { font-weight: 600; border-color: color-mix(in srgb, var(--azul) 40%, var(--borda)); }
+.pilulas button:not([aria-pressed=true]) { color: var(--azul); background: var(--card); }
+@media (prefers-color-scheme: dark) { .pilulas button:not([aria-pressed=true]) { color: #9cc2ff; } }
+.barra .slider .trilho input[type=range]::-webkit-slider-thumb { box-shadow: 0 0 0 3px color-mix(in srgb, var(--azul) 25%, transparent); }
+#destaque { border: 1.5px solid color-mix(in srgb, var(--ouro) 70%, var(--borda)); }
+.sec { border-color: color-mix(in srgb, var(--azul) 45%, var(--borda)); color: var(--azul); background: var(--card); }
+@media (prefers-color-scheme: dark) { .sec { color: #9cc2ff; } }
+.sec:hover { background: color-mix(in srgb, var(--azul) 8%, var(--card)); }
+
+/* interruptor no lugar da caixinha de marcar */
+.tog input[type=checkbox] { appearance: none; -webkit-appearance: none; width: 32px; height: 18px; border-radius: 99px; flex: none; margin: 0;
+  background: color-mix(in srgb, var(--sub) 45%, var(--card)); position: relative; cursor: pointer; transition: background .15s; border: 0; padding: 0; }
+.tog input[type=checkbox]::after { content: ""; position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%; background: #fff;
+  box-shadow: 0 1px 2px rgba(0,0,0,.3); transition: left .15s; }
+.tog input[type=checkbox]:checked { background: var(--azul); }
+.tog input[type=checkbox]:checked::after { left: 16px; }
+.tog input[type=checkbox]:disabled { opacity: .45; cursor: default; }
+.tog input[type=checkbox]:focus-visible { outline: 2px solid var(--ouro); outline-offset: 2px; }
+@media (prefers-reduced-motion: reduce) { .tog input[type=checkbox], .tog input[type=checkbox]::after { transition: none; } }
+
+/* caixa de escolha com busca */
+.combo { position: relative; min-width: 240px; display: inline-block; vertical-align: middle; }
+.combo-in { width: 100%; padding-right: 26px; cursor: text; }
+.combo-seta { position: absolute; right: 9px; top: 50%; transform: translateY(-50%); color: var(--azul); pointer-events: none; font-size: 12px; }
+.combo-lista { position: absolute; z-index: 40; left: 0; right: 0; top: calc(100% + 3px); min-width: 320px; max-height: 340px; overflow-y: auto;
+  background: var(--card); border: 1px solid var(--azul); border-radius: 9px; box-shadow: 0 12px 28px -10px rgba(20,26,74,.45); padding: 4px 0; }
+.combo-g { font: 600 10.5px Manrope, sans-serif; letter-spacing: .1em; text-transform: uppercase; color: var(--ouro); padding: 7px 10px 3px; }
+.combo-op { padding: 5px 10px; font-size: 13px; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 500; color: var(--txt); }
+.combo-op.at { background: color-mix(in srgb, var(--azul) 14%, var(--card)); }
+.combo-op.atual { font-weight: 800; }
+.combo-mais { padding: 6px 10px; font-size: 12px; color: var(--sub); font-style: italic; }
+#relCtl { flex-wrap: wrap; }
+
+/* correlação grande (imagem) e extremos do fundo destacado */
+.corr-cv { overflow: auto; max-width: 100%; }
+.corr-cv canvas { display: block; cursor: crosshair; border: 1px solid var(--borda); }
+.corr-escala { display: flex; align-items: center; gap: 6px; font-size: 12px; margin: 6px 0; flex-wrap: wrap; }
+.corr-escala i { display: inline-block; width: 140px; height: 9px; border-radius: 4px; background: linear-gradient(90deg, rgb(208,38,44), #eef0f6, rgb(31,90,166)); }
+.corr-tip { width: 280px; }
+.corr-ext { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr)); gap: 12px; margin-top: 8px; }
+.corr-ext .tb { width: 100%; }
+
+/* carteira */
+.jm-ctl label.largo { flex: 1 1 280px; }
+.jm-ctl label.largo .combo { width: 100%; }
+.cart-acoes { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 4px 0 10px; }
+.cart-acoes .sec { padding: 5px 11px; font-size: 12.5px; }
+.cart-lista { max-height: 300px; margin-bottom: 12px; }
+.cart-lista .tb { min-width: 0; width: 100%; }
+.cart-lista td.t { white-space: normal; }
+.cart-lista small { color: var(--sub); }
+.cart-lista tr.indisp td { opacity: .6; font-style: italic; }
+.cart-peso { width: 90px; text-align: right; border: 1.5px solid color-mix(in srgb, var(--azul) 60%, var(--borda)); font-weight: 700; }
+.cart-rm { border: 1px solid var(--borda); background: none; color: var(--sub); border-radius: 6px; padding: 1px 8px; cursor: pointer; font-size: 15px; }
+.cart-rm:hover { color: var(--vermelho); border-color: var(--vermelho); }
+.kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 8px; margin: 4px 0 12px; }
+.kpi { border: 1px solid var(--borda); border-left: 3px solid var(--anil); border-radius: 8px; padding: 8px 11px; background: var(--card); }
+.kpi.dest { border-left-color: var(--ouro); box-shadow: inset 0 0 0 1px rgba(201,162,58,.35); }
+.kpi .l { font-size: 11px; color: var(--sub); font-weight: 600; }
+.kpi .v { font-size: 20px; font-weight: 800; font-variant-numeric: tabular-nums; }
+.cart-tab tr.cart-total td { font-weight: 800; border-top: 2px solid var(--anil); background: color-mix(in srgb, var(--anil) 6%, var(--card)) !important; }
+.cart-tab tr.cart-ref td { font-size: 12px; color: var(--sub); }
+.cart-tab tr.cart-ref.ef td { font-weight: 700; color: var(--txt); }
+.cart-tab td.contrib { min-width: 150px; }
+.minibar { display: block; position: relative; height: 5px; width: 110px; margin: 4px 0 0 auto; background: color-mix(in srgb, var(--sub) 18%, var(--card)); border-radius: 3px; }
+.minibar::after { content: ""; position: absolute; left: 50%; top: -2px; bottom: -2px; width: 1px; background: var(--sub); }
+.minibar i { position: absolute; top: 0; bottom: 0; border-radius: 3px; }
+.minibar i.up { left: 50%; background: var(--verde); } .minibar i.down { right: 50%; background: var(--vermelho); }
+.linha2.metades { grid-template-columns: repeat(auto-fit, minmax(min(100%, 380px), 1fr)); }
+.graf.baixo { height: 320px; }
