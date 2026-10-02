@@ -514,3 +514,17 @@ dialog.dlg-pergunta { width: min(460px, 92vw); border: 0; border-top: 3px solid 
 #relDestTab { max-height: 300px; }
 .rel-render tr.dest td { background: #ffecb3 !important; font-weight: 700; }
 .rel-grupo .tog { white-space: normal; align-items: flex-start; } .rel-grupo .tog input { margin-top: 1px; }
+
+/* ============ zoom de arrastar nos gráficos ============ */
+.graf canvas { cursor: crosshair; }
+.zoom-sel { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 3; display: none; }
+.zoom-bar { position: absolute; top: 4px; right: 6px; z-index: 4; display: flex; gap: 4px; align-items: center; pointer-events: none; }
+.zoom-bar button { display: none; pointer-events: auto; border: 1px solid color-mix(in srgb, var(--azul) 50%, var(--borda)); background: var(--card); color: var(--azul);
+  border-radius: 7px; padding: 2px 8px; font: 700 11.5px Manrope, sans-serif; cursor: pointer; box-shadow: 0 2px 6px rgba(20,26,74,.15); }
+@media (prefers-color-scheme: dark) { .zoom-bar button { color: #9cc2ff; } }
+.zoom-bar button:hover { border-color: var(--ouro); }
+.zoom-bar.com-zoom button { display: inline-block; }
+.zoom-dica { font-size: 10.5px; color: var(--sub); background: color-mix(in srgb, var(--card) 85%, transparent); padding: 1px 6px; border-radius: 6px; opacity: 0; transition: opacity .15s; }
+.graf:hover .zoom-bar:not(.com-zoom) .zoom-dica { opacity: 1; }
+.zoom-bar.com-zoom .zoom-dica { display: none; }
+@media (hover: none) { .zoom-dica { display: none; } }
