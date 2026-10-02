@@ -106,9 +106,15 @@ export async function carregarIndices() {
 }
 
 // ---------------------------------------------------------------------------- cotas dos fundos
-let meta_grupos = 1024;
-export const definirGrupos = (n) => { meta_grupos = n; };
-const grupoDe = (cnpj) => String(parseInt(cnpj.slice(-6), 10) % meta_grupos).padStart(4, "0");
+let meta_grupos = 1024, meta_formato = 2;
+export const definirGrupos = (n, formato = 2) => { meta_grupos = n; meta_formato = formato; };
+// formato 3+: raiz do CNPJ (8 primeiros caracteres; aceita CNPJ alfanumérico) — igual ao grupo_web_sql() do Python
+function grupoDe(cnpj) {
+  let n;
+  if (meta_formato >= 3) { n = 0; for (let i = 0; i < 8; i++) n = n * 10 + (cnpj.charCodeAt(i) - 48); }
+  else n = parseInt(cnpj.slice(-6), 10);
+  return String(n % meta_grupos).padStart(4, "0");
+}
 const grupos = new Map();                            // grupo -> Promise<Map<cnpj, linhas[]>>
 
 function carregarGrupo(g) {
