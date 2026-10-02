@@ -134,18 +134,20 @@ function carregarGrupo(g) {
 // carrega vários fundos em paralelo (até 6 downloads ao mesmo tempo)
 export async function carregarFundos(cnpjs, cdiAnterior, aoAvancar) {
   // progresso contado em fundos (não em grupos), com total fixo desde o início
+  // aoAvancar(feitos, total, evento): evento = { tipo: "inicio" | "fim", cnpjs, ok: Set dos que vieram com cotas }
   const porGrupo = new Map();
-  for (const c of new Set(cnpjs)) { const g = grupoDe(c); porGrupo.set(g, (porGrupo.get(g) || 0) + 1); }
+  for (const c of new Set(cnpjs)) { const g = grupoDe(c); if (!porGrupo.has(g)) porGrupo.set(g, []); porGrupo.get(g).push(c); }
   const fila = [...porGrupo.keys()];
-  const total = [...porGrupo.values()].reduce((a, b) => a + b, 0);
+  const total = [...porGrupo.values()].reduce((a, b) => a + b.length, 0);
   let feitos = 0;
-  aoAvancar?.(0, total);
+  aoAvancar?.(0, total, null);
   const trabalhar = async () => {
     while (fila.length) {
-      const g = fila.shift();
-      await carregarGrupo(g);
-      feitos += porGrupo.get(g);
-      aoAvancar?.(feitos, total);
+      const g = fila.shift(), doGrupo = porGrupo.get(g);
+      aoAvancar?.(feitos, total, { tipo: "inicio", cnpjs: doGrupo });
+      const mapa = await carregarGrupo(g);
+      feitos += doGrupo.length;
+      aoAvancar?.(feitos, total, { tipo: "fim", cnpjs: doGrupo, ok: new Set(doGrupo.filter((c) => mapa.get(c)?.length)) });
     }
   };
   await Promise.all(Array.from({ length: Math.min(6, fila.length) }, trabalhar));
