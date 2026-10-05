@@ -2,6 +2,8 @@
 // Em cada métrica, o pior fundo do ranking tem nota 0 e o melhor tem nota 1 (os demais ficam no meio, em proporção);
 // a nota é multiplicada pelo peso. Peso positivo = maior é melhor; peso negativo = menor é melhor. Os pesos somam 100.
 
+import { COLUNAS, partes, diaYMD, somarMeses } from "./calculos.js";
+
 export const GRUPOS_RANK = ["Performance", "Consistência", "Risco"];
 
 // k: nome da coluna nas métricas do site (as que começam com "_" são calculadas só para o ranking)
@@ -21,7 +23,37 @@ export const METRICAS_RANK = [
   { k: "Dias em Underwater Atual", nome: "Dias em underwater atual", g: "Risco", tipo: "int" },
   { k: "Maior Período em Dias Underwater", nome: "Maior período em underwater (dias)", g: "Risco", tipo: "int" },
 ];
+// demais métricas numéricas da tabela de métricas, que podem entrar em tipos de cálculo novos
+// dir: direção sugerida (+1 = maior é melhor, -1 = menor é melhor); g: grupo sugerido
+const EXTRAS_RANK = [
+  ["% Anualizado", "Performance", 1], ["%CDI", "Performance", 1], ["CDI +", "Performance", 1], ["IBOV +", "Performance", 1], ["yRoa", "Performance", 1],
+  ["Sortino", "Performance", 1], ["VaR Histórico", "Risco", 1], ["VaR Normal (1 dia 95%)", "Risco", 1], ["Volatilidade", "Risco", -1], ["Queda", "Risco", 1],
+  ["% recuperado até hoje", "Risco", 1], ["Duração Total", "Risco", -1], ["Duração da Queda", "Risco", -1], ["Duração da Recuperação", "Risco", -1],
+  ["Beta", "Risco", -1], ["Var Diária Ponderada", "Risco", 1], ["Períodos 21d-30d", "Risco", -1], ["Períodos 31d-60d", "Risco", -1], ["Períodos 61d-90d", "Risco", -1],
+  ["Períodos 91d-120d", "Risco", -1], ["Períodos acima de 120d", "Risco", -1],
+];
+const TIPO_COL = Object.fromEntries(COLUNAS.map(([, n, t]) => [n, t]));
+for (const [k, g, dir] of EXTRAS_RANK) if (TIPO_COL[k] && !METRICAS_RANK.some((m) => m.k === k))
+  METRICAS_RANK.push({ k, nome: k === "Queda" ? "Drawdown máximo (queda)" : k, g, tipo: TIPO_COL[k] === "valor" ? "valor" : TIPO_COL[k], dir, extra: true });
+// direção sugerida das métricas originais
+const DIR_PADRAO = { "No. de estouros": -1, "Índice de Dor": -1, "MDD/VOL": -1, "Dias em Underwater Atual": -1, "Maior Período em Dias Underwater": -1 };
+for (const m of METRICAS_RANK) if (m.dir == null) m.dir = DIR_PADRAO[m.k] || 1;
 export const metricaRank = (k) => METRICAS_RANK.find((m) => m.k === k);
+/** Grupo da métrica no tipo de cálculo (pode ser trocado no editor); senão, o grupo sugerido. */
+export const grupoMetrica = (M, k) => M?.grupos?.[k] || metricaRank(k)?.g || "Performance";
+
+// Data de comparação para a coluna de variação de posição
+export const COMPARACOES = {
+  "1m": "1 mês antes", "2m": "2 meses antes", "3m": "3 meses antes", "6m": "6 meses antes", "12m": "12 meses antes",
+  "24m": "24 meses antes", "36m": "36 meses antes", "fimMes": "Fim do mês passado", "fimAno": "Fim do ano passado",
+};
+export const ROTULO_VAR = { "1m": "1 mês", "2m": "2 meses", "3m": "3 meses", "6m": "6 meses", "12m": "12 meses", "24m": "24 meses", "36m": "36 meses", "fimMes": "mês", "fimAno": "ano" };
+export function dataComparacao(fim, chave = "1m") {
+  const [a, m] = partes(fim);
+  if (chave === "fimMes") return diaYMD(a, m, 1) - 1;
+  if (chave === "fimAno") return diaYMD(a, 1, 1) - 1;
+  return somarMeses(fim, -(parseInt(chave, 10) || 1));
+}
 
 // Tipos de cálculo (planilha "Métricas × categoria"): período das métricas, janela móvel (5 anos de aplicações) e pesos
 export const MODELOS_RANK = {
@@ -58,7 +90,7 @@ export function indiceObjetivo(txt) {
  * Devolve, por item: { id, total (0 a 100), grupos: { Performance, Consistência, Risco }, notas: { métrica: { nota 0..1, pontos } } }.
  * Sem valor numa métrica = 0 ponto nela. Se todos os fundos têm o mesmo valor, todos recebem nota 1.
  */
-export function pontuar(itens, pesos) {
+export function pontuar(itens, pesos, M = null) {
   const ks = Object.keys(pesos), lim = {};
   const ok = (x) => typeof x === "number" && Number.isFinite(x);
   for (const k of ks) {
@@ -75,7 +107,7 @@ export function pontuar(itens, pesos) {
       if (L && ok(x)) nota = L[1] === L[0] ? 1 : p > 0 ? (x - L[0]) / (L[1] - L[0]) : (L[1] - x) / (L[1] - L[0]);
       const pontos = nota * Math.abs(p);
       notas[k] = { nota, pontos, valor: ok(x) ? x : null };
-      total += pontos; grupos[metricaRank(k)?.g || "Performance"] += pontos;
+      total += pontos; grupos[grupoMetrica(M, k)] = (grupos[grupoMetrica(M, k)] || 0) + pontos;
     }
     return { id: it.id, total, grupos, notas };
   });
