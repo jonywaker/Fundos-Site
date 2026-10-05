@@ -3,12 +3,14 @@
   --anil: #2b2c78; --azul: #1f5aa6; --ciano: #1596d3; --ouro: #c9a23a; --verde: #0c8a4e; --vermelho: #d0262c;
   --bg: #f4f6fb; --card: #ffffff; --borda: #dde2ef; --txt: #1b1f3b; --sub: #5b6386;
   --zebra: #f6f8fd; --cab: #2b2c78; --cabtxt: #fff; --dest: #fff4cc; --campo: #fff;
+  --pos: #087040; --neg: #b81f25; --link: #0b6a9a;          /* textos com contraste mínimo de 4,5 */
   color-scheme: light;
 }
 @media (prefers-color-scheme: dark) {
   :root {
     --bg: #0c1030; --card: #151b41; --borda: #2a3264; --txt: #e6e9f7; --sub: #9aa3cc;
     --zebra: #19204c; --cab: #222a5e; --cabtxt: #e6e9f7; --dest: #4a3f12; --campo: #0f1438;
+    --pos: #3ccf86; --neg: #ff9e9e; --link: #5cc4f5;
     color-scheme: dark;
   }
 }
@@ -21,7 +23,7 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--ciano); out
 input[type=checkbox] { width: auto; accent-color: var(--azul); }
 [hidden] { display: none !important; }
 .nota { color: var(--sub); font-size: 12.5px; margin: 4px 0; }
-.ok { color: var(--verde); } .neg { color: var(--vermelho); }
+.ok { color: var(--pos); } .neg { color: var(--neg); }
 
 /* topo */
 .topo { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 12px 22px;
@@ -39,8 +41,8 @@ input[type=checkbox] { width: auto; accent-color: var(--azul); }
 
 /* blocos da lateral */
 .bloco { padding: 10px 0 14px; border-bottom: 1px solid var(--borda); display: grid; gap: 8px; }
-.bloco h3 { font-size: 13.5px; color: var(--anil); display: flex; align-items: center; gap: 6px; }
-@media (prefers-color-scheme: dark) { .bloco h3 { color: var(--ouro); } }
+.bloco h2.h-lat, .bloco h3 { margin: 0 0 8px; font-family: Cinzel, Georgia, serif; font-size: 13.5px; color: var(--anil); display: flex; align-items: center; gap: 6px; }
+@media (prefers-color-scheme: dark) { .bloco h3, .bloco h2.h-lat { color: var(--ouro); } }
 .campo { display: grid; gap: 3px; font-size: 12.5px; color: var(--sub); }
 .campo.duas { grid-template-columns: 1fr 1fr; gap: 8px; }
 .campo.duas label { display: grid; gap: 3px; }
@@ -55,7 +57,7 @@ input[type=checkbox] { width: auto; accent-color: var(--azul); }
 #calcular { width: 100%; padding: 11px; font-size: 15px; border-bottom: 3px solid var(--ouro); }
 .sec { background: transparent; border-color: var(--borda); }
 .sec:hover { border-color: var(--ciano); }
-.link { background: none; border: 0; color: var(--ciano); cursor: pointer; font: 12px Manrope, sans-serif; margin-left: auto; }
+.link { background: none; border: 0; color: var(--link); cursor: pointer; font: 12px Manrope, sans-serif; margin-left: auto; }
 
 /* pílulas (botões de alternância) */
 .pilulas { display: flex; flex-wrap: wrap; gap: 5px; }
@@ -119,6 +121,7 @@ button.add small { display: block; color: var(--sub); font-size: 11px; }
 .tb-wrap { overflow: auto; border: 1px solid var(--borda); border-radius: 9px; }
 .tb { border-collapse: separate; border-spacing: 0; font-size: 12.5px; width: max-content; min-width: 100%; }
 .tb th, .tb td { padding: 5px 9px; white-space: nowrap; text-align: right; border-bottom: 1px solid var(--borda); }
+.tb td, .kpi .v, .leg td { font-variant-numeric: tabular-nums; }
 .tb td.t, .tb th.t, .tb th.fx { text-align: left; }
 .tb thead th { position: sticky; top: 0; z-index: 2; background: var(--cab); color: var(--cabtxt); font-weight: 600; }
 .tb thead tr.h2 th { top: 27px; }
@@ -163,8 +166,8 @@ dialog::backdrop { background: rgba(8, 10, 40, .55); }
 }
 
 /* fundo cancelado / sem cotas até o fim do período */
-.parado { color: var(--vermelho); font-weight: 800; margin-right: 5px; cursor: help; }
-.parado-dt { color: var(--vermelho); font-weight: 700; cursor: help; }
+.parado { color: var(--neg); font-weight: 800; margin-right: 5px; cursor: help; }
+.parado-dt { color: var(--neg); font-weight: 700; cursor: help; }
 .nota-parado { font-size: 12px; color: var(--sub); margin: 8px 2px 0; }
 
 /* ============ etapa 3 e qualidade de vida ============ */
@@ -531,7 +534,7 @@ dialog.dlg-pergunta { width: min(460px, 92vw); border: 0; border-top: 3px solid 
 
 /* ============ rankings ============ */
 .botao-largo { width: 100%; padding: 8px 10px; font-weight: 800; font-size: 13.5px; }
-.rk-sobe { color: var(--verde); font-weight: 800; } .rk-desce { color: var(--vermelho); font-weight: 800; } .rk-igual { color: var(--sub); font-weight: 700; }
+.rk-sobe { color: var(--pos); font-weight: 800; } .rk-desce { color: var(--neg); font-weight: 800; } .rk-igual { color: var(--sub); font-weight: 700; }
 .rk-novo { color: var(--azul); font-weight: 800; font-size: 11px; text-transform: uppercase; letter-spacing: .04em; }
 .rk-curto { color: #b7791f; font-weight: 800; margin-right: 4px; cursor: help; }
 .tb tbody tr.rk-top td.fx:first-child { box-shadow: inset 4px 0 0 var(--ouro), inset -1px 0 0 var(--borda); font-weight: 800; }
@@ -600,7 +603,7 @@ dialog.dlg-medio[open] { max-height: 92vh; }
 .rkm-soma { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; font-size: 13px; }
 .rkm-chip { display: inline-block; border: 2px solid var(--borda); border-radius: 8px; padding: 2px 9px; font-size: 12.5px; font-weight: 600; }
 .rkm-total { margin-left: auto; font-size: 13.5px; }
-.rkm-total.ok { color: var(--verde); } .rkm-total.neg { color: var(--vermelho); }
+.rkm-total.ok { color: var(--pos); } .rkm-total.neg { color: var(--neg); }
 .rkm-tab { width: 100%; }
 .rkm-tab td { white-space: normal; }
 .rkm-tab input[type=number] { width: 80px; text-align: right; font-weight: 700; }
@@ -615,3 +618,22 @@ dialog.dlg-medio[open] { max-height: 92vh; }
 .rk-comp select, .rk-fixa .rk-comp-sel { min-width: 190px; font-weight: 600; }
 #secRank.rk-recalc { opacity: .6; transition: opacity .1s; cursor: progress; }
 #cartCalcular { font-weight: 800; }
+
+/* ============ acessibilidade e uso no celular ============ */
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+.pular { position: absolute; left: 12px; top: -60px; z-index: 100; background: var(--anil); color: #fff; padding: 9px 14px; border-radius: 8px; font-weight: 800;
+  text-decoration: none; box-shadow: 0 6px 18px rgba(10,14,40,.35); }
+.pular:focus { top: 12px; outline: 3px solid var(--ouro); outline-offset: 2px; }
+#principal:focus { outline: none; }
+#principal:focus-visible { outline: 2px solid var(--ouro); outline-offset: 4px; }
+.mx-vp:focus-visible { outline: 3px solid var(--ouro); outline-offset: 2px; }
+button:focus-visible, .link:focus-visible, summary:focus-visible, a:focus-visible { outline: 2px solid var(--ouro); outline-offset: 2px; }
+/* toque: sem atraso de duplo toque e realce discreto */
+button, a, label, summary, select, input[type=checkbox], input[type=radio], .tog, .linha-f { touch-action: manipulation; }
+html { -webkit-tap-highlight-color: rgba(43, 44, 120, .15); }
+/* rolagem dentro das janelas e tabelas não "vaza" para a página */
+dialog, .dlg-tab, .tb-wrap, .mx-vp, .pc-lista, .combo-lista, .resbusca, #rkLista, #rkEdFundos, #rkmMetricas, #rkModLista, #grLista, #colTabela { overscroll-behavior: contain; }
+/* "reduzir movimento" do sistema: desliga animações e transições do site inteiro */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; scroll-behavior: auto !important; }
+}
