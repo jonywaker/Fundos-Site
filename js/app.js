@@ -68,8 +68,7 @@ async function iniciar() {
     for (const k of [...st.idxSel]) if (!st.idx.niveis[k]) st.idxSel.delete(k);
     desenharChipsIndices();
     montarCombos();
-    const daUrl = new URLSearchParams(location.search).get("fundos");
-    if (daUrl) adicionar(daUrl.split(",").map((c) => c.replace(/\D/g, "").padStart(14, "0")));
+    lerUrl();
     $("#app").classList.remove("carregando");
     atualizarSidebar();
     atualizarEspaco();
@@ -141,7 +140,7 @@ function atualizarSidebar() {
   // selecionados
   $("#nSel").textContent = st.sel.length;
   $("#selecionados").innerHTML = st.sel.map((c) => `<span class="chip" title="${esc(st.porCnpj.get(c)?.NOME)}">
-      ${esc(curto(st.porCnpj.get(c)?.NOME || c, 34))}<button data-rm="${c}" aria-label="remover">×</button></span>`).join("")
+      ${esc(curto(st.porCnpj.get(c)?.NOME || c, 34))}<button data-rm="${c}" type="button" aria-label="Remover ${esc(st.porCnpj.get(c)?.NOME || cnpjFmt(c))}">×</button></span>`).join("")
     || `<p class="nota">Nenhum fundo selecionado.</p>`;
   $("#limpar").hidden = !st.sel.length;
   // períodos
@@ -152,6 +151,7 @@ function atualizarSidebar() {
   const pronto = st.sel.length && st.periodos.size && (!st.periodos.has("Personalizado") || ($("#pIni").value && $("#pFim").value));
   $("#calcular").disabled = !pronto;
   avisoDesatualizado();
+  if (st.idx) sincronizarUrl();
 }
 
 // ---------- janela de pergunta com botões (substitui o confirm do navegador)
@@ -205,18 +205,18 @@ function celFundo(f, c) {
 // cabeçalho clicável (ordenar: 1º clique maior primeiro / A→Z, 2º inverte, 3º volta ao padrão por PL)
 function cabFundos(tab, comFiltros, extraIni = "", extraFim = "") {
   const o = st.ord[tab];
-  let h = `<thead><tr>${extraIni ? "<th></th>" : ""}${COLS_FUNDO.map((c) => {
+  let h = `<thead><tr>${extraIni ? `<th><span class="sr-only">Ação</span></th>` : ""}${COLS_FUNDO.map((c) => {
     const at = o && o.col === c.k;
     return `<th class="${c.tipo === "txt" ? "t" : ""}"${at ? ` aria-sort="${o.dir > 0 ? "ascending" : "descending"}"` : ""}><button class="ord-f" data-tab="${tab}" data-col="${c.k}"
-      data-txt="${c.tipo === "txt" || c.tipo === "cnpj" ? 1 : 0}" title="Ordenar">${esc(c.nome)}${at ? (o.dir > 0 ? " ▲" : " ▼") : ""}</button></th>`; }).join("")}${extraFim ? "<th></th>" : ""}</tr>`;
+      data-txt="${c.tipo === "txt" || c.tipo === "cnpj" ? 1 : 0}" title="Ordenar">${esc(c.nome)}${at ? (o.dir > 0 ? " ▲" : " ▼") : ""}</button></th>`; }).join("")}${extraFim ? `<th><span class="sr-only">Remover</span></th>` : ""}</tr>`;
   if (comFiltros) {
     const f = dlg.f;
     h += `<tr class="filtros">${COLS_FUNDO.map((c) => {
-      if (c.filtro === "txt") return `<th><input data-filtro="${c.k}" type="search" placeholder="filtrar…" value="${esc(f[c.k] || "")}"></th>`;
-      if (c.filtro === "lista") return `<th><select data-filtro="${c.k}"><option value="">Todas</option>${(dlg.opcoes[c.k] || []).map((x) =>
+      if (c.filtro === "txt") return `<th><input data-filtro="${c.k}" type="search" placeholder="filtrar…" aria-label="Filtrar por ${esc(c.nome)}" autocomplete="off" spellcheck="false" value="${esc(f[c.k] || "")}"></th>`;
+      if (c.filtro === "lista") return `<th><select data-filtro="${c.k}" aria-label="Filtrar por ${esc(c.nome)}"><option value="">Todas</option>${(dlg.opcoes[c.k] || []).map((x) =>
         `<option${f[c.k] === x ? " selected" : ""}>${esc(x)}</option>`).join("")}</select></th>`;
-      if (c.filtro === "min") return `<th><input data-filtro="${c.k}" type="number" step="any" placeholder="mín. ${c.tipo === "mi" ? "R$ mi" : "%"}" value="${esc(f[c.k] ?? "")}"></th>`;
-      return "<th></th>";
+      if (c.filtro === "min") return `<th><input data-filtro="${c.k}" type="number" step="any" inputmode="decimal" placeholder="mín. ${c.tipo === "mi" ? "R$ mi" : "%"}" aria-label="Valor mínimo de ${esc(c.nome)}${c.tipo === "mi" ? " (R$ milhões)" : " (%)"}" value="${esc(f[c.k] ?? "")}"></th>`;
+      return `<th><span class="sr-only">Sem filtro</span></th>`;
     }).join("")}</tr>`;
   }
   return h + "</thead>";
@@ -277,7 +277,7 @@ function renderSeletor() {
 function renderSelDialogo() {
   const lista = ordenarFundos(dlg.sel.map((c) => st.porCnpj.get(c)).filter(Boolean), "selB");
   $("#dlgSel").innerHTML = lista.length ? `<table class="tb tab-fundos">${cabFundos("selB", false, "", "x")}<tbody>${lista.map((f) =>
-    `<tr>${COLS_FUNDO.map((c) => celFundo(f, c)).join("")}<td><button class="cart-rm" data-dlgrm="${f.CNPJ}" type="button" title="Tirar da seleção">×</button></td></tr>`).join("")}</tbody></table>`
+    `<tr>${COLS_FUNDO.map((c) => celFundo(f, c)).join("")}<td><button class="cart-rm" data-dlgrm="${f.CNPJ}" type="button" title="Tirar da seleção" aria-label="Tirar ${esc(f.NOME)} da seleção">×</button></td></tr>`).join("")}</tbody></table>`
     : `<p class="nota" style="padding:10px">Nenhum fundo selecionado. Clique nas linhas da tabela de cima.</p>`;
   $("#dlgN").textContent = dlg.sel.length;
   $("#dlgAplicar").textContent = `Aplicar seleção (${dlg.sel.length} fundo${dlg.sel.length === 1 ? "" : "s"})`;
@@ -315,7 +315,7 @@ function renderColagem() {
     (col.faltam.length ? `<br><span class="neg">Não encontrados na base (${col.faltam.length}): ${col.faltam.map(cnpjFmt).join(", ")}</span>` : "");
   $("#colTabela").innerHTML = lista.length ? `<table class="tb tab-fundos">${cabFundos("col", false, "", "x")}<tbody>${lista.map((f) =>
     `<tr${jaSel.has(f.CNPJ) ? ' class="marcado" title="Já está selecionado"' : ""}>${COLS_FUNDO.map((c) => celFundo(f, c)).join("")}
-      <td><button class="cart-rm" data-colrm="${f.CNPJ}" type="button" title="Tirar desta importação">×</button></td></tr>`).join("")}</tbody></table>`
+      <td><button class="cart-rm" data-colrm="${f.CNPJ}" type="button" title="Tirar desta importação" aria-label="Tirar ${esc(f.NOME)} desta importação">×</button></td></tr>`).join("")}</tbody></table>`
     : `<p class="nota" style="padding:10px">Nenhum fundo para importar.</p>`;
   $("#colAcrescentar").disabled = $("#colSubstituir").disabled = !col.lista.length;
   const doRk = !!col.aoConfirmar;
@@ -339,7 +339,7 @@ function renderGrupos() {
         <td>${x.atualizado ? new Date(x.atualizado).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }) : ""}</td>
         <td class="t gr-acoes"><button class="sec mini-btn" data-gr-add="${esc(n)}" type="button" title="Junta estes fundos aos já selecionados">＋ Acrescentar</button>
           <button class="prim mini-btn" data-gr-sub="${esc(n)}" type="button" title="Tira os selecionados e coloca só os do grupo">Substituir</button></td>
-        <td><button class="cart-rm" data-gr-del="${esc(n)}" type="button" title="Excluir grupo">🗑</button></td></tr>` +
+        <td><button class="cart-rm" data-gr-del="${esc(n)}" type="button" title="Excluir grupo" aria-label="Excluir o grupo ${esc(n)}">🗑</button></td></tr>` +
         (aberto ? `<tr class="gr-det"><td colspan="5"><div class="chips">${x.cnpjs.map((c) => `<span class="chip" title="${cnpjFmt(c)}">${esc(curto(st.porCnpj.get(c)?.NOME || cnpjFmt(c) + " (fora da base)", 40))}</span>`).join("")}</div></td></tr>` : "");
     }).join("")}</tbody></table>`;
 }
@@ -540,7 +540,7 @@ async function calcular() {
       if (!$("#jmIni").value || st.jmIniAuto !== false) $("#jmIni").value = isoDe(somarMeses(fimComum, -60));
       calcularJM();
     }
-    const url = new URL(location.href); url.searchParams.set("fundos", sel.join(",")); history.replaceState(null, "", url);
+    sincronizarUrl();
     barra.firstElementChild.style.width = "100%";
     faseCarga("montando tabelas e gráficos…", 96);
     await new Promise((r) => setTimeout(r, 30));
@@ -584,7 +584,8 @@ function calcularJM() {
 }
 
 // ============================== tabelas ==============================
-function corSinal(v) { return typeof v === "number" && !Number.isNaN(v) ? (v > 0 ? `color:${VERDE}` : v < 0 ? `color:${VERMELHO}` : "") : ""; }
+// cor do número por sinal: variáveis do tema (contraste mínimo de 4,5 no claro e no escuro)
+function corSinal(v) { return typeof v === "number" && !Number.isNaN(v) ? (v > 0 ? "color:var(--pos)" : v < 0 ? "color:var(--neg)" : "") : ""; }
 const FMT = {
   pct: (v) => brPct(v), num: (v) => (typeof v === "number" ? br(v, 4) : v ?? ""), num2: (v) => (typeof v === "number" ? br(v, 2) : v ?? ""),
   valor: (v) => br(v, 2), int: (v) => (typeof v === "number" ? br(v, 0) : ""), data: (v) => (typeof v === "number" ? fmtData(v) : v ?? ""),
@@ -647,7 +648,7 @@ function tabelaHTML({ colunas, linhas, fixas = 0, larguras = [260, 150], grupos 
   if (grupos) {
     h += "<tr>";
     for (let j = 0; j < colunas.length;) {
-      if (j < fixas) { h += `<th class="g fx" style="left:${esq[j]}px">${j === 0 ? esc(grupos[0]) : ""}</th>`; j++; continue; }
+      if (j < fixas) { h += `<th class="g fx" style="left:${esq[j]}px">${j === 0 ? esc(grupos[0]) : `<span class="sr-only">${esc(grupos[j] || "")}</span>`}</th>`; j++; continue; }
       let k = j; while (k + 1 < colunas.length && grupos[k + 1] === grupos[j]) k++;
       h += `<th class="g" colspan="${k - j + 1}">${esc(grupos[j])}</th>`; j = k + 1;
     }
@@ -1161,7 +1162,7 @@ function renderMatrizCorr(contId, chave, itens, m) {
   const ext = extremosCorr(itens, r, marc);
   if (tudo && n * MX.lin > 1800) { matrizImagem(cont, itens, r, marc, ext); return; }
   const vis = tudo ? n : Math.min(n, 10), H = vis * MX.lin + MX.pe;
-  cont.innerHTML = `<div class="mx-vp" style="height:${H}px"><div class="mx-esp" style="width:${MX.rotulo + n * MX.col}px;height:${n * MX.lin + MX.pe}px">
+  cont.innerHTML = `<div class="mx-vp" tabindex="0" role="region" aria-label="Matriz de correlação de ${n} séries. Use as setas para rolar; os valores completos saem no relatório em Excel." style="height:${H}px"><div class="mx-esp" style="width:${MX.rotulo + n * MX.col}px;height:${n * MX.lin + MX.pe}px">
     <canvas class="mx-cv"></canvas></div></div>` + ext;
   const vp = $(".mx-vp", cont), cv = $(".mx-cv", cont), g = cv.getContext("2d");
   // fundo destacado: já abre rolado até ele
@@ -1408,20 +1409,20 @@ function renderCarteira() {
   $("#cartJmIni").value = st.cartUI.jmIni; $("#cartJmFim").value = st.cartUI.jmFim;
   definirCombo("cbCartRef", c.ref.rot);
   $("#cartItens").innerHTML = !c.itens.length ? `<p class="nota">Nenhum ativo ainda. Use "Adicionar fundo ou índice" acima ou "Adicionar todos os fundos calculados".</p>` :
-    `<div class="tb-wrap cart-lista"><table class="tb"><thead><tr><th class="t">Ativo</th><th>Peso (%)</th><th></th></tr></thead><tbody>${c.itens.map((it, i) => {
+    `<div class="tb-wrap cart-lista"><table class="tb"><thead><tr><th class="t">Ativo</th><th>Peso (%)</th><th><span class="sr-only">Remover</span></th></tr></thead><tbody>${c.itens.map((it, i) => {
       const ok = serieItem(it);
       return `<tr${ok ? "" : ' class="indisp"'}><td class="t"><span class="sw${it.tipo === "i" ? " losango" : ""}" style="background:${corItem(it)}"></span>` +
         (it.tipo === "f" && ok ? `<span data-mini="${esc(it.v)}">${esc(nomeItem(it))}</span>` : esc(nomeItem(it))) +
         (ok ? "" : ` <small>· ainda não baixado: clique em 🧮 Calcular carteira</small>`) + `</td>
         <td><input class="cart-peso" data-i="${i}" type="number" min="0" step="1" value="${it.peso}" aria-label="Peso de ${esc(nomeItem(it))}"></td>
-        <td><button class="cart-rm" data-i="${i}" type="button" title="Tirar da carteira">×</button></td></tr>`; }).join("")}</tbody></table></div>`;
+        <td><button class="cart-rm" data-i="${i}" type="button" title="Tirar da carteira" aria-label="Tirar ${esc(nomeItem(it))} da carteira">×</button></td></tr>`; }).join("")}</tbody></table></div>`;
   atualizarSoma();
   calcularCarteira();
 }
 function atualizarSoma() {
   const s = st.cart.itens.reduce((a, it) => a + (Number(it.peso) || 0), 0);
   const cem = Math.abs(s - 100) < 0.1;                  // tolerância para arredondamentos (ex.: 7 × 14,29 = 100,03)
-  $("#cartSoma").innerHTML = st.cart.itens.length ? `Soma dos pesos: <b style="color:${cem ? VERDE : VERMELHO}">${br(s, cem ? 0 : 1)}%</b>` +
+  $("#cartSoma").innerHTML = st.cart.itens.length ? `Soma dos pesos: <b style="color:var(${cem ? "--pos" : "--neg"})">${br(s, cem ? 0 : 1)}%</b>` +
     (cem ? "" : " (o cálculo usa os pesos proporcionais, como se somassem 100%)") : "";
 }
 function usarPeriodoAtivo(recalcular = true) {
@@ -2154,7 +2155,7 @@ function htmlParte(p) {
     else if (b.tipo === "tabela" && !b.soExcel) {
       const lin = b.linhas.slice(0, LIMITE_LINHAS_PNG);
       h += `<h3>${esc(b.nome)}</h3><table><thead><tr>${b.colunas.map((c) => `<th>${esc(c.nome)}</th>`).join("")}</tr></thead><tbody>${lin.map((l, li) => `<tr${linhaDestacada(l) ? ' class="dest"' : ""}${b.corLinha?.[li] ? ` style="--fundo-linha:${b.corLinha[li]}" data-cor-linha="1"` : ""}>${l.map((v, j) => {
-        const t = b.colunas[j].tipo, cor = t === "pct" && typeof v === "number" ? (v > 0 ? "color:#0c8a4e" : v < 0 ? "color:#d0262c" : "") : "";
+        const t = b.colunas[j].tipo, cor = t === "pct" && typeof v === "number" ? (v > 0 ? "color:#087040" : v < 0 ? "color:#b81f25" : "") : "";
         return `<td class="${t === "txt" ? "t" : ""}" style="${cor}">${esc(fmtCel(v, t))}</td>`; }).join("")}</tr>`).join("")}</tbody></table>` +
         (b.linhas.length > LIMITE_LINHAS_PNG ? `<p class="rel-sub">Mostrando ${LIMITE_LINHAS_PNG} de ${b.linhas.length} linhas; a tabela completa sai no Excel.</p>` : "");
     }
@@ -2475,6 +2476,38 @@ document.addEventListener("click", (e) => {
 });
 
 const semZoom = (...ids) => { for (const id of ids) delete st.zoomG[id]; };
+
+// ---------- rolagem suave só para quem não pediu "reduzir movimento" no sistema
+const rolagemSuave = () => (matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth");
+
+// ---------- endereço da página = estado da análise (fundos, períodos, datas e índices): um link compartilhado abre a mesma tela
+function sincronizarUrl() {
+  const url = new URL(location.href), p = url.searchParams;
+  const pon = (k, v) => (v ? p.set(k, v) : p.delete(k));
+  pon("fundos", st.sel.join(","));
+  pon("per", [...st.periodos].join(","));
+  pon("mes", st.periodos.has("Mês") ? $("#refMes").value : "");
+  pon("ano", st.periodos.has("Ano") ? $("#refAno").value : "");
+  pon("ini", st.periodos.has("Personalizado") ? $("#pIni").value : "");
+  pon("fim", st.periodos.has("Personalizado") ? $("#pFim").value : "");
+  pon("idx", [...st.idxSel].join(","));
+  history.replaceState(null, "", url);
+}
+function lerUrl() {
+  const p = new URLSearchParams(location.search);
+  const fundos = p.get("fundos");
+  if (fundos) adicionar(fundos.split(",").map((c) => c.replace(/\D/g, "").padStart(14, "0")));
+  const per = (p.get("per") || "").split(",").filter((x) => PERIODOS.includes(x));
+  if (per.length) st.periodos = new Set(per);
+  if (p.get("mes")) $("#refMes").value = p.get("mes");
+  if (p.get("ano")) $("#refAno").value = p.get("ano");
+  if (p.get("ini")) $("#pIni").value = p.get("ini");
+  if (p.get("fim")) $("#pFim").value = p.get("fim");
+  if (p.has("idx")) {
+    st.idxSel = new Set((p.get("idx") || "").split(",").filter((k) => st.idx.niveis[k]));
+    desenharChipsIndices();
+  }
+}
 // ============================== rankings ==============================
 // Um ranking = nome + tipo de cálculo (pesos) + lista de fundos. Ficam guardados neste navegador, como os grupos.
 const lerRankings = () => pref("rankings", {});
@@ -2497,14 +2530,14 @@ function renderRkLista() {
   const g = lerRankings(), nomes = Object.keys(g).sort((a, b) => a.localeCompare(b, "pt-BR"));
   for (const n of [...rkSel]) if (!g[n]) rkSel.delete(n);
   $("#rkLista").innerHTML = !nomes.length ? `<p class="nota">Nenhum ranking ainda. Clique em "＋ Novo ranking", dê um nome, escolha o tipo de cálculo e os fundos.</p>` :
-    `<table class="tb gr-tab"><thead><tr><th></th><th class="t">Ranking</th><th class="t">Tipo de cálculo</th><th>Fundos</th><th>Atualizado em</th><th></th></tr></thead><tbody>${nomes.map((n) => {
+    `<table class="tb gr-tab"><thead><tr><th><span class="sr-only">Calcular</span></th><th class="t">Ranking</th><th class="t">Tipo de cálculo</th><th>Fundos</th><th>Atualizado em</th><th></th></tr></thead><tbody>${nomes.map((n) => {
       const x = g[n], M = modelos()[x.modelo] || {};
-      return `<tr class="linha-f${rkSel.has(n) ? " marcado" : ""}" data-rk="${esc(n)}" title="Clique para marcar ou desmarcar"><td><label class="tog"><input type="checkbox" data-rk-sel="${esc(n)}" ${rkSel.has(n) ? "checked" : ""}></label></td>
+      return `<tr class="linha-f${rkSel.has(n) ? " marcado" : ""}" data-rk="${esc(n)}" title="Clique para marcar ou desmarcar"><td><label class="tog"><input type="checkbox" data-rk-sel="${esc(n)}" aria-label="Calcular o ranking ${esc(n)}" ${rkSel.has(n) ? "checked" : ""}></label></td>
         <td class="t"><b>${esc(n)}</b></td><td class="t">${esc(M.nome || x.modelo)} <small class="nota">· ${esc(M.periodo || "")} · janela ${M.jmMeses || "?"}m vs ${esc(M.bench || "")}
 </small></td>
         <td>${x.cnpjs.length}</td><td>${x.atualizado ? new Date(x.atualizado).toLocaleDateString("pt-BR") : ""}</td>
         <td class="gr-acoes"><button class="sec mini-btn" data-rk-ed="${esc(n)}" type="button">Editar</button>
-          <button class="cart-rm" data-rk-del="${esc(n)}" type="button" title="Excluir ranking">🗑</button></td></tr>`; }).join("")}</tbody></table>`;
+          <button class="cart-rm" data-rk-del="${esc(n)}" type="button" title="Excluir ranking" aria-label="Excluir o ranking ${esc(n)}">🗑</button></td></tr>`; }).join("")}</tbody></table>`;
   const m = [...rkSel].length;
   $("#rkCalcular").disabled = !m;
   $("#rkCalcular").textContent = `🏆 Calcular ${m || ""} ranking${m === 1 ? "" : "s"}`.replace("  ", " ");
@@ -2539,7 +2572,7 @@ function renderEditorRk() {
     (fora.length ? ` · <span class="neg">${fora.length} fora da base atual: ${fora.map(cnpjFmt).join(", ")}</span>` : "") +
     (parados.length || fora.length ? ` · entram no ranking cerca de <b>${rkEd.cnpjs.length - parados.length - fora.length}</b>` : "");
   $("#rkEdFundos").innerHTML = lista.length ? `<table class="tb tab-fundos">${cabFundos("rkEd", false, "", "x")}<tbody>${lista.map((f) =>
-    `<tr>${COLS_FUNDO.map((c) => celFundo(f, c)).join("")}<td><button class="cart-rm" data-rk-edrm="${f.CNPJ}" type="button" title="Tirar do ranking">×</button></td></tr>`).join("")}</tbody></table>`
+    `<tr>${COLS_FUNDO.map((c) => celFundo(f, c)).join("")}<td><button class="cart-rm" data-rk-edrm="${f.CNPJ}" type="button" title="Tirar do ranking" aria-label="Tirar ${esc(f.NOME)} do ranking">×</button></td></tr>`).join("")}</tbody></table>`
     : `<p class="nota" style="padding:10px">Nenhum fundo ainda. Use os botões acima para escolher na lista, colar CNPJs, carregar um grupo ou usar os selecionados.</p>`;
 }
 async function juntarNoEditor(cnpjs, substituir) {
@@ -2621,7 +2654,7 @@ async function calcularRankings() {
     st.rk = { lista, fundos, ativo: 0 }; semZoom("gRkJM");
     faseCarga("montando as tabelas…", 99); await pausa();
     renderRankings(); fecharCarga(); atualizarEspaco();
-    $("#secRank").scrollIntoView({ behavior: "smooth", block: "start" });
+    $("#secRank").scrollIntoView({ behavior: rolagemSuave(), block: "start" });
   } catch (e) { console.error(e); fecharCarga(e.message); }
 }
 
@@ -2873,7 +2906,7 @@ function usosModelo() { const u = {}; for (const [n, x] of Object.entries(lerRan
 function renderModelos() {
   const salvos = modelosSalvos(), usos = usosModelo();
   $("#rkModLista").innerHTML = `<table class="tb gr-tab"><thead><tr><th class="t">Tipo de cálculo</th><th class="t">Métricas e janela</th><th class="t">Performance · Consistência · Risco</th>
-    <th class="t">Origem</th><th class="t">Usado em</th><th></th></tr></thead><tbody>${Object.entries(modelos()).map(([id, M]) => {
+    <th class="t">Origem</th><th class="t">Usado em</th><th><span class="sr-only">Ações</span></th></tr></thead><tbody>${Object.entries(modelos()).map(([id, M]) => {
       const g = gruposPesosRk(M), padrao = !!MODELOS_RANK[id], editado = padrao && !!salvos[id];
       return `<tr><td class="t"><b>${esc(M.nome)}</b></td><td class="t">${esc(M.periodo)} · janela ${M.jmMeses}m vs ${esc(nomeIndice(M.bench))} · ${Object.keys(M.pesos).length} métricas</td>
         <td class="t">${g.map((x) => `<span class="rkm-chip" style="border-color:${CORES_GRUPO[x.g]}">${brPct(x.total, 0)}</span>`).join(" ")}</td>
@@ -2896,11 +2929,11 @@ function renderEditorModelo() {
   const lista = [...METRICAS_RANK].sort((a, b) => (rkMod.lin[b.k].usar - rkMod.lin[a.k].usar) || ordemG(rkMod.lin[a.k].g) - ordemG(rkMod.lin[b.k].g) || a.nome.localeCompare(b.nome, "pt-BR"));
   $("#rkmMetricas").innerHTML = `<table class="tb rkm-tab"><thead><tr><th>Usar</th><th class="t">Métrica</th><th class="t">Grupo</th><th>Peso</th><th class="t">Melhor quando</th></tr></thead><tbody>${lista.map((m) => {
     const l = rkMod.lin[m.k];
-    return `<tr data-rkm-k="${esc(m.k)}" class="${l.usar ? "rkm-usada" : "rkm-fora"}"><td><label class="tog"><input type="checkbox" data-rkm="usar" ${l.usar ? "checked" : ""}></label></td>
+    return `<tr data-rkm-k="${esc(m.k)}" class="${l.usar ? "rkm-usada" : "rkm-fora"}"><td><label class="tog"><input type="checkbox" data-rkm="usar" aria-label="Usar ${esc(m.nome)}" ${l.usar ? "checked" : ""}></label></td>
       <td class="t">${esc(m.nome)}${m.k.startsWith("_") ? ` <small class="nota">(calculada para o ranking)</small>` : ""}</td>
-      <td class="t"><select data-rkm="g">${GRUPOS_RANK.map((g) => `<option${g === l.g ? " selected" : ""}>${g}</option>`).join("")}</select></td>
-      <td><input data-rkm="peso" type="number" min="0" max="100" step="1" value="${l.peso}"></td>
-      <td class="t"><select data-rkm="dir"><option value="1"${l.dir > 0 ? " selected" : ""}>maior é melhor</option><option value="-1"${l.dir < 0 ? " selected" : ""}>menor é melhor</option></select></td></tr>`; }).join("")}</tbody></table>`;
+      <td class="t"><select data-rkm="g" aria-label="Grupo de ${esc(m.nome)}">${GRUPOS_RANK.map((g) => `<option${g === l.g ? " selected" : ""}>${g}</option>`).join("")}</select></td>
+      <td><input data-rkm="peso" type="number" min="0" max="100" step="1" inputmode="numeric" aria-label="Peso de ${esc(m.nome)}" value="${l.peso}"></td>
+      <td class="t"><select data-rkm="dir" aria-label="Direção de ${esc(m.nome)}"><option value="1"${l.dir > 0 ? " selected" : ""}>maior é melhor</option><option value="-1"${l.dir < 0 ? " selected" : ""}>menor é melhor</option></select></td></tr>`; }).join("")}</tbody></table>`;
   somaModelo();
 }
 function somaModelo() {
@@ -3082,7 +3115,7 @@ function aplicarMinimizados() {
     const min = st.minimizados.has(s.dataset.sec);
     s.classList.toggle("min", min);
     const b = $(".btn-min", s);
-    if (b) { b.textContent = min ? "+" : "−"; b.title = min ? "Mostrar esta seção" : "Minimizar esta seção"; b.setAttribute("aria-expanded", String(!min)); }
+    if (b) { b.textContent = min ? "+" : "−"; b.title = min ? "Mostrar esta seção" : "Minimizar esta seção"; b.setAttribute("aria-label", b.title); b.setAttribute("aria-expanded", String(!min)); }
   });
 }
 // ---------- barra de período: acompanha a rolagem ou fica só no topo
@@ -3108,7 +3141,7 @@ function mostrarMini(el, x, y) {
   box.innerHTML = `<div class="mini-tit">${esc(st.res?.apelidos[c] || curto(st.porCnpj.get(c)?.NOME || c))}</div>
     <svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" aria-hidden="true"><path d="M${pts[0][0]},${H - p} L${linha.replace(/ /g, " L")} L${pts[pts.length - 1][0]},${H - p} Z" fill="${cor}" opacity=".13"/>
     <polyline points="${linha}" fill="none" stroke="${cor}" stroke-width="1.8" stroke-linejoin="round"/></svg>
-    <div class="mini-rod">12 meses até ${fmtData(ult)}: <b style="color:${cor}">${brPct(var12)}</b></div>`;
+    <div class="mini-rod">12 meses até ${fmtData(ult)}: <b style="${corSinal(var12)}">${brPct(var12)}</b></div>`;
   posicionarMini(x, y); box.hidden = false;
 }
 function posicionarMini(x, y) {
@@ -3153,7 +3186,7 @@ document.addEventListener("click", (e) => {
   const bIdx = t.closest("#idxChips button");
   if (bIdx) {
     const k = bIdx.dataset.idx; st.idxSel.has(k) ? st.idxSel.delete(k) : st.idxSel.add(k);
-    salvar("indices", [...st.idxSel]); desenharChipsIndices(); renderAcum(); renderRisco(); renderCorrelacao(); return;
+    salvar("indices", [...st.idxSel]); desenharChipsIndices(); sincronizarUrl(); renderAcum(); renderRisco(); renderCorrelacao(); return;
   }
   if (t.closest("#riscoEixo button")) { st.riscoEixo = t.closest("button").dataset.e; salvar("riscoEixo", st.riscoEixo); delete st.ord.risco; semZoom("gRisco"); renderRisco(); return; }
   if (t.id === "btnTravar") { st.travar = !st.travar; salvar("travar", st.travar); desenharTravar(); return; }
@@ -3164,7 +3197,12 @@ document.addEventListener("click", (e) => {
   if (t.id === "jmBaixar") { baixarJM(); return; }
   if (t.closest("#resBusca button.add")) { adicionar([t.closest("button.add").dataset.c]); }
   else if (t.dataset.rm) remover(t.dataset.rm);
-  else if (t.id === "limpar") { st.sel = []; atualizarSidebar(); }
+  else if (t.id === "limpar") {               // limpa na hora, mas dá para desfazer pelo aviso
+    st.selDesfazer = [...st.sel]; st.sel = []; atualizarSidebar(); sincronizarUrl();
+    avisoSel(`Seleção limpa (${st.selDesfazer.length} fundo${st.selDesfazer.length > 1 ? "s" : ""}). <button id="desfazerLimpar" class="link" type="button">Desfazer</button>`);
+    $("#desfazerLimpar")?.focus();
+  }
+  else if (t.id === "desfazerLimpar") { st.sel = st.selDesfazer || []; st.selDesfazer = null; atualizarSidebar(); sincronizarUrl(); avisoSel(`<span class="ok">Seleção restaurada (${st.sel.length} fundos).</span>`); }
   else if (t.closest("#periodos button")) {
     const p = t.closest("button").dataset.p;
     st.periodos.has(p) ? st.periodos.delete(p) : st.periodos.add(p); atualizarSidebar();
