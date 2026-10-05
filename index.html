@@ -99,6 +99,7 @@
       <section id="secRank" class="cartao" data-sec="rank" hidden>
         <div class="cab rk-fixa"><h2>Rankings</h2>
           <div class="opcoes"><span id="rkPills" class="pilulas mini"></span></div>
+          <div class="opcoes"><label class="ordem">Comparar com <select class="rk-comp-sel" aria-label="Data de comparação das posições"></select></label></div>
           <button class="rk-alterna sec mini-btn" type="button" title="Vale para todas as tabelas e gráficos dos rankings"></button>
           <button id="btnRelRk" class="prim mini-btn" type="button" title="Escolher partes e baixar em PDF, PNG ou Excel">⬇ Baixar relatório</button>
           <button class="btn-min" type="button" data-min="rank" title="Minimizar esta seção">−</button></div>
@@ -214,7 +215,7 @@
         <div class="cab"><h2>Montagem de carteira</h2>
           <button class="btn-min" type="button" data-min="cart" title="Minimizar esta seção">−</button></div>
         <p class="nota">Dê um peso a cada fundo (ou índice) e veja o desempenho da carteira, com rebalanceamento e a contribuição de cada ativo.
-          Usa os fundos já calculados; para incluir outro, selecione-o ao lado e clique em Calcular. A carteira fica guardada neste navegador.</p>
+          Pode adicionar qualquer fundo da base: os que ainda não foram baixados são buscados ao clicar em <b>Calcular carteira</b>. A carteira fica guardada neste navegador.</p>
         <div class="jm-ctl opcoes">
           <label class="largo">Adicionar fundo ou índice <div id="cbCartAdd" class="combo"></div></label>
           <label>Referência <div id="cbCartRef" class="combo"></div></label>
@@ -226,6 +227,7 @@
           <label>Valor inicial (R$) <input id="cartValor" type="number" min="0" step="1000"></label>
         </div>
         <div class="cart-acoes">
+          <button id="cartCalcular" class="prim" type="button" title="Busca as cotas dos fundos que faltam e calcula a carteira">🧮 Calcular carteira</button>
           <button id="cartIguais" class="sec" type="button">Pesos iguais</button>
           <button id="cartNormalizar" class="sec" type="button">Ajustar para somar 100%</button>
           <button id="cartTodos" class="sec" type="button">Adicionar todos os fundos calculados</button>
@@ -402,6 +404,9 @@
       <button id="rkExportar" class="sec" type="button">⬇ Exportar rankings</button>
       <label class="sec botao-arquivo">⬆ Importar arquivo<input id="rkImportar" type="file" accept=".json,application/json" hidden></label>
       <span class="nota"><button id="rkMarcarTodos" class="link" type="button">marcar todos</button> · <button id="rkDesmarcar" class="link" type="button">desmarcar</button></span></div>
+    <div class="opcoes rk-comp"><label>Comparar posições com <select class="rk-comp-sel" aria-label="Data de comparação das posições"></select></label>
+      <button class="sec mini-btn rk-comp-padrao" type="button" title="Guarda esta escolha como padrão neste navegador">★ Tornar padrão</button>
+      <span class="nota rk-comp-info"></span></div>
     <div id="rkLista"></div>
     <div class="dlg-pe"><span class="nota" id="rkResumo"></span>
       <div class="botoes"><button id="rkCalcular" class="prim" type="button">🏆 Calcular rankings</button></div></div>
@@ -429,7 +434,6 @@
     <div class="gr-salvar opcoes">
       <label><span>Nome do ranking</span><input id="rkNome" type="text" maxlength="60" placeholder="Ex.: Crédito High Grade"></label>
       <label><span>Tipo de cálculo (pesos)</span><select id="rkModelo"></select></label>
-      <label><span>Comparar posições com</span><select id="rkComparar"></select></label>
     </div>
     <p id="rkModeloInfo" class="nota"></p>
     <div class="botoes-add">
