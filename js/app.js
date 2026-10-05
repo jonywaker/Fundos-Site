@@ -5,7 +5,7 @@ import { COLUNAS, PERIODOS, calcularFundo, prepararFundo, serieAcumulada, fmtDat
 import { INDICES, corIndice, nomeIndice, serieIndice, retornoVol, nivelEm } from "./indices.js";
 import { janelaMovel, resumoJanela, retornosFundo, retornosDiarios, matrizCorrelacao } from "./analises.js";
 import { simularCarteira, estatisticas, curvaDrawdown } from "./carteira.js";
-import { GRUPOS_RANK, metricaRank, MODELOS_RANK, JM_ANOS, indiceObjetivo, pontuar, ordenarRanking } from "./ranking.js";
+import { GRUPOS_RANK, METRICAS_RANK, metricaRank, grupoMetrica, MODELOS_RANK, JM_ANOS, indiceObjetivo, pontuar, ordenarRanking, COMPARACOES, ROTULO_VAR, dataComparacao } from "./ranking.js";
 
 // ============================== CONFIGURAÇÃO (único lugar para editar) ==============================
 const HF_REPO = "Shote/fundos-cvm";
@@ -181,13 +181,25 @@ const COLS_FUNDO = [
   { k: "VL_PATRIM_LIQ", nome: "PL (R$ mi)", tipo: "mi", filtro: "min" },
 ];
 const valFundo = (f, k) => { if (k === "_ini") return (f._ini ??= f.DATA_PRIMEIRA_COTA ? diaDe(f.DATA_PRIMEIRA_COTA) : null); return f[k]; };
+// cancelado, em liquidação ou sem cota nos 10 dias antes da data mais recente da base: fica fora de rankings e aparece com ⊘
+function situacaoCadastro(f) {
+  if (!f) return null;
+  const sit = String(f.SITUACAO || ""), base = st.meta ? diaDe(new Date(st.meta.ultimo_dado)) : null;
+  if (/cancel/i.test(sit)) return { rot: "Cancelado", txt: `Cancelado na CVM${f._dia ? ` · última cota em ${fmtData(f._dia)}` : ""}` };
+  if (/liquida/i.test(sit)) return { rot: "Em liquidação", txt: `Em liquidação${f._dia ? ` · última cota em ${fmtData(f._dia)}` : ""}` };
+  if (!f._dia) return { rot: "Sem cotas", txt: "Sem cotas na base" };
+  if (base != null && base - f._dia > 10) return { rot: "Sem cota recente", txt: `Última cota em ${fmtData(f._dia)} (a base vai até ${fmtData(base)})` };
+  return null;
+}
 function celFundo(f, c) {
   const v = valFundo(f, c.k);
   if (c.tipo === "cnpj") return `<td>${cnpjFmt(v)}</td>`;
   if (c.tipo === "data") return `<td>${v ? fmtData(v) : ""}</td>`;
   if (c.tipo === "pct") return `<td style="${corSinal(v)}">${brPct(v)}</td>`;
   if (c.tipo === "mi") return `<td>${v != null ? br(v / 1e6, 1) : ""}</td>`;
-  return `<td class="t" title="${esc(v || "")}">${c.k === "NOME" ? esc(v || "") : esc(v || "")}</td>`;
+  if (c.k === "NOME") { const sp = situacaoCadastro(f);
+    return `<td class="t" title="${esc((v || "") + (sp ? ` · ${sp.txt}` : ""))}">${sp ? `<span class="parado" title="${esc(sp.txt)}">⊘</span>` : ""}${esc(v || "")}</td>`; }
+  return `<td class="t" title="${esc(v || "")}">${esc(v || "")}</td>`;
 }
 // cabeçalho clicável (ordenar: 1º clique maior primeiro / A→Z, 2º inverte, 3º volta ao padrão por PL)
 function cabFundos(tab, comFiltros, extraIni = "", extraFim = "") {
@@ -2445,20 +2457,25 @@ const rkSel = new Set(pref("rankingsSel", []));
 const salvarRkSel = () => salvar("rankingsSel", [...rkSel]);
 const rkEd = { aberto: false, nomeOrig: null, modelo: "MM", cnpjs: [] };
 const TOP_RANK = 10;
+// tipos de cálculo: os 4 padrão (ranking.js) + os editados/criados aqui (o editado de um padrão usa o mesmo id e o substitui)
+const modelosSalvos = () => pref("modelosRank", {});
+const modelos = () => ({ ...MODELOS_RANK, ...modelosSalvos() });
+const modeloDe = (id) => modelos()[id] || MODELOS_RANK.MM;
 
 function resumoLateralRk() {
   const n = Object.keys(lerRankings()).length, m = [...rkSel].filter((x) => lerRankings()[x]).length;
   $("#rkResumoLat").textContent = n ? `${n} ranking(s) salvo(s) · ${m} marcado(s) para calcular` : "Nenhum ranking montado ainda.";
 }
-function abrirRank() { rkEd.aberto = false; renderRkLista(); $("#rkListaBox").hidden = false; $("#rkEditor").hidden = true; $("#dlgRank").showModal(); }
+function abrirRank() { rkEd.aberto = false; renderRkLista(); mostrarTelaRk("lista"); $("#dlgRank").showModal(); }
 function renderRkLista() {
   const g = lerRankings(), nomes = Object.keys(g).sort((a, b) => a.localeCompare(b, "pt-BR"));
   for (const n of [...rkSel]) if (!g[n]) rkSel.delete(n);
   $("#rkLista").innerHTML = !nomes.length ? `<p class="nota">Nenhum ranking ainda. Clique em "＋ Novo ranking", dê um nome, escolha o tipo de cálculo e os fundos.</p>` :
     `<table class="tb gr-tab"><thead><tr><th></th><th class="t">Ranking</th><th class="t">Tipo de cálculo</th><th>Fundos</th><th>Atualizado em</th><th></th></tr></thead><tbody>${nomes.map((n) => {
-      const x = g[n], M = MODELOS_RANK[x.modelo] || {};
+      const x = g[n], M = modelos()[x.modelo] || {};
       return `<tr class="linha-f${rkSel.has(n) ? " marcado" : ""}" data-rk="${esc(n)}" title="Clique para marcar ou desmarcar"><td><label class="tog"><input type="checkbox" data-rk-sel="${esc(n)}" ${rkSel.has(n) ? "checked" : ""}></label></td>
-        <td class="t"><b>${esc(n)}</b></td><td class="t">${esc(M.nome || x.modelo)} <small class="nota">· ${esc(M.periodo || "")} · janela ${M.jmMeses || "?"}m vs ${esc(M.bench || "")}</small></td>
+        <td class="t"><b>${esc(n)}</b></td><td class="t">${esc(M.nome || x.modelo)} <small class="nota">· ${esc(M.periodo || "")} · janela ${M.jmMeses || "?"}m vs ${esc(M.bench || "")}
+          · compara com ${esc((COMPARACOES[x.comparar || "1m"] || "").toLowerCase())}</small></td>
         <td>${x.cnpjs.length}</td><td>${x.atualizado ? new Date(x.atualizado).toLocaleDateString("pt-BR") : ""}</td>
         <td class="gr-acoes"><button class="sec mini-btn" data-rk-ed="${esc(n)}" type="button">Editar</button>
           <button class="cart-rm" data-rk-del="${esc(n)}" type="button" title="Excluir ranking">🗑</button></td></tr>`; }).join("")}</tbody></table>`;
@@ -2473,23 +2490,29 @@ function renderRkLista() {
 // ---------- editor de um ranking (nome, tipo de cálculo e fundos)
 function abrirEditorRk(nome = null) {
   const x = nome ? lerRankings()[nome] : null;
-  Object.assign(rkEd, { aberto: true, nomeOrig: nome, modelo: x?.modelo || "MM", cnpjs: [...(x?.cnpjs || [])] });
+  Object.assign(rkEd, { aberto: true, nomeOrig: nome, modelo: x?.modelo && modelos()[x.modelo] ? x.modelo : "MM", comparar: x?.comparar || "1m", cnpjs: [...(x?.cnpjs || [])] });
+  $("#rkComparar").innerHTML = Object.entries(COMPARACOES).map(([k, r]) => `<option value="${k}"${k === rkEd.comparar ? " selected" : ""}>${esc(r)}</option>`).join("");
   $("#rkNome").value = nome || "";
-  $("#rkModelo").innerHTML = Object.entries(MODELOS_RANK).map(([k, M]) => `<option value="${k}"${k === rkEd.modelo ? " selected" : ""}>${esc(M.nome)}</option>`).join("");
+  $("#rkModelo").innerHTML = Object.entries(modelos()).map(([k, M]) => `<option value="${k}"${k === rkEd.modelo ? " selected" : ""}>${esc(M.nome)}</option>`).join("");
   const grupos = Object.keys(lerGrupos()).sort((a, b) => a.localeCompare(b, "pt-BR"));
   $("#rkEdGrupo").innerHTML = `<option value="">★ Carregar de um grupo…</option>` + grupos.map((n) => `<option value="${esc(n)}">${esc(n)} (${lerGrupos()[n].cnpjs.length})</option>`).join("");
   $("#rkEdGrupo").hidden = !grupos.length;
-  $("#rkListaBox").hidden = true; $("#rkEditor").hidden = false;
+  mostrarTelaRk("editor");
   renderEditorRk(); $("#rkNome").focus();
 }
 function renderEditorRk() {
-  const M = MODELOS_RANK[rkEd.modelo], fmtP = (k) => `${metricaRank(k).nome} ${Math.abs(M.pesos[k])}%${M.pesos[k] < 0 ? " (menor é melhor)" : ""}`;
+  const M = modeloDe(rkEd.modelo), fmtP = (k) => `${metricaRank(k)?.nome || k} ${Math.abs(M.pesos[k])}%${M.pesos[k] < 0 ? " (menor é melhor)" : ""}`;
   $("#rkModeloInfo").innerHTML = `<b>${esc(M.nome)}</b>: métricas dos últimos ${esc(M.periodo.toLowerCase())}; janela móvel de ${M.jmMeses} meses contra o ${esc(nomeIndice(M.bench))}, ` +
     `aplicações dos últimos ${JM_ANOS} anos. Pesos: ${Object.keys(M.pesos).map(fmtP).join(" · ")}.`;
-  $("#rkEdSel").textContent = `Usar os fundos selecionados (${st.sel.length})`; $("#rkEdSel").disabled = !st.sel.length;
+  $("#rkEdSel").textContent = `＋ Selecionados da barra lateral (${st.sel.length})`; $("#rkEdSel").disabled = !st.sel.length;
   const lista = ordenarFundos(rkEd.cnpjs.map((c) => st.porCnpj.get(c)).filter(Boolean), "rkEd");
   const fora = rkEd.cnpjs.filter((c) => !st.porCnpj.has(c));
-  $("#rkEdInfo").innerHTML = `<b>${rkEd.cnpjs.length}</b> fundo(s) no ranking` + (fora.length ? ` · <span class="neg">${fora.length} fora da base atual: ${fora.map(cnpjFmt).join(", ")}</span>` : "");
+  const parados = lista.filter((f) => situacaoCadastro(f));
+  $("#rkEdInfo").innerHTML = `<b>${rkEd.cnpjs.length}</b> fundo(s) no ranking` +
+    (parados.length ? ` · <span class="neg"><span class="parado">⊘</span> ${parados.length} cancelado(s) ou sem cota recente: ficam fora do cálculo` +
+      ` (${parados.map((f) => `${esc(curto(f.NOME, 30))}: ${esc(situacaoCadastro(f).rot.toLowerCase())}`).join("; ")})</span>` : "") +
+    (fora.length ? ` · <span class="neg">${fora.length} fora da base atual: ${fora.map(cnpjFmt).join(", ")}</span>` : "") +
+    (parados.length || fora.length ? ` · entram no ranking cerca de <b>${rkEd.cnpjs.length - parados.length - fora.length}</b>` : "");
   $("#rkEdFundos").innerHTML = lista.length ? `<table class="tb tab-fundos">${cabFundos("rkEd", false, "", "x")}<tbody>${lista.map((f) =>
     `<tr>${COLS_FUNDO.map((c) => celFundo(f, c)).join("")}<td><button class="cart-rm" data-rk-edrm="${f.CNPJ}" type="button" title="Tirar do ranking">×</button></td></tr>`).join("")}</tbody></table>`
     : `<p class="nota" style="padding:10px">Nenhum fundo ainda. Use os botões acima para escolher na lista, colar CNPJs, carregar um grupo ou usar os selecionados.</p>`;
@@ -2510,7 +2533,7 @@ async function salvarEditorRk() {
   if (g[nome] && nome !== rkEd.nomeOrig && !(await perguntar("Substituir o ranking?", `Já existe o ranking <b>${esc(nome)}</b> com ${g[nome].cnpjs.length} fundo(s). Substituir?`,
     [{ rot: "Cancelar", v: false }, { rot: "Substituir", v: true, classe: "prim" }]))) return;
   if (rkEd.nomeOrig && rkEd.nomeOrig !== nome) { delete g[rkEd.nomeOrig]; if (rkSel.delete(rkEd.nomeOrig)) rkSel.add(nome); }
-  g[nome] = { modelo: rkEd.modelo, cnpjs: [...rkEd.cnpjs], atualizado: new Date().toISOString() };
+  g[nome] = { modelo: rkEd.modelo, comparar: rkEd.comparar, cnpjs: [...rkEd.cnpjs], atualizado: new Date().toISOString() };
   gravarRankings(g); rkSel.add(nome);
   rkEd.aberto = false; $("#rkEditor").hidden = true; $("#rkListaBox").hidden = false; renderRkLista();
 }
@@ -2540,20 +2563,21 @@ function rodarRanking(M, itens, fim, detalhe) {
     linhas.push({ c, cad, r, obj, kObj, v, rs, jm: detalhe ? jm : null, curto: r["Data Inicial"] - inicioPer > 31 });
   }
   const porId = new Map(linhas.map((l) => [l.c, l]));
-  const ordem = ordenarRanking(pontuar(linhas.map((l) => ({ id: l.c, v: l.v })), M.pesos), (id) => porId.get(id).r["% Acumulado"])
+  const ordem = ordenarRanking(pontuar(linhas.map((l) => ({ id: l.c, v: l.v })), M.pesos, M), (id) => porId.get(id).r["% Acumulado"])
     .map((p, i) => ({ ...p, pos: i + 1, l: porId.get(p.id) }));
   return { ordem, fora };
 }
 function montarRanking(nome, def, fundos) {
-  const M = MODELOS_RANK[def.modelo] || MODELOS_RANK.MM;
+  const M = modeloDe(def.modelo), comp = COMPARACOES[def.comparar] ? def.comparar : "1m";
   const itens = def.cnpjs.filter((c) => st.porCnpj.has(c)).map((c) => ({ c, f: fundos.get(c), cad: st.porCnpj.get(c) }));
   let fim = -Infinity;
   for (const { f } of itens) if (f?.d.length) fim = Math.max(fim, f.d[f.d.length - 1]);
   if (!Number.isFinite(fim)) return { nome, M, modelo: def.modelo, fim: null, ordem: [], fora: itens.map(({ c }) => ({ c, motivo: "sem cotas na base" })), apel: {} };
-  const atual = rodarRanking(M, itens, fim, true), antes = rodarRanking(M, itens, somarMeses(fim, -1), false);
+  const fimAnt = dataComparacao(fim, comp);
+  const atual = rodarRanking(M, itens, fim, true), antes = rodarRanking(M, itens, fimAnt, false);
   const posAnt = new Map(antes.ordem.map((x) => [x.id, x.pos]));
   for (const x of atual.ordem) x.var = posAnt.has(x.id) ? posAnt.get(x.id) - x.pos : null;
-  return { nome, M, modelo: def.modelo, fim, fimAnt: somarMeses(fim, -1), iniJM: somarMeses(fim, -12 * JM_ANOS), ...atual,
+  return { nome, M, modelo: def.modelo, fim, fimAnt, comp, rotVar: ROTULO_VAR[comp], iniJM: somarMeses(fim, -12 * JM_ANOS), ...atual, nDef: def.cnpjs.length,
     apel: apelidos(atual.ordem.map((x) => x.id)), foraDaBase: def.cnpjs.filter((c) => !st.porCnpj.has(c)) };
 }
 async function calcularRankings() {
@@ -2616,14 +2640,15 @@ const posHTML = (v) => (v <= 3 ? `<span class="rk-pos rk-pos${v}" title="${medal
 function colunasRk(R) {
   const mi = (v) => (typeof v === "number" ? br(v / 1e6, 1) : "");
   return [
-    { chave: "pos", nome: "Pos.", tipo: "int", g: "Ranking", html: posHTML }, { chave: "var", nome: "Var. mês", tipo: "int", g: "Ranking", html: (v) => varHTML(v) },
+    { chave: "pos", nome: "Pos.", tipo: "int", g: "Ranking", html: posHTML }, { chave: "var", nome: `Var. ${R.rotVar || "mês"}`, tipo: "int", g: "Ranking", html: (v) => varHTML(v) },
     { chave: "Fundo", nome: "Fundo", tipo: "txt", g: "Ranking", html: (v, l) => `${l.curto ? `<span class="rk-curto" title="Histórico menor que o período do ranking (desde ${fmtData(l.ini)})">⚑</span>` : ""}<span data-mini="${esc(l._c)}">${esc(v)}</span>` },
     { chave: "total", nome: "Pontuação", tipo: "num2", g: "Ranking", html: (v) => `<b>${br(v, 1)}</b>` },
     { chave: "perf", nome: "Performance", tipo: "num2", g: "Pontos por grupo", html: (v) => br(v, 1) }, { chave: "cons", nome: "Consistência", tipo: "num2", g: "Pontos por grupo", html: (v) => br(v, 1) },
     { chave: "risco", nome: "Risco", tipo: "num2", g: "Pontos por grupo", html: (v) => br(v, 1) },
     { chave: "cvm", nome: "Classificação CVM", tipo: "txt", g: "Cadastro" }, { chave: "anbima", nome: "Classificação ANBIMA", tipo: "txt", g: "Cadastro" },
-    { chave: "pl", nome: "PL (R$ mi)", tipo: "valor", g: "Cadastro", html: mi },
-    { chave: "rentAA", nome: "Rent. anualizada", tipo: "pct", cor: true, g: "Performance" }, { chave: "capt", nome: "Captação líquida (R$ mi)", tipo: "valor", g: "Performance", html: (v) => `<span style="${corSinal(v)}">${mi(v)}</span>` },
+    { chave: "pl", nome: "PL (R$ mi)", tipo: "valor", g: "Patrimônio", html: mi },
+    { chave: "capt", nome: "Captação líquida (R$ mi)", tipo: "valor", g: "Patrimônio", html: (v) => `<span style="${corSinal(v)}">${mi(v)}</span>` },
+    { chave: "rentAA", nome: "Rent. anualizada", tipo: "pct", cor: true, g: "Performance" },
     { chave: "pctCDI", nome: "Rent. %CDI", tipo: "pct", g: "Performance" }, { chave: "cdiMais", nome: "CDI +", tipo: "pct", cor: true, g: "Performance" },
     ...(R.M.pesos._objetivo ? [{ chave: "obj", nome: "Objetivo de retorno (+)", tipo: "pct", cor: true, g: "Performance",
       html: (v, l) => (v == null ? `<span class="nota" title="Sem objetivo de retorno reconhecível no cadastro da CVM">N/D</span>` : `<span style="${corSinal(v)}" title="Acima do ${esc(nomeIndice(l.objIdx))} ao ano">${brPct(v)}</span>`) }] : []),
@@ -2639,7 +2664,8 @@ function renderRkTabela() {
   const linhas = ordenar(fundosVisiveis(R).map((x) => linhaRk(R, x)), "rk", colunas);
   $("#rkInfo").innerHTML = !R.fim ? "Nenhum fundo com cotas." : `<b>${esc(R.M.nome)}</b> · métricas dos últimos ${esc(R.M.periodo.toLowerCase())} até ${fmtData(R.fim)} · janela móvel de ${R.M.jmMeses} meses ` +
     `contra o ${esc(nomeIndice(R.M.bench))} (aplicações desde ${fmtData(R.iniJM)}) · <b>${R.ordem.length}</b> fundo(s) analisado(s)` +
-    (R.ordem.length > TOP_RANK && !todos ? ` · mostrando o top ${TOP_RANK}` : "") + ` · "Var. mês" compara com o ranking de ${fmtData(R.fimAnt)}`;
+    (R.nDef > R.ordem.length ? ` (de ${R.nDef} no ranking; os demais estão listados abaixo da tabela)` : "") +
+    (R.ordem.length > TOP_RANK && !todos ? ` · mostrando o top ${TOP_RANK}` : "") + ` · "Var. ${esc(R.rotVar || "mês")}" compara com o ranking de ${fmtData(R.fimAnt)}`;
   $("#rkTabela").innerHTML = tabelaHTML({ colunas, linhas, fixas: 3, larguras: [52, 70, 280], grupos: colunas.map((c) => c.g), ordenavel: "rk", altura: 560,
     destacar: linhas.map((l) => casa(st.destaque, l.Fundo, l.CNPJ)), classes: linhas.map((l) => classeMedalha(l.pos)) });
   const fora = [...R.fora.map((x) => `${esc(curto(st.porCnpj.get(x.c)?.NOME || cnpjFmt(x.c), 50))} (${esc(x.motivo)})`), ...(R.foraDaBase || []).map((c) => `${cnpjFmt(c)} (fora da base)`)];
@@ -2648,7 +2674,7 @@ function renderRkTabela() {
 }
 function renderRkPontos() {
   const R = rkAtivo(); if (!R) return;
-  const ks = GRUPOS_RANK.flatMap((g) => Object.keys(R.M.pesos).filter((k) => metricaRank(k).g === g));
+  const ks = GRUPOS_RANK.flatMap((g) => Object.keys(R.M.pesos).filter((k) => grupoMetrica(R.M, k) === g));
   const fmtValor = (m) => (v) => (v == null ? `<span class="nota">sem valor</span>` : m.tipo === "valor" ? br(v / 1e6, 1) + " mi" : esc(FMT[m.tipo]?.(v) ?? v));
   const colunas = [{ chave: "pos", nome: "Pos.", tipo: "int", g: "Ranking", html: posHTML }, { chave: "Fundo", nome: "Fundo", tipo: "txt", g: "Ranking", html: (v, l) => `<span data-mini="${esc(l._c)}">${esc(v)}</span>` },
     { chave: "total", nome: "Pontuação", tipo: "num2", g: "Ranking", html: (v) => `<b>${br(v, 2)}</b>` },
@@ -2706,7 +2732,7 @@ function renderRkCorr() {
 // pesos como no relatório de referência: cada grupo com as métricas que o compõem e a soma, e uma pizza com a divisão
 const CORES_GRUPO = { Performance: "#1f5aa6", "Consistência": "#0c8a4e", Risco: "#d0262c" };
 function gruposPesosRk(M) {
-  return GRUPOS_RANK.map((g) => { const ks = Object.keys(M.pesos).filter((k) => metricaRank(k).g === g);
+  return GRUPOS_RANK.map((g) => { const ks = Object.keys(M.pesos).filter((k) => grupoMetrica(M, k) === g);
     return { g, total: ks.reduce((s, k) => s + Math.abs(M.pesos[k]), 0) / 100, metricas: ks.map((k) => ({ nome: metricaRank(k).nome, peso: Math.abs(M.pesos[k]) / 100, menor: M.pesos[k] < 0 })) }; });
 }
 function tabelaPesosRk(M) {                       // usada também no relatório
@@ -2758,11 +2784,11 @@ function blocosRanking(k) {
     for (const R of L) { const t = linhasRelRk(R, topRk(R));
       B.push({ tipo: "tabela", nome: cab(R), aba: `${R.nome} - top ${TOP_RANK}`, pdfCompacto: { 0: 7, 1: 10, 2: 60, 3: 13, 4: 17, 5: 30 },
         corLinha: topRk(R).map((x) => medalha(x.pos)?.fundo || null), ...t }); }
-    return { titulo: `Top ${TOP_RANK} por ranking`, nota: "Pontuação de 0 a 100. (*) = histórico menor que o período do ranking. Var. mês compara com o ranking de um mês antes.", blocos: B };
+    return { titulo: `Top ${TOP_RANK} por ranking`, nota: `Pontuação de 0 a 100. (*) = histórico menor que o período do ranking. A variação compara com o ranking calculado na data escolhida (${L.map((R) => `${R.nome}: ${fmtData(R.fimAnt)}`).join("; ")}).`, blocos: B };
   }
   if (k === "rkCompleto") {
     for (const R of L) {
-      const ks = GRUPOS_RANK.flatMap((g) => Object.keys(R.M.pesos).filter((x) => metricaRank(x).g === g));
+      const ks = GRUPOS_RANK.flatMap((g) => Object.keys(R.M.pesos).filter((x) => grupoMetrica(R.M, x) === g));
       const t = linhasRelRk(R, R.ordem);
       B.push({ tipo: "tabela", soExcel: true, nome: `${R.nome} - completo`, colunas: [...t.colunas, { nome: "Performance (pontos)", tipo: "num2" }, { nome: "Consistência (pontos)", tipo: "num2" },
           { nome: "Risco (pontos)", tipo: "num2" }, ...ks.flatMap((x) => [{ nome: `${metricaRank(x).nome}: valor`, tipo: metricaRank(x).tipo },
@@ -2815,20 +2841,127 @@ function blocosRanking(k) {
   return null;
 }
 
+// ---------- tipos de cálculo: criar e editar (métricas, grupos, pesos, período e janela móvel)
+const rkMod = { id: null, nome: "", periodo: "36 Meses", jm: 36, bench: "CDI", lin: {} };
+function mostrarTelaRk(qual) { for (const [id, k] of [["#rkListaBox", "lista"], ["#rkEditor", "editor"], ["#rkModelosBox", "modelos"], ["#rkModEd", "modEd"]]) $(id).hidden = k !== qual; }
+function usosModelo() { const u = {}; for (const [n, x] of Object.entries(lerRankings())) (u[x.modelo] ||= []).push(n); return u; }
+function renderModelos() {
+  const salvos = modelosSalvos(), usos = usosModelo();
+  $("#rkModLista").innerHTML = `<table class="tb gr-tab"><thead><tr><th class="t">Tipo de cálculo</th><th class="t">Métricas e janela</th><th class="t">Performance · Consistência · Risco</th>
+    <th class="t">Origem</th><th class="t">Usado em</th><th></th></tr></thead><tbody>${Object.entries(modelos()).map(([id, M]) => {
+      const g = gruposPesosRk(M), padrao = !!MODELOS_RANK[id], editado = padrao && !!salvos[id];
+      return `<tr><td class="t"><b>${esc(M.nome)}</b></td><td class="t">${esc(M.periodo)} · janela ${M.jmMeses}m vs ${esc(nomeIndice(M.bench))} · ${Object.keys(M.pesos).length} métricas</td>
+        <td class="t">${g.map((x) => `<span class="rkm-chip" style="border-color:${CORES_GRUPO[x.g]}">${brPct(x.total, 0)}</span>`).join(" ")}</td>
+        <td class="t">${padrao ? (editado ? "padrão (editado)" : "padrão") : "criado por você"}</td><td class="t">${esc((usos[id] || []).join(", ") || "–")}</td>
+        <td class="gr-acoes"><button class="sec mini-btn" data-rkm-ed="${id}" type="button">Editar</button>
+          <button class="sec mini-btn" data-rkm-dup="${id}" type="button">Duplicar</button>
+          ${editado ? `<button class="sec mini-btn" data-rkm-orig="${id}" type="button" title="Desfaz as edições deste tipo padrão">Voltar ao original</button>` : ""}
+          ${padrao ? "" : `<button class="cart-rm" data-rkm-del="${id}" type="button" title="Excluir tipo de cálculo">🗑</button>`}</td></tr>`; }).join("")}</tbody></table>`;
+}
+function abrirEditorModelo(id = null, duplicar = false) {
+  const M = id ? modeloDe(id) : null;
+  Object.assign(rkMod, { id: duplicar ? null : id, nome: M ? (duplicar ? `${M.nome} (cópia)` : M.nome) : "", periodo: M?.periodo || "36 Meses", jm: M?.jmMeses || 36, bench: M?.bench || "CDI", lin: {} });
+  for (const m of METRICAS_RANK) { const p = M?.pesos[m.k]; rkMod.lin[m.k] = { usar: p != null, peso: p != null ? Math.abs(p) : 0, dir: p != null ? Math.sign(p) : m.dir, g: grupoMetrica(M, m.k) }; }
+  $("#rkmNome").value = rkMod.nome; $("#rkmPeriodo").value = rkMod.periodo; $("#rkmJm").value = rkMod.jm;
+  $("#rkmBench").innerHTML = st.idx.disponiveis.map((k) => `<option value="${k}"${k === rkMod.bench ? " selected" : ""}>${esc(nomeIndice(k))}</option>`).join("");
+  mostrarTelaRk("modEd"); renderEditorModelo(); $("#rkmNome").focus();
+}
+function renderEditorModelo() {
+  const ordemG = (g) => GRUPOS_RANK.indexOf(g);
+  const lista = [...METRICAS_RANK].sort((a, b) => (rkMod.lin[b.k].usar - rkMod.lin[a.k].usar) || ordemG(rkMod.lin[a.k].g) - ordemG(rkMod.lin[b.k].g) || a.nome.localeCompare(b.nome, "pt-BR"));
+  $("#rkmMetricas").innerHTML = `<table class="tb rkm-tab"><thead><tr><th>Usar</th><th class="t">Métrica</th><th class="t">Grupo</th><th>Peso</th><th class="t">Melhor quando</th></tr></thead><tbody>${lista.map((m) => {
+    const l = rkMod.lin[m.k];
+    return `<tr data-rkm-k="${esc(m.k)}" class="${l.usar ? "rkm-usada" : "rkm-fora"}"><td><label class="tog"><input type="checkbox" data-rkm="usar" ${l.usar ? "checked" : ""}></label></td>
+      <td class="t">${esc(m.nome)}${m.k.startsWith("_") ? ` <small class="nota">(calculada para o ranking)</small>` : ""}</td>
+      <td class="t"><select data-rkm="g">${GRUPOS_RANK.map((g) => `<option${g === l.g ? " selected" : ""}>${g}</option>`).join("")}</select></td>
+      <td><input data-rkm="peso" type="number" min="0" max="100" step="1" value="${l.peso}"></td>
+      <td class="t"><select data-rkm="dir"><option value="1"${l.dir > 0 ? " selected" : ""}>maior é melhor</option><option value="-1"${l.dir < 0 ? " selected" : ""}>menor é melhor</option></select></td></tr>`; }).join("")}</tbody></table>`;
+  somaModelo();
+}
+function somaModelo() {
+  const g = Object.fromEntries(GRUPOS_RANK.map((x) => [x, 0]));
+  let total = 0, n = 0;
+  for (const l of Object.values(rkMod.lin)) if (l.usar) { g[l.g] += Number(l.peso) || 0; total += Number(l.peso) || 0; n++; }
+  const ok = Math.abs(total - 100) < 0.01;
+  $("#rkmSoma").innerHTML = GRUPOS_RANK.map((x) => `<span class="rkm-chip" style="border-color:${CORES_GRUPO[x]}">${x}: <b>${br(g[x], 0)}%</b></span>`).join("") +
+    `<span class="rkm-total ${ok ? "ok" : "neg"}">Total: <b>${br(total, 1).replace(",0", "")}%</b> ${ok ? "✓" : "(precisa somar 100%)"} · ${n} métrica(s)</span>`;
+  return { ok, total, n };
+}
+async function salvarModelo() {
+  const nome = $("#rkmNome").value.trim(), { ok, n } = somaModelo();
+  const aviso = (t) => perguntar("Não deu para salvar", t, [{ rot: "OK", v: 1, classe: "prim" }]);
+  if (!nome) { $("#rkmNome").focus(); return; }
+  if (!n) return aviso("Ligue pelo menos uma métrica.");
+  if (!ok) return aviso("Os pesos das métricas ligadas precisam somar 100%.");
+  if (Object.values(rkMod.lin).some((l) => l.usar && !(Number(l.peso) > 0))) return aviso("Toda métrica ligada precisa de peso maior que zero (ou desligue a métrica).");
+  const jm = Math.max(1, Math.min(120, Math.round(Number($("#rkmJm").value) || 12)));
+  const pesos = {}, grupos = {};
+  for (const [k, l] of Object.entries(rkMod.lin)) if (l.usar) { pesos[k] = Number(l.peso) * (l.dir < 0 ? -1 : 1); grupos[k] = l.g; }
+  const id = rkMod.id || `c${Date.now().toString(36)}`, salvos = modelosSalvos();
+  salvos[id] = { nome, periodo: $("#rkmPeriodo").value, jmMeses: jm, bench: $("#rkmBench").value, pesos, grupos };
+  salvar("modelosRank", salvos);
+  mostrarTelaRk("modelos"); renderModelos();
+}
+document.addEventListener("click", async (e) => {
+  const t = e.target;
+  if (t.id === "rkTipos") { mostrarTelaRk("modelos"); return renderModelos(); }
+  if (t.id === "rkModVoltar") { mostrarTelaRk("lista"); return renderRkLista(); }
+  if (t.id === "rkModNovo") return abrirEditorModelo();
+  if (t.dataset?.rkmEd) return abrirEditorModelo(t.dataset.rkmEd);
+  if (t.dataset?.rkmDup) return abrirEditorModelo(t.dataset.rkmDup, true);
+  if (t.id === "rkmCancelar") { mostrarTelaRk("modelos"); return renderModelos(); }
+  if (t.id === "rkmSalvar") return salvarModelo();
+  if (t.dataset?.rkmOrig) {
+    if (!(await perguntar("Voltar ao original?", `Desfazer as edições do tipo <b>${esc(modeloDe(t.dataset.rkmOrig).nome)}</b> e voltar aos pesos padrão?`,
+      [{ rot: "Cancelar", v: false }, { rot: "Voltar ao original", v: true, classe: "prim" }]))) return;
+    const s2 = modelosSalvos(); delete s2[t.dataset.rkmOrig]; salvar("modelosRank", s2); return renderModelos();
+  }
+  if (t.dataset?.rkmDel) {
+    const id = t.dataset.rkmDel, usos = usosModelo()[id] || [];
+    if (usos.length) return perguntar("Tipo em uso", `Este tipo é usado nos rankings <b>${usos.map(esc).join(", ")}</b>. Troque o tipo de cálculo deles antes de excluir.`, [{ rot: "OK", v: 1, classe: "prim" }]);
+    if (!(await perguntar("Excluir o tipo de cálculo?", `Excluir <b>${esc(modeloDe(id).nome)}</b>?`, [{ rot: "Cancelar", v: false }, { rot: "Excluir", v: true, classe: "prim" }]))) return;
+    const s2 = modelosSalvos(); delete s2[id]; salvar("modelosRank", s2); return renderModelos();
+  }
+});
+const lerLinhaModelo = (el) => { const tr = el.closest("tr[data-rkm-k]"); return tr ? [tr, rkMod.lin[tr.dataset.rkmK]] : [null, null]; };
+document.addEventListener("input", (e) => {
+  const t = e.target; if (!t.dataset?.rkm) return;
+  const [tr, l] = lerLinhaModelo(t); if (!l) return;
+  if (t.dataset.rkm === "peso") { l.peso = Math.max(0, Number(t.value) || 0); if (l.peso > 0 && !l.usar) { l.usar = true; $("[data-rkm=usar]", tr).checked = true; tr.className = "rkm-usada"; } }
+  somaModelo();
+});
+document.addEventListener("change", (e) => {
+  const t = e.target; if (!t.dataset?.rkm) return;
+  const [tr, l] = lerLinhaModelo(t); if (!l) return;
+  if (t.dataset.rkm === "usar") { l.usar = t.checked; tr.className = l.usar ? "rkm-usada" : "rkm-fora"; }
+  else if (t.dataset.rkm === "g") l.g = t.value;
+  else if (t.dataset.rkm === "dir") l.dir = Number(t.value);
+  somaModelo();
+});
+
 // ---------- exportar e importar rankings (arquivo)
 function exportarRankings() {
   const a = document.createElement("a");
-  a.href = URL.createObjectURL(new Blob([JSON.stringify({ tipo: "rankings-de-fundos", versao: 1, rankings: lerRankings() }, null, 1)], { type: "application/json" }));
+  a.href = URL.createObjectURL(new Blob([JSON.stringify({ tipo: "rankings-de-fundos", versao: 2, rankings: lerRankings(), modelos: modelosSalvos() }, null, 1)], { type: "application/json" }));
   a.download = `rankings_de_fundos_${new Date().toISOString().slice(0, 10)}.json`; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 2000);
 }
 async function importarRankings(arquivo) {
   let dados; try { dados = JSON.parse(await arquivo.text()); } catch { await perguntar("Arquivo inválido", "Não foi possível ler este arquivo.", [{ rot: "OK", v: 1, classe: "prim" }]); return; }
-  const novos = Object.entries(dados?.rankings || {}).filter(([n, x]) => n && Array.isArray(x?.cnpjs) && MODELOS_RANK[x.modelo]), g = lerRankings();
+  // tipos de cálculo do arquivo: entram com o mesmo id; se já existir um diferente com esse id, entram com id novo
+  const salvos = modelosSalvos(), troca = {};
+  for (const [id, M] of Object.entries(dados?.modelos || {})) {
+    if (!M?.pesos) continue;
+    if (!salvos[id] || JSON.stringify(salvos[id]) === JSON.stringify(M)) salvos[id] = M;
+    else { const novo = `c${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`; salvos[novo] = M; troca[id] = novo; }
+  }
+  salvar("modelosRank", salvos);
+  for (const x of Object.values(dados?.rankings || {})) if (x && troca[x.modelo]) x.modelo = troca[x.modelo];
+  const novos = Object.entries(dados?.rankings || {}).filter(([n, x]) => n && Array.isArray(x?.cnpjs) && modelos()[x.modelo]), g = lerRankings();
   const rep = novos.filter(([n]) => g[n]).map(([n]) => n);
   let sob = true;
   if (rep.length) { const r = await perguntar("Rankings com o mesmo nome", `Já existem: <b>${rep.map(esc).join(", ")}</b>.`,
     [{ rot: "Cancelar", v: null }, { rot: "Manter os meus", v: false }, { rot: "Substituir pelos do arquivo", v: true, classe: "prim" }]); if (r == null) return; sob = r; }
-  for (const [n, x] of novos) if (!g[n] || sob) g[n] = { modelo: x.modelo, cnpjs: x.cnpjs.map((c) => String(c).replace(/\D/g, "").padStart(14, "0")), atualizado: x.atualizado || new Date().toISOString() };
+  for (const [n, x] of novos) if (!g[n] || sob) g[n] = { modelo: x.modelo, comparar: x.comparar || "1m", cnpjs: x.cnpjs.map((c) => String(c).replace(/\D/g, "").padStart(14, "0")), atualizado: x.atualizado || new Date().toISOString() };
   gravarRankings(g); renderRkLista();
 }
 
@@ -2865,6 +2998,7 @@ document.addEventListener("change", (e) => {
   const t = e.target;
   if (t.dataset?.rkSel) { t.checked ? rkSel.add(t.dataset.rkSel) : rkSel.delete(t.dataset.rkSel); return renderRkLista(); }
   if (t.id === "rkModelo") { rkEd.modelo = t.value; return renderEditorRk(); }
+  if (t.id === "rkComparar") { rkEd.comparar = t.value; return; }
   if (t.id === "rkEdGrupo" && t.value) { const x = lerGrupos()[t.value]; t.value = ""; if (x) juntarNoEditor(x.cnpjs); return; }
   if (t.id === "rkImportar" && t.files[0]) { importarRankings(t.files[0]); t.value = ""; return; }
   if (t.matches?.("[data-rk-todos]")) { st.rkTodos = t.checked; semZoom("gRkJM"); return renderRkTudo(); }
