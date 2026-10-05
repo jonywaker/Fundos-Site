@@ -609,3 +609,9 @@ dialog.dlg-medio[open] { max-height: 92vh; }
 .rkm-tab tr.rkm-fora td:first-child { opacity: 1; }
 .rkm-tab tr.rkm-usada td { background: color-mix(in srgb, var(--azul) 6%, var(--card)); }
 #rkComparar { min-width: 190px; }
+
+/* comparação dos rankings e recálculo */
+.rk-comp { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 7px 12px; }
+.rk-comp select, .rk-fixa .rk-comp-sel { min-width: 190px; font-weight: 600; }
+#secRank.rk-recalc { opacity: .6; transition: opacity .1s; cursor: progress; }
+#cartCalcular { font-weight: 800; }
