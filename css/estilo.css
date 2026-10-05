@@ -528,3 +528,26 @@ dialog.dlg-pergunta { width: min(460px, 92vw); border: 0; border-top: 3px solid 
 .graf:hover .zoom-bar:not(.com-zoom) .zoom-dica { opacity: 1; }
 .zoom-bar.com-zoom .zoom-dica { display: none; }
 @media (hover: none) { .zoom-dica { display: none; } }
+
+/* ============ rankings ============ */
+.botao-largo { width: 100%; padding: 8px 10px; font-weight: 800; font-size: 13.5px; }
+.rk-sobe { color: var(--verde); font-weight: 800; } .rk-desce { color: var(--vermelho); font-weight: 800; } .rk-igual { color: var(--sub); font-weight: 700; }
+.rk-novo { color: var(--azul); font-weight: 800; font-size: 11px; text-transform: uppercase; letter-spacing: .04em; }
+.rk-curto { color: #b7791f; font-weight: 800; margin-right: 4px; cursor: help; }
+.tb tbody tr.rk-top td.fx:first-child { box-shadow: inset 4px 0 0 var(--ouro), inset -1px 0 0 var(--borda); font-weight: 800; }
+.tb tbody tr.rk-top td { font-weight: 600; }
+.rk-det { margin: 10px 0; }
+.rk-det > summary { cursor: pointer; font-weight: 700; color: var(--azul); padding: 4px 0; }
+@media (prefers-color-scheme: dark) { .rk-det > summary { color: #9cc2ff; } }
+.rk-pesos-tab { width: auto; min-width: 420px; }
+#rkFora:empty, #rkInfo:empty { display: none; }
+#rkLista tr.linha-f { cursor: pointer; }
+#rkLista tr.marcado td { background: color-mix(in srgb, var(--ouro) 18%, var(--card)) !important; }
+#rkEdGrupo { width: auto; min-width: 200px; }
+#rkModelo { min-width: 220px; }
+.rk-expandir { display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; margin: 8px 0 4px; padding: 9px 12px;
+  border: 1.5px dashed color-mix(in srgb, var(--azul) 50%, var(--borda)); border-radius: 10px; background: color-mix(in srgb, var(--azul) 5%, var(--card));
+  color: var(--azul); font: 800 13.5px Manrope, sans-serif; cursor: pointer; }
+.rk-expandir:hover { border-color: var(--ouro); background: color-mix(in srgb, var(--ouro) 8%, var(--card)); }
+.rk-expandir[hidden] { display: none; }
+@media (prefers-color-scheme: dark) { .rk-expandir { color: #9cc2ff; } }
