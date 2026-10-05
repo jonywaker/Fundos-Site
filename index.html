@@ -40,6 +40,12 @@
       </section>
 
       <section class="bloco">
+        <h3>Rankings</h3>
+        <button id="abrirRank" class="sec botao-largo" type="button" title="Montar, escolher e calcular rankings de fundos">🏆 Rankings…</button>
+        <p id="rkResumoLat" class="nota"></p>
+      </section>
+
+      <section class="bloco">
         <h3>Períodos</h3>
         <div id="periodos" class="pilulas">
           <button data-p="Mês">Mês</button><button data-p="Ano">Ano</button><button data-p="3 Meses">3 Meses</button>
@@ -89,6 +95,29 @@
         <button id="btnTravar" class="sec mini-btn" type="button"></button>
         <button id="btnRel" class="prim mini-btn" type="button" title="Escolher partes e baixar em PDF, PNG ou Excel">⬇ Baixar relatório</button>
       </div>
+
+      <section id="secRank" class="cartao" data-sec="rank" hidden>
+        <div class="cab"><h2>Rankings</h2>
+          <div class="opcoes"><span id="rkPills" class="pilulas mini"></span></div>
+          <button id="btnRelRk" class="prim mini-btn" type="button" title="Escolher partes e baixar em PDF, PNG ou Excel">⬇ Baixar relatório</button>
+          <button class="btn-min" type="button" data-min="rank" title="Minimizar esta seção">−</button></div>
+        <p id="rkInfo" class="nota"></p>
+        <div id="rkTabela"></div>
+        <button id="rkExpandir" class="rk-expandir" type="button" aria-expanded="false"></button>
+        <p id="rkFora" class="nota"></p>
+        <div class="cab sub-cab"><h3 class="sub">Valores e pontos de cada métrica</h3></div>
+        <p class="nota">O valor calculado de cada métrica, a nota dentro do ranking (0 = pior fundo, 1 = melhor) e os pontos (nota × peso). A soma dos pontos é a pontuação.
+          Sem valor na métrica = 0 ponto nela. Esta parte não entra no PDF; no Excel, está na aba "completo".</p>
+        <div id="rkPontos"></div>
+        <div class="cab sub-cab"><h3 class="sub" id="rkTitJM">Janela móvel do top 10</h3></div>
+        <div class="linha2"><div class="graf"><canvas id="gRkJM"></canvas></div><div id="legRkJM" class="leg"></div></div>
+        <div id="tabRkJM"></div>
+        <div class="cab sub-cab"><h3 class="sub">Correlação do top 10</h3>
+          <div class="opcoes"><button class="sec mini-btn" type="button" data-corr-tudo="rk">Mostrar tudo</button></div></div>
+        <div id="tabRkCorr"></div>
+        <div class="cab sub-cab"><h3 class="sub">Critérios e pesos</h3></div>
+        <div id="rkPesos" class="rk-pesos"></div>
+      </section>
 
       <div id="semDados"></div>
       <div id="vazio" class="vazio">
@@ -359,6 +388,39 @@
       </div>
       <div id="relDestTab" class="dlg-tab"></div>
     </details>
+  </div>
+</dialog>
+
+<dialog id="dlgRank" class="dlg-medio" aria-labelledby="rkTit">
+  <div class="dlg-cab"><h2 id="rkTit">Rankings</h2><button class="sec" type="button" data-fechar-dlg>Fechar</button></div>
+  <div id="rkListaBox">
+    <p class="nota">Cada ranking é uma lista de fundos com um tipo de cálculo (os pesos das métricas). Marque os que quer calcular e clique em Calcular.
+      Os rankings ficam guardados neste navegador.</p>
+    <div class="cart-acoes"><button id="rkNovo" class="prim" type="button">＋ Novo ranking</button>
+      <button id="rkExportar" class="sec" type="button">⬇ Exportar rankings</button>
+      <label class="sec botao-arquivo">⬆ Importar arquivo<input id="rkImportar" type="file" accept=".json,application/json" hidden></label>
+      <span class="nota"><button id="rkMarcarTodos" class="link" type="button">marcar todos</button> · <button id="rkDesmarcar" class="link" type="button">desmarcar</button></span></div>
+    <div id="rkLista"></div>
+    <div class="dlg-pe"><span class="nota" id="rkResumo"></span>
+      <div class="botoes"><button id="rkCalcular" class="prim" type="button">🏆 Calcular rankings</button></div></div>
+  </div>
+  <div id="rkEditor" hidden>
+    <div class="gr-salvar opcoes">
+      <label><span>Nome do ranking</span><input id="rkNome" type="text" maxlength="60" placeholder="Ex.: Crédito High Grade"></label>
+      <label><span>Tipo de cálculo (pesos)</span><select id="rkModelo"></select></label>
+    </div>
+    <p id="rkModeloInfo" class="nota"></p>
+    <div class="botoes-add">
+      <button id="rkEdLista" class="sec" type="button">☰ Escolher na lista…</button>
+      <button id="rkEdColar" class="sec" type="button">📋 Colar CNPJs…</button>
+      <select id="rkEdGrupo" aria-label="Carregar de um grupo"></select>
+      <button id="rkEdSel" class="sec" type="button">Usar os fundos selecionados</button>
+      <button id="rkEdLimpar" class="sec" type="button">Limpar</button>
+    </div>
+    <p id="rkEdInfo" class="nota"></p>
+    <div id="rkEdFundos" class="dlg-tab"></div>
+    <div class="dlg-pe"><span></span><div class="botoes"><button id="rkEdCancelar" class="sec" type="button">Cancelar</button>
+      <button id="rkEdSalvar" class="prim" type="button">Salvar ranking</button></div></div>
   </div>
 </dialog>
 
