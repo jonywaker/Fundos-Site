@@ -551,3 +551,42 @@ dialog.dlg-pergunta { width: min(460px, 92vw); border: 0; border-top: 3px solid 
 .rk-expandir:hover { border-color: var(--ouro); background: color-mix(in srgb, var(--ouro) 8%, var(--card)); }
 .rk-expandir[hidden] { display: none; }
 @media (prefers-color-scheme: dark) { .rk-expandir { color: #9cc2ff; } }
+
+/* ============ rankings: barra fixa, medalhas e pesos ============ */
+.rk-fixa { position: sticky; top: 0; z-index: 15; background: var(--card); margin: -14px -16px 8px; padding: 10px 16px; border-radius: 12px 12px 0 0;
+  border-bottom: 2px solid var(--ouro); box-shadow: 0 8px 16px -12px rgba(20,26,74,.35); }
+.cartao.min .rk-fixa { margin-bottom: -14px; border-radius: 12px; }
+.rk-fixa .rk-alterna { font-weight: 800; }
+.rk-fixa .rk-alterna[aria-pressed=true] { background: var(--anil); color: #fff; border-color: var(--anil); }
+.rk-fixa .rk-alterna .nota { color: inherit; opacity: .8; }
+.rk-pos { display: inline-grid; place-items: center; min-width: 22px; height: 22px; border-radius: 50%; font-weight: 800; font-size: 12px; }
+.rk-pos1 { background: #e6b400; color: #3a2c00; box-shadow: 0 0 0 2px #ffe27a; }
+.rk-pos2 { background: #8e99a6; color: #fff; box-shadow: 0 0 0 2px #d9dee3; }
+.rk-pos3 { background: #9c5a2c; color: #fff; box-shadow: 0 0 0 2px #dcae8a; }
+.tb tbody tr.rk-m1 td { background: #fff4c2 !important; font-weight: 700; }
+.tb tbody tr.rk-m2 td { background: #eceff3 !important; font-weight: 700; }
+.tb tbody tr.rk-m3 td { background: #f3dfcf !important; font-weight: 700; }
+.tb tbody tr.rk-m1 td:first-child { box-shadow: inset 5px 0 0 #e6b400; } .tb tbody tr.rk-m2 td:first-child { box-shadow: inset 5px 0 0 #8e99a6; }
+.tb tbody tr.rk-m3 td:first-child { box-shadow: inset 5px 0 0 #9c5a2c; }
+@media (prefers-color-scheme: dark) {
+  .tb tbody tr.rk-m1 td { background: #4a3f12 !important; } .tb tbody tr.rk-m2 td { background: #343a46 !important; } .tb tbody tr.rk-m3 td { background: #4a2f1c !important; }
+}
+.rk-pesos-grade { display: grid; grid-template-columns: minmax(0, 1fr) minmax(260px, 360px); gap: 16px; align-items: start; }
+@media (max-width: 900px) { .rk-pesos-grade { grid-template-columns: 1fr; } }
+.rk-pesos-tab { width: 100%; }
+.rk-pesos-tab td.rk-cat { vertical-align: middle; font-size: 13.5px; }
+.rk-pesos-tab td.rk-soma { vertical-align: middle; font-size: 15px; text-align: center; }
+.rk-pesos-tab td { white-space: normal; }
+.rk-pizza { height: 320px; position: relative; }
+.rel-render tr[data-cor-linha] td { background: var(--fundo-linha) !important; font-weight: 700; }
+
+/* janelas: cabeçalho e botões do rodapé sempre visíveis; só a tabela rola */
+dialog.dlg-medio { overflow: hidden; }
+dialog.dlg-medio > * { flex: none; }
+#rkListaBox:not([hidden]), #rkEditor:not([hidden]), #colPasso1:not([hidden]), #colPasso2:not([hidden]) { display: flex; flex-direction: column; gap: 8px; flex: 1 1 auto; min-height: 0; }
+#rkLista, #rkEdFundos, #colTabela, #grLista { flex: 1 1 auto; min-height: 140px; max-height: none; overflow: auto; }
+#dlgGrupos #grLista { flex: 1 1 auto; }
+#dlgRel .rel-cols { flex: 1 1 auto; min-height: 0; }
+dialog.dlg-medio .dlg-pe { flex: none; background: var(--card); }
+dialog.dlg-medio[open] { max-height: 92vh; }
+#dlgRank[open]:has(#rkEditor:not([hidden])) { height: 92vh; }
