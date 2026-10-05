@@ -73,6 +73,7 @@ async function iniciar() {
     atualizarSidebar();
     atualizarEspaco();
     renderCarteira();
+    mostrarPagina(new URLSearchParams(location.search).get("pagina") || pref("pagina", "analise"), { rolar: false });
   } catch (e) {
     $("#status").textContent = "erro ao carregar";
     log("ERRO: " + e.message);
@@ -544,6 +545,7 @@ async function calcular() {
     barra.firstElementChild.style.width = "100%";
     faseCarga("montando tabelas e gráficos…", 96);
     await new Promise((r) => setTimeout(r, 30));
+    mostrarPagina("analise");
     renderResultado();
     $("#progTxt").textContent = `pronto em ${br((performance.now() - t0) / 1000, 1)} s`;
     fecharCarga();
@@ -2260,7 +2262,8 @@ async function baixarRelatorio() {
   const minimizadas = $$(".cartao.min");
   try {
     prog("preparando…"); await pausa();
-    if (minimizadas.length) { minimizadas.forEach((s) => s.classList.remove("min")); Object.values(st.graficos).forEach((g) => g?.resize()); await pausa(); }
+    if (minimizadas.length) minimizadas.forEach((s) => s.classList.remove("min"));
+    mostrarTodasPaginas(); await pausa();
     if (comDest) {                       // o relatório usa os fundos escolhidos na janela (o texto do topo fica de lado)
       st.destaque = ""; st.destExtra = conjuntoDestaque(rel.dest);
       prog("aplicando o destaque nos gráficos…"); renderResultado(); if (st.rk) renderRankings(); await pausa();
@@ -2309,12 +2312,13 @@ async function baixarRelatorio() {
     btn.disabled = false;
     if (comDest) { st.destExtra = null; st.destaque = destTela; renderResultado(); if (st.rk) renderRankings(); }
     if (minimizadas.length) aplicarMinimizados();
+    mostrarPagina(st.pagina, { rolar: false });
   }
 }
 
 document.addEventListener("click", (e) => {
   const t = e.target;
-  if (t.id === "btnRel" || t.id === "btnRelRk") return abrirRelatorio();
+  if (t.id === "btnRel" || t.id === "btnRelRk" || t.id === "btnRelCart") return abrirRelatorio();
   const f = t.closest?.("#relFmt button"); if (f) { rel.fmt = f.dataset.f; salvar("relFmt", rel.fmt); return desenharFormatoRel(); }
   if (t.id === "relTudo" || t.id === "relNada") {
     $$("#relSecoes input[data-rel]:not(:disabled)").forEach((i) => { const sec = SECOES_REL.find((s) => s.k === i.dataset.rel);
@@ -2491,6 +2495,7 @@ function sincronizarUrl() {
   pon("ini", st.periodos.has("Personalizado") ? $("#pIni").value : "");
   pon("fim", st.periodos.has("Personalizado") ? $("#pFim").value : "");
   pon("idx", [...st.idxSel].join(","));
+  pon("pagina", st.pagina && st.pagina !== "analise" ? st.pagina : "");
   history.replaceState(null, "", url);
 }
 function lerUrl() {
@@ -2508,6 +2513,29 @@ function lerUrl() {
     desenharChipsIndices();
   }
 }
+
+// ---------- três páginas: Análise de fundos, Rankings e Montagem de carteira (cada uma mostra só o que é dela)
+const PAGINAS = ["analise", "rankings", "carteira"];
+function mostrarPagina(pg, { rolar = true, foco = false } = {}) {
+  if (!PAGINAS.includes(pg)) pg = "analise";
+  st.pagina = pg; salvar("pagina", pg);
+  for (const el of $$(".pagina")) el.hidden = el.dataset.pagina !== pg;
+  for (const b of $$(".abas [role=tab]")) { const on = b.dataset.aba === pg; b.setAttribute("aria-selected", String(on)); b.tabIndex = on ? 0 : -1; if (on && foco) b.focus(); }
+  for (const el of $$(".lateral [data-pg]")) el.hidden = !el.dataset.pg.split(" ").includes(pg);
+  // gráficos criados com a página escondida precisam medir de novo o tamanho
+  requestAnimationFrame(() => Object.values(st.graficos).forEach((g) => { try { g?.resize(); } catch { /* gráfico já destruído */ } }));
+  if (st.idx) sincronizarUrl();
+  if (rolar) scrollTo({ top: 0, behavior: "auto" });
+}
+// durante o relatório todas as páginas ficam visíveis (as imagens dos gráficos saem da tela)
+function mostrarTodasPaginas() { for (const el of $$(".pagina")) el.hidden = false; Object.values(st.graficos).forEach((g) => { try { g?.resize(); } catch { /* */ } }); }
+document.addEventListener("click", (e) => { const b = e.target.closest?.(".abas [role=tab]"); if (b) mostrarPagina(b.dataset.aba); });
+document.addEventListener("keydown", (e) => {                      // setas entre as abas (padrão de abas acessíveis)
+  const b = e.target.closest?.(".abas [role=tab]"); if (!b) return;
+  const i = PAGINAS.indexOf(b.dataset.aba), n = PAGINAS.length;
+  const alvo = e.key === "ArrowRight" ? PAGINAS[(i + 1) % n] : e.key === "ArrowLeft" ? PAGINAS[(i - 1 + n) % n] : e.key === "Home" ? PAGINAS[0] : e.key === "End" ? PAGINAS[n - 1] : null;
+  if (alvo) { e.preventDefault(); mostrarPagina(alvo, { rolar: false, foco: true }); }
+});
 // ============================== rankings ==============================
 // Um ranking = nome + tipo de cálculo (pesos) + lista de fundos. Ficam guardados neste navegador, como os grupos.
 const lerRankings = () => pref("rankings", {});
@@ -2653,8 +2681,8 @@ async function calcularRankings() {
     }
     st.rk = { lista, fundos, ativo: 0 }; semZoom("gRkJM");
     faseCarga("montando as tabelas…", 99); await pausa();
+    mostrarPagina("rankings");
     renderRankings(); fecharCarga(); atualizarEspaco();
-    $("#secRank").scrollIntoView({ behavior: rolagemSuave(), block: "start" });
   } catch (e) { console.error(e); fecharCarga(e.message); }
 }
 
@@ -2669,8 +2697,9 @@ const usaIbov = (R) => R.M.bench === "IBOV";
 const classeMedalha = (pos) => (pos <= 3 ? `rk-m${pos}` : "");
 const fundosVisiveis = (R) => (st.rkTodos ? R.ordem : R.ordem.slice(0, TOP_RANK));     // o botão "ranking completo" vale para tudo
 function renderRankings() {
+  $("#rkVazio").hidden = !!st.rk?.lista.length;
   if (!st.rk?.lista.length) { $("#secRank").hidden = true; return; }
-  $("#secRank").hidden = false; $("#vazio").hidden = true;
+  $("#secRank").hidden = false;
   if (st.rk.ativo >= st.rk.lista.length) st.rk.ativo = 0;
   $("#rkPills").innerHTML = st.rk.lista.map((R, i) => `<button data-rk-pill="${i}" aria-pressed="${i === st.rk.ativo}">${esc(R.nome)}</button>`).join("");
   aplicarMinimizados();
