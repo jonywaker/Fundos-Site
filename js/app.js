@@ -713,10 +713,11 @@ function tabelaMetricas(dados) {
 }
 
 // ---------- tabela-legenda: cor, posição, fundo e valores, do maior para o menor; 5 maiores + 5 menores (+ destacados)
-function tabelaLegenda(chave, itens, colsValor) {
+// opc.rk: legenda de ranking (o interruptor liga o "ranking completo", que vale para todas as tabelas e gráficos)
+function tabelaLegenda(chave, itens, colsValor, opc = {}) {
   const ord = [...itens].sort((a, b) => (b.Final ?? -Infinity) - (a.Final ?? -Infinity));
   ord.forEach((it, i) => (it["#"] = String(i + 1)));
-  const todos = st.todos[chave];
+  const todos = opc.rk ? !!st.rkTodos : st.todos[chave];
   const marc = ord.map((it) => casa(st.destaque, it.Fundo));
   let vis = ord, seps = new Set();
   if (!todos && ord.length > 10) {
@@ -733,8 +734,9 @@ function tabelaLegenda(chave, itens, colsValor) {
       (l._c ? `<span data-mini="${esc(l._c)}">${esc(v)}</span>` : esc(v)) },
     ...colsValor.map((c) => ({ chave: c, nome: c, tipo: "pct", cor: true }))];
   const dest = vis.map((it, i) => !seps.has(i) && casa(st.destaque, it.Fundo));
-  return `<label class="tog"><input type="checkbox" data-todos="${chave}" ${todos ? "checked" : ""} ${ord.length <= 10 ? "disabled" : ""}>
-      Mostrar todos (${ord.length})</label>` + tabelaHTML({ colunas, linhas: vis, fixas: 2, larguras: [34, 210], destacar: dest, separadores: seps, altura: 420 });
+  const tog = opc.rk ? (opc.n > 10 ? `<label class="tog"><input type="checkbox" data-rk-todos ${st.rkTodos ? "checked" : ""}> Mostrar o ranking completo (${opc.n})</label>` : "")
+    : ord.length > 10 ? `<label class="tog"><input type="checkbox" data-todos="${chave}" ${todos ? "checked" : ""}> Mostrar todos (${ord.length})</label>` : "";
+  return tog + tabelaHTML({ colunas, linhas: vis, fixas: 2, larguras: [34, 210], destacar: dest, separadores: seps, altura: 420, classes: vis.map((it) => it._classe || "") });
 }
 
 // ============================== gráficos ==============================
@@ -1033,7 +1035,7 @@ function renderTabJM() {
   $("#tabJM").innerHTML = htmlResumoJM(jm.porFundo.map(({ c, resumo }) => ({ _c: c, Fundo: st.porCnpj.get(c)?.NOME || c, CNPJ: cnpjFmt(c), resumo })), jm.nomeB, "jm");
 }
 // tabela-resumo da janela móvel. lista: [{ Fundo, CNPJ, _c?, resumo }]
-function htmlResumoJM(lista, nomeB, tab) {
+function htmlResumoJM(lista, nomeB, tab, classeFn = null) {
   const B = curto(nomeB || "Benchmark", 24);
   const linhas = lista.map(({ resumo: r, ...x }) => ({ ...x, prim: r.primeira, ult: r.ultima,
     ...Object.fromEntries(["min", "med", "max"].flatMap((f) => Object.entries(r[f]).map(([k, v]) => [`${f}.${k}`, v]))),
@@ -1052,7 +1054,7 @@ function htmlResumoJM(lista, nomeB, tab) {
     { chave: "pAcima", nome: `% acima do ${B}`, tipo: "pct", g: "Consistência" }, { chave: "pPositivas", nome: "% positivas", tipo: "pct", g: "Consistência" }];
   const ord = ordenar(linhas, tab, colunas);
   return tabelaHTML({ colunas, linhas: ord, fixas: 2, grupos: colunas.map((c) => c.g), ordenavel: tab,
-    destacar: ord.map((l) => casa(st.destaque, l.Fundo, l.CNPJ)), altura: 420 });
+    destacar: ord.map((l) => casa(st.destaque, l.Fundo, l.CNPJ)), altura: 420, classes: classeFn ? ord.map(classeFn) : [] });
 }
 
 // lista completa de todas as janelas (CSV com ponto e vírgula e vírgula decimal: abre direto no Excel em português)
@@ -2019,7 +2021,7 @@ const NF8 = new Intl.NumberFormat("pt-BR", { minimumFractionDigits: 8, maximumFr
 function fmtCel(v, tipo) {
   if (v == null || v === "") return "";
   if (typeof v !== "number") return String(v);
-  return ({ pct: brPct(v), pct6: brPct(v, 4), data: fmtData(v), int: br(v, 0), num2: br(v, 2), num: br(v, 4), valor: br(v, 2), cota: NF8.format(v) })[tipo] ?? String(v);
+  return ({ pct: brPct(v), pct0: brPct(v, 0), pct6: brPct(v, 4), data: fmtData(v), int: br(v, 0), num2: br(v, 2), num: br(v, 4), valor: br(v, 2), cota: NF8.format(v) })[tipo] ?? String(v);
 }
 // a fonte padrão do PDF só tem os caracteres latinos básicos
 const pdfTxt = (s) => String(s ?? "").replace(/−/g, "-").replace(/[–—]/g, "-").replace(/★/g, "*").replace(/⊘/g, "(!)").replace(/▲/g, "+").replace(/▼/g, "-")
@@ -2041,20 +2043,35 @@ async function gerarPDF(partes, prog) {
   doc.setFontSize(8); doc.setTextColor(120); doc.text("Conteúdo informativo, não é recomendação de investimento. Rentabilidade passada não garante rentabilidade futura.", M, H - 8);
   for (let i = 0; i < partes.length; i++) {
     const p = partes[i]; prog(`montando o PDF: ${p.titulo} (${i + 1} de ${partes.length})…`); await pausa();
-    doc.addPage(); let y = 16;
+    doc.addPage(); let y = 16; const meia = { col: 0, alt: 0 };
     doc.setFont("helvetica", "bold"); doc.setFontSize(14); doc.setTextColor(43, 44, 120); doc.text(pdfTxt(p.titulo), M, y); y += 3;
     doc.setDrawColor(201, 162, 58); doc.line(M, y, W - M, y); y += 5;
     if (p.nota) { doc.setFont("helvetica", "normal"); doc.setFontSize(8.5); doc.setTextColor(90); doc.text(pdfTxt(p.nota), M, y); y += 5; }
     for (const b of p.blocos) {
       if (b.tipo === "img") {
-        let w = W - 2 * M, h = w * b.h / b.w;
-        if (h > H - y - 12) { h = Math.max(60, H - y - 12); w = h * b.w / b.h; }
-        if (y + h > H - 10) { doc.addPage(); y = 14; }
-        doc.addImage(b.url, "PNG", M, y, w, h, undefined, "FAST"); y += h + 5;
+        // a imagem nunca é encolhida para caber no fim da página: se não couber, vai para a página seguinte
+        const tit = b.mostrarTitulo ? 6 : 0, larg = b.meia ? (W - 2 * M - 8) / 2 : W - 2 * M, maxH = (H - 30) * (b.meia ? 0.9 : 1);
+        let w = larg, h = w * b.h / b.w;
+        if (h > maxH) { h = maxH; w = h * b.w / b.h; }
+        const x = b.meia && meia.col === 1 ? M + larg + 8 : M;
+        if (!(b.meia && meia.col === 1)) {
+          if (meia.col === 1) { y += meia.alt + 5; meia.col = 0; }
+          if (y + h + tit > H - 10) { doc.addPage(); y = 14; }
+        }
+        if (tit) { doc.setFont("helvetica", "bold"); doc.setFontSize(9); doc.setTextColor(43, 44, 120); doc.text(pdfTxt(b.titulo), x, y + 3.5, { maxWidth: larg }); }
+        doc.addImage(b.url, "PNG", x, y + tit, w, h, undefined, "FAST");
+        if (b.meia && meia.col === 0) { meia.col = 1; meia.alt = h + tit; }
+        else if (b.meia) { y += Math.max(meia.alt, h + tit) + 5; meia.col = 0; }
+        else y += h + tit + 5;
       } else if (b.tipo === "tabela" && !b.soExcel) {
+        if (meia.col === 1) { y += meia.alt + 5; meia.col = 0; }
         doc.setFont("helvetica", "bold"); doc.setFontSize(9.5); doc.setTextColor(43, 44, 120);
         if (y > H - 30) { doc.addPage(); y = 14; }
+        // imagemAoLado: a tabela fica estreita à esquerda e a imagem (ex.: pizza dos pesos) à direita
+        const lado = b.imagemAoLado, largTab = lado ? Object.values(b.pdfCompacto || {}).reduce((s2, x) => s2 + x, 0) : 0;
+        if (lado && y + Math.max(62, b.linhas.length * 4.2 + 8) > H - 12) { doc.addPage(); y = 14; doc.setFont("helvetica", "bold"); doc.setFontSize(9.5); doc.setTextColor(43, 44, 120); }
         doc.text(pdfTxt(b.nome), M, y); y += 2;
+        const yTab = y;
         b._dest = st.destExtra ? b.linhas.map(linhaDestacada) : null;
         doc.autoTable({ startY: y, margin: { left: M, right: M, top: 12, bottom: 12 }, theme: "grid",
           head: [b.colunas.map((c) => pdfTxt(c.nome))], body: b.linhas.map((l) => l.map((v, j) => pdfTxt(fmtCel(v, b.colunas[j].tipo)))),
@@ -2065,13 +2082,22 @@ async function gerarPDF(partes, prog) {
           alternateRowStyles: { fillColor: [246, 248, 253] },
           columnStyles: b.pdfCompacto ? Object.fromEntries(Object.entries(b.pdfCompacto).map(([i, w]) => [i, { cellWidth: w }])) : { 0: { cellWidth: 55, fontStyle: "bold" } },
           horizontalPageBreak: !b.pdfCompacto, horizontalPageBreakRepeat: 0,
+          ...(lado ? { tableWidth: largTab, margin: { left: M, right: W - M - largTab, top: 12, bottom: 12 } } : {}),
           didParseCell: (d) => { if (d.section === "body" && d.column.index > 0 && b.colunas[d.column.index]?.tipo !== "txt") d.cell.styles.halign = "right";
+            const cl = d.section === "body" && b.corLinha?.[d.row.index];
+            if (cl) { d.cell.styles.fillColor = [parseInt(cl.slice(1, 3), 16), parseInt(cl.slice(3, 5), 16), parseInt(cl.slice(5, 7), 16)]; d.cell.styles.fontStyle = "bold"; }
             if (d.section === "body" && b._dest?.[d.row.index]) { d.cell.styles.fillColor = [255, 236, 179]; d.cell.styles.fontStyle = "bold"; }
             const v = b.linhas[d.row.index]?.[d.column.index];
             if (d.section === "body" && b.colunas[d.column.index]?.tipo === "pct" && typeof v === "number") d.cell.styles.textColor = v > 0 ? [12, 138, 78] : v < 0 ? [208, 38, 44] : [40, 40, 40]; } });
         y = doc.lastAutoTable.finalY + 6;
+        if (lado) {
+          const lw = Math.min(W - 2 * M - largTab - 10, 75), lh = Math.min(lw * lado.h / lado.w, 58), lw2 = lh * lado.w / lado.h;
+          doc.addImage(lado.url, "PNG", M + largTab + 10 + (lw - lw2) / 2, yTab, lw2, lh, undefined, "FAST");
+          y = Math.max(y, yTab + lh + 6);
+        }
       }
     }
+    if (meia.col === 1) { y += meia.alt + 5; meia.col = 0; }
     if (p.blocos.some((b) => b.soExcel)) { doc.setFont("helvetica", "italic"); doc.setFontSize(8); doc.setTextColor(110);
       if (y > H - 14) { doc.addPage(); y = 14; } doc.text("As séries diárias e as tabelas muito largas desta parte saem completas no Excel.", M, y); }
   }
@@ -2086,10 +2112,10 @@ const LIMITE_LINHAS_PNG = 80;
 function htmlParte(p) {
   let h = `<section class="rel-parte"><h2>${esc(p.titulo)}</h2><p class="rel-sub">${esc(cabecalhoRel())}</p>` + (p.nota ? `<p class="rel-sub">${esc(p.nota)}</p>` : "");
   for (const b of p.blocos) {
-    if (b.tipo === "img") h += `<img src="${b.url}" style="width:${Math.min(1300, b.w)}px;height:auto" alt="">`;
+    if (b.tipo === "img") h += (b.mostrarTitulo ? `<h3>${esc(b.titulo)}</h3>` : "") + `<img src="${b.url}" style="width:${Math.min(b.meia ? 640 : 1300, b.w)}px;height:auto" alt="">`;
     else if (b.tipo === "tabela" && !b.soExcel) {
       const lin = b.linhas.slice(0, LIMITE_LINHAS_PNG);
-      h += `<h3>${esc(b.nome)}</h3><table><thead><tr>${b.colunas.map((c) => `<th>${esc(c.nome)}</th>`).join("")}</tr></thead><tbody>${lin.map((l) => `<tr${linhaDestacada(l) ? ' class="dest"' : ""}>${l.map((v, j) => {
+      h += `<h3>${esc(b.nome)}</h3><table><thead><tr>${b.colunas.map((c) => `<th>${esc(c.nome)}</th>`).join("")}</tr></thead><tbody>${lin.map((l, li) => `<tr${linhaDestacada(l) ? ' class="dest"' : ""}${b.corLinha?.[li] ? ` style="--fundo-linha:${b.corLinha[li]}" data-cor-linha="1"` : ""}>${l.map((v, j) => {
         const t = b.colunas[j].tipo, cor = t === "pct" && typeof v === "number" ? (v > 0 ? "color:#0c8a4e" : v < 0 ? "color:#d0262c" : "") : "";
         return `<td class="${t === "txt" ? "t" : ""}" style="${cor}">${esc(fmtCel(v, t))}</td>`; }).join("")}</tr>`).join("")}</tbody></table>` +
         (b.linhas.length > LIMITE_LINHAS_PNG ? `<p class="rel-sub">Mostrando ${LIMITE_LINHAS_PNG} de ${b.linhas.length} linhas; a tabela completa sai no Excel.</p>` : "");
@@ -2127,7 +2153,7 @@ async function gerarExcel(partes, prog, comImagens) {
     while (usados.has(n.toLowerCase())) n = `${base.slice(0, 26)} ${k++}`;
     usados.add(n.toLowerCase()); return n;
   };
-  const FMT = { pct: "0.00%", pct6: "0.0000%", data: "dd/mm/yyyy", int: "0", num2: "0.00", num: "0.0000", valor: "#,##0.00", cota: "0.00000000" };
+  const FMT = { pct: "0.00%", pct0: "0%", pct6: "0.0000%", data: "dd/mm/yyyy", int: "0", num2: "0.00", num: "0.0000", valor: "#,##0.00", cota: "0.00000000" };
   // capa com o índice das abas
   const capa = wb.addWorksheet(nomeAba("Sobre"));
   capa.addRow(["Análise de Fundos"]).font = { bold: true, size: 16, color: { argb: "FF2B2C78" } };
@@ -2145,6 +2171,8 @@ async function gerarExcel(partes, prog, comImagens) {
       const marcar = st.destExtra && !b.bruto;
       for (let r = 0; r < b.linhas.length; r++) {
         const row = ws.addRow(b.linhas[r].map((v, j) => (v == null ? null : b.colunas[j].tipo === "data" && typeof v === "number" ? dataJs(v) : v)));
+        const cl = b.corLinha?.[r];
+        if (cl) { row.font = { bold: true }; row.eachCell({ includeEmpty: true }, (c) => { c.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF" + cl.slice(1).toUpperCase() } }; }); }
         if (marcar && linhaDestacada(b.linhas[r])) { row.font = { bold: true }; row.eachCell({ includeEmpty: true }, (c) => { c.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFFFECB3" } }; }); }
         if (r % 4000 === 3999) await pausa();
       }
@@ -2549,17 +2577,30 @@ async function calcularRankings() {
 }
 
 // ---------- exibição
+// Top 3 com cores de medalha (ouro, prata e bronze) em todas as tabelas e gráficos; os demais ficam mais discretos.
+const MEDALHAS = [{ cor: "#e6b400", fundo: "#fff4c2", nome: "ouro" }, { cor: "#8e99a6", fundo: "#eceff3", nome: "prata" }, { cor: "#9c5a2c", fundo: "#f3dfcf", nome: "bronze" }];
+const medalha = (pos) => MEDALHAS[pos - 1] || null;
 const rkAtivo = () => st.rk?.lista[st.rk.ativo];
 const nomeRk = (R, c) => R.apel[c] || curto(st.porCnpj.get(c)?.NOME || c);
-const coresRk = (R) => Object.fromEntries(R.ordem.map((x, i) => [x.id, PALETA[i % PALETA.length]]));
+const coresRk = (R) => Object.fromEntries(R.ordem.map((x, i) => [x.id, medalha(x.pos)?.cor || PALETA[(i + 3) % PALETA.length]]));
 const usaIbov = (R) => R.M.bench === "IBOV";
+const classeMedalha = (pos) => (pos <= 3 ? `rk-m${pos}` : "");
+const fundosVisiveis = (R) => (st.rkTodos ? R.ordem : R.ordem.slice(0, TOP_RANK));     // o botão "ranking completo" vale para tudo
 function renderRankings() {
   if (!st.rk?.lista.length) { $("#secRank").hidden = true; return; }
   $("#secRank").hidden = false; $("#vazio").hidden = true;
   if (st.rk.ativo >= st.rk.lista.length) st.rk.ativo = 0;
   $("#rkPills").innerHTML = st.rk.lista.map((R, i) => `<button data-rk-pill="${i}" aria-pressed="${i === st.rk.ativo}">${esc(R.nome)}</button>`).join("");
   aplicarMinimizados();
-  renderRkTabela(); renderRkPontos(); renderRkJM(); renderRkCorr(); renderRkPesos();
+  renderRkTudo();
+}
+function renderRkTudo() { renderRkBotao(); renderRkTabela(); renderRkPontos(); renderRkJM(); renderRkCorr(); renderRkPesos(); }
+function renderRkBotao() {                       // botão da barra fixa (acompanha a rolagem) e o de baixo da tabela
+  const R = rkAtivo(), n = R?.ordem.length || 0, todos = !!st.rkTodos;
+  for (const b of $$(".rk-alterna")) {
+    b.hidden = n <= TOP_RANK; b.setAttribute("aria-pressed", String(todos)); b.setAttribute("aria-expanded", String(todos));
+    b.innerHTML = todos ? `▴ Mostrar só o top ${TOP_RANK}` : `▾ Mostrar o ranking completo <span class="nota">(${n} fundos)</span>`;
+  }
 }
 function linhaRk(R, x) {
   const r = x.l.r, cad = x.l.cad;
@@ -2571,10 +2612,11 @@ function linhaRk(R, x) {
 }
 const varHTML = (v) => (v == null ? `<span class="rk-novo" title="Não estava no ranking do mês anterior">novo</span>` : v > 0 ? `<span class="rk-sobe">▲ ${v}</span>`
   : v < 0 ? `<span class="rk-desce">▼ ${-v}</span>` : `<span class="rk-igual">▬ 0</span>`);
+const posHTML = (v) => (v <= 3 ? `<span class="rk-pos rk-pos${v}" title="${medalha(v).nome}">${v}</span>` : `<span class="rk-pos">${v}</span>`);
 function colunasRk(R) {
   const mi = (v) => (typeof v === "number" ? br(v / 1e6, 1) : "");
   return [
-    { chave: "pos", nome: "Pos.", tipo: "int", g: "Ranking" }, { chave: "var", nome: "Var. mês", tipo: "int", g: "Ranking", html: (v) => varHTML(v) },
+    { chave: "pos", nome: "Pos.", tipo: "int", g: "Ranking", html: posHTML }, { chave: "var", nome: "Var. mês", tipo: "int", g: "Ranking", html: (v) => varHTML(v) },
     { chave: "Fundo", nome: "Fundo", tipo: "txt", g: "Ranking", html: (v, l) => `${l.curto ? `<span class="rk-curto" title="Histórico menor que o período do ranking (desde ${fmtData(l.ini)})">⚑</span>` : ""}<span data-mini="${esc(l._c)}">${esc(v)}</span>` },
     { chave: "total", nome: "Pontuação", tipo: "num2", g: "Ranking", html: (v) => `<b>${br(v, 1)}</b>` },
     { chave: "perf", nome: "Performance", tipo: "num2", g: "Pontos por grupo", html: (v) => br(v, 1) }, { chave: "cons", nome: "Consistência", tipo: "num2", g: "Pontos por grupo", html: (v) => br(v, 1) },
@@ -2593,87 +2635,112 @@ function colunasRk(R) {
 }
 function renderRkTabela() {
   const R = rkAtivo(); if (!R) return;
-  const todos = !!st.rkTodos, base = R.ordem.map((x) => linhaRk(R, x)), colunas = colunasRk(R);
-  const linhas = ordenar(todos ? base : base.slice(0, TOP_RANK), "rk", colunas);
+  const todos = !!st.rkTodos, colunas = colunasRk(R);
+  const linhas = ordenar(fundosVisiveis(R).map((x) => linhaRk(R, x)), "rk", colunas);
   $("#rkInfo").innerHTML = !R.fim ? "Nenhum fundo com cotas." : `<b>${esc(R.M.nome)}</b> · métricas dos últimos ${esc(R.M.periodo.toLowerCase())} até ${fmtData(R.fim)} · janela móvel de ${R.M.jmMeses} meses ` +
     `contra o ${esc(nomeIndice(R.M.bench))} (aplicações desde ${fmtData(R.iniJM)}) · <b>${R.ordem.length}</b> fundo(s) analisado(s)` +
     (R.ordem.length > TOP_RANK && !todos ? ` · mostrando o top ${TOP_RANK}` : "") + ` · "Var. mês" compara com o ranking de ${fmtData(R.fimAnt)}`;
-  $("#rkTabela").innerHTML = tabelaHTML({ colunas, linhas, fixas: 3, larguras: [46, 70, 280], grupos: colunas.map((c) => c.g), ordenavel: "rk", altura: 560,
-    destacar: linhas.map((l) => casa(st.destaque, l.Fundo, l.CNPJ)), classes: linhas.map((l) => (l.pos <= 3 ? "rk-top" : "")) });
+  $("#rkTabela").innerHTML = tabelaHTML({ colunas, linhas, fixas: 3, larguras: [52, 70, 280], grupos: colunas.map((c) => c.g), ordenavel: "rk", altura: 560,
+    destacar: linhas.map((l) => casa(st.destaque, l.Fundo, l.CNPJ)), classes: linhas.map((l) => classeMedalha(l.pos)) });
   const fora = [...R.fora.map((x) => `${esc(curto(st.porCnpj.get(x.c)?.NOME || cnpjFmt(x.c), 50))} (${esc(x.motivo)})`), ...(R.foraDaBase || []).map((c) => `${cnpjFmt(c)} (fora da base)`)];
   $("#rkFora").innerHTML = (R.ordem.some((x) => x.l.curto) ? `<span class="rk-curto">⚑</span> histórico menor que o período do ranking (entra assim mesmo, com as métricas do tempo que tem). ` : "") +
     (fora.length ? `<b>Fora do ranking (${fora.length}):</b> ${fora.join("; ")}.` : "");
-  const b = $("#rkExpandir"), n = R.ordem.length;
-  b.hidden = n <= TOP_RANK; b.setAttribute("aria-expanded", String(todos));
-  b.innerHTML = todos ? `▴ Mostrar só o top ${TOP_RANK}` : `▾ Mostrar o ranking completo <span class="nota">(${n} fundos)</span>`;
 }
 function renderRkPontos() {
   const R = rkAtivo(); if (!R) return;
   const ks = GRUPOS_RANK.flatMap((g) => Object.keys(R.M.pesos).filter((k) => metricaRank(k).g === g));
   const fmtValor = (m) => (v) => (v == null ? `<span class="nota">sem valor</span>` : m.tipo === "valor" ? br(v / 1e6, 1) + " mi" : esc(FMT[m.tipo]?.(v) ?? v));
-  const colunas = [{ chave: "pos", nome: "Pos.", tipo: "int", g: "Ranking" }, { chave: "Fundo", nome: "Fundo", tipo: "txt", g: "Ranking", html: (v, l) => `<span data-mini="${esc(l._c)}">${esc(v)}</span>` },
+  const colunas = [{ chave: "pos", nome: "Pos.", tipo: "int", g: "Ranking", html: posHTML }, { chave: "Fundo", nome: "Fundo", tipo: "txt", g: "Ranking", html: (v, l) => `<span data-mini="${esc(l._c)}">${esc(v)}</span>` },
     { chave: "total", nome: "Pontuação", tipo: "num2", g: "Ranking", html: (v) => `<b>${br(v, 2)}</b>` },
     ...GRUPOS_RANK.map((g) => ({ chave: `g:${g}`, nome: g, tipo: "num2", g: "Pontos por grupo", html: (v) => br(v, 2) })),
     ...ks.flatMap((k) => { const m = metricaRank(k), p = R.M.pesos[k], gnome = `${m.nome} · peso ${Math.abs(p)} · ${p > 0 ? "maior é melhor" : "menor é melhor"}`;
       return [{ chave: `v:${k}`, nome: "Valor", tipo: m.tipo, g: gnome, html: fmtValor(m) },
         { chave: `n:${k}`, nome: "Nota (0 a 1)", tipo: "num2", g: gnome, html: (v) => br(v, 2) },
         { chave: `p:${k}`, nome: `Pontos (de ${Math.abs(p)})`, tipo: "num2", g: gnome, html: (v) => `<b>${br(v, 2)}</b>` }]; })];
-  const base = st.rkTodos ? R.ordem : topRk(R);
-  const linhas = ordenar(base.map((x) => ({ _c: x.id, pos: x.pos, Fundo: nomeRk(R, x.id), CNPJ: cnpjFmt(x.id), total: x.total,
+  const linhas = ordenar(fundosVisiveis(R).map((x) => ({ _c: x.id, pos: x.pos, Fundo: nomeRk(R, x.id), CNPJ: cnpjFmt(x.id), total: x.total,
     ...Object.fromEntries(GRUPOS_RANK.map((g) => [`g:${g}`, x.grupos[g]])),
     ...Object.fromEntries(ks.flatMap((k) => [[`v:${k}`, x.notas[k].valor], [`n:${k}`, x.notas[k].nota], [`p:${k}`, x.notas[k].pontos]])) })), "rkPts", colunas);
-  $("#rkPontos").innerHTML = tabelaHTML({ colunas, linhas, fixas: 2, larguras: [46, 240], grupos: colunas.map((c) => c.g), ordenavel: "rkPts", altura: 520,
-    destacar: linhas.map((l) => casa(st.destaque, l.Fundo, l.CNPJ)), classes: linhas.map((l) => (l.pos <= 3 ? "rk-top" : "")) });
+  $("#rkPontos").innerHTML = tabelaHTML({ colunas, linhas, fixas: 2, larguras: [52, 240], grupos: colunas.map((c) => c.g), ordenavel: "rkPts", altura: 520,
+    destacar: linhas.map((l) => casa(st.destaque, l.Fundo, l.CNPJ)), classes: linhas.map((l) => classeMedalha(l.pos)) });
 }
 function topRk(R) { return R.ordem.slice(0, TOP_RANK); }
+// séries da janela móvel: top 3 em linha grossa com a cor da medalha; os demais finos e mais claros
+function seriesJMRk(R, lista) {
+  const cores = coresRk(R);
+  return lista.filter((x) => x.l.jm?.length).map((x) => { const v = x.l.jm.filter((j) => j.dif != null);
+    return { nome: `${x.pos}. ${nomeRk(R, x.id)}`, c: x.id, pos: x.pos, cor: cores[x.id], x: v.map((j) => j.ini), y: v.map((j) => j.dif), forte: x.pos <= 3, fraca: x.pos > 3 }; });
+}
 function renderRkJM() {
   const R = rkAtivo(); if (!R) return;
-  const cores = coresRk(R), top = topRk(R).filter((x) => x.l.jm?.length);
-  $("#rkTitJM").textContent = `Janela móvel do top ${TOP_RANK} · ${R.M.jmMeses} meses contra o ${nomeIndice(R.M.bench)}`;
-  const series = top.map((x) => { const v = x.l.jm.filter((j) => j.dif != null); return { nome: `${x.pos}. ${nomeRk(R, x.id)}`, c: x.id, cor: cores[x.id], x: v.map((j) => j.ini), y: v.map((j) => j.dif) }; });
+  const lista = fundosVisiveis(R);
+  $("#rkTitJM").textContent = `Janela móvel ${st.rkTodos ? "de todos os fundos" : `do top ${TOP_RANK}`} · ${R.M.jmMeses} meses contra o ${nomeIndice(R.M.bench)}`;
+  const series = seriesJMRk(R, lista).sort((a, b) => b.pos - a.pos);       // top 3 desenhado por cima
   const xs = series.flatMap((s) => [s.x[0], s.x[s.x.length - 1]]).filter((v) => v != null);
   grafico("gRkJM", series, { ref: 0, xMin: xs.length ? Math.min(...xs) : undefined, xMax: xs.length ? Math.max(...xs) : undefined, tituloX: (d) => `Aplicação em ${fmtData(d)}` });
-  $("#legRkJM").innerHTML = tabelaLegenda("rkJM", top.map((x, i) => ({ Fundo: series[i].nome, _c: x.id, cor: cores[x.id],
-    Final: series[i].y.length ? series[i].y[series[i].y.length - 1] : null, Mediana: x.l.rs?.med.dif ?? null })), ["Final", "Mediana"]);
+  const porId = new Map(R.ordem.map((x) => [x.id, x]));
+  $("#legRkJM").innerHTML = tabelaLegenda("rkJM", series.map((s) => ({ Fundo: s.nome, _c: s.c, cor: s.cor, _classe: classeMedalha(s.pos),
+    Final: s.y.length ? s.y[s.y.length - 1] : null, Mediana: porId.get(s.c)?.l.rs?.med.dif ?? null })), ["Final", "Mediana"], { rk: true, n: R.ordem.length });
   renderRkJMTab();
 }
 function renderRkJMTab() {
   const R = rkAtivo(); if (!R) return;
-  const top = topRk(R).filter((x) => x.l.rs);
-  $("#tabRkJM").innerHTML = top.length ? htmlResumoJM(top.map((x) => ({ _c: x.id, Fundo: `${x.pos}. ${x.l.cad.NOME}`, CNPJ: cnpjFmt(x.id), resumo: x.l.rs })), nomeIndice(R.M.bench), "rkJMt")
-    : `<p class="nota">Nenhum fundo do top ${TOP_RANK} tem histórico para uma janela de ${R.M.jmMeses} meses.</p>`;
+  const lista = fundosVisiveis(R).filter((x) => x.l.rs);
+  $("#tabRkJM").innerHTML = lista.length ? htmlResumoJM(lista.map((x) => ({ _c: x.id, _pos: x.pos, Fundo: `${x.pos}. ${x.l.cad.NOME}`, CNPJ: cnpjFmt(x.id), resumo: x.l.rs })),
+    nomeIndice(R.M.bench), "rkJMt", (l) => classeMedalha(l._pos)) : `<p class="nota">Nenhum fundo tem histórico para uma janela de ${R.M.jmMeses} meses.</p>`;
 }
-function dadosCorrRk(R) {
-  const top = topRk(R); if (top.length < 2) return null;
-  const ini = Math.min(...top.map((x) => x.l.r["Data Inicial"])), fim = Math.max(...top.map((x) => x.l.r["Data Final"])), cores = coresRk(R);
-  const itens = top.map((x) => ({ nome: nomeRk(R, x.id), c: x.id, cnpj: cnpjFmt(x.id), cor: cores[x.id], ret: retornosFundo(st.rk.fundos.get(x.id), ini, fim) }));
+function dadosCorrRk(R, lista = topRk(R)) {
+  if (lista.length < 2) return null;
+  const ini = Math.min(...lista.map((x) => x.l.r["Data Inicial"])), fim = Math.max(...lista.map((x) => x.l.r["Data Final"])), cores = coresRk(R);
+  const itens = lista.map((x) => ({ nome: nomeRk(R, x.id), c: x.id, cnpj: cnpjFmt(x.id), cor: cores[x.id], ret: retornosFundo(st.rk.fundos.get(x.id), ini, fim) }));
   itens.push({ nome: "IBOV", cor: corIndice("IBOV"), bench: true, ret: retornosDiarios(st.idx, "IBOV", ini, fim) });
   return { itens, m: matrizCorrelacao(itens.map((i) => i.ret)), ini, fim };
 }
 function renderRkCorr() {
   const R = rkAtivo(); if (!R) return;
-  R.corr ||= dadosCorrRk(R);
-  if (!R.corr) { $("#tabRkCorr").innerHTML = `<p class="nota">Precisa de pelo menos 2 fundos.</p>`; return; }
-  renderMatrizCorr("tabRkCorr", "rk", R.corr.itens, R.corr.m);
+  const chave = st.rkTodos ? "todos" : "top";
+  if (!R.corrVis || R.corrVis.chave !== chave) R.corrVis = { chave, d: dadosCorrRk(R, fundosVisiveis(R)) };
+  $("#rkTitCorr").textContent = st.rkTodos ? "Correlação de todos os fundos" : `Correlação do top ${TOP_RANK}`;
+  if (!R.corrVis.d) { $("#tabRkCorr").innerHTML = `<p class="nota">Precisa de pelo menos 2 fundos.</p>`; return; }
+  renderMatrizCorr("tabRkCorr", "rk", R.corrVis.d.itens, R.corrVis.d.m);
 }
-function tabelaPesosRk(M) {   // linhas: grupo, métrica, peso, direção (com o total de cada grupo)
+// pesos como no relatório de referência: cada grupo com as métricas que o compõem e a soma, e uma pizza com a divisão
+const CORES_GRUPO = { Performance: "#1f5aa6", "Consistência": "#0c8a4e", Risco: "#d0262c" };
+function gruposPesosRk(M) {
+  return GRUPOS_RANK.map((g) => { const ks = Object.keys(M.pesos).filter((k) => metricaRank(k).g === g);
+    return { g, total: ks.reduce((s, k) => s + Math.abs(M.pesos[k]), 0) / 100, metricas: ks.map((k) => ({ nome: metricaRank(k).nome, peso: Math.abs(M.pesos[k]) / 100, menor: M.pesos[k] < 0 })) }; });
+}
+function tabelaPesosRk(M) {                       // usada também no relatório
   const out = [];
-  for (const g of GRUPOS_RANK) {
-    const ks = Object.keys(M.pesos).filter((k) => metricaRank(k).g === g);
-    out.push({ g, total: true, nome: g, peso: ks.reduce((s, k) => s + Math.abs(M.pesos[k]), 0) / 100 });
-    for (const k of ks) out.push({ g, nome: metricaRank(k).nome, peso: Math.abs(M.pesos[k]) / 100, dir: M.pesos[k] > 0 ? "maior é melhor" : "menor é melhor" });
-  }
+  for (const G of gruposPesosRk(M)) G.metricas.forEach((m, i) => out.push({ g: G.g, primeira: i === 0, n: G.metricas.length, total: G.total, nome: m.nome, peso: m.peso, dir: m.menor ? "menor é melhor" : "maior é melhor" }));
   return out;
 }
 function renderRkPesos() {
   const R = rkAtivo(); if (!R) return;
   const ls = tabelaPesosRk(R.M);
-  $("#rkPesos").innerHTML = `<p class="nota">${esc(R.M.nome)}: métricas dos últimos ${esc(R.M.periodo.toLowerCase())}; janela móvel de ${R.M.jmMeses} meses contra o ${esc(nomeIndice(R.M.bench))};
-    "Realização do objetivo" = rentabilidade ao ano menos a do índice que o fundo declara como objetivo na CVM.</p>
-    <table class="tb rk-pesos-tab"><thead><tr><th class="t">Métrica</th><th>Peso</th><th class="t">Direção</th></tr></thead><tbody>${ls.map((l) => l.total
-      ? `<tr class="cart-total"><td class="t">${esc(l.nome)}</td><td>${brPct(l.peso, 0)}</td><td></td></tr>`
-      : `<tr><td class="t">${esc(l.nome)}</td><td>${brPct(l.peso, 0)}</td><td class="t">${esc(l.dir)}</td></tr>`).join("")}
-      <tr class="cart-total"><td class="t">Total</td><td>100%</td><td></td></tr></tbody></table>`;
+  $("#rkPesos").innerHTML = `<div class="rk-pesos-grade"><div>
+    <p class="nota">${esc(R.M.nome)}: métricas dos últimos ${esc(R.M.periodo.toLowerCase())}; janela móvel de ${R.M.jmMeses} meses contra o ${esc(nomeIndice(R.M.bench))}.
+      "Realização do objetivo" = rentabilidade ao ano menos a do índice que o fundo declara como objetivo na CVM.</p>
+    <table class="tb rk-pesos-tab"><thead><tr><th class="t">Categoria</th><th class="t">Métrica</th><th>Peso</th><th>Soma</th></tr></thead><tbody>${ls.map((l) => `<tr class="rk-g-${l.g === "Performance" ? "perf" : l.g === "Risco" ? "risco" : "cons"}">` +
+      (l.primeira ? `<td class="t rk-cat" rowspan="${l.n}" style="border-left:4px solid ${CORES_GRUPO[l.g]}"><b>${esc(l.g)}</b></td>` : "") +
+      `<td class="t">${esc(l.nome)} <small class="nota">${l.dir === "menor é melhor" ? "(menor é melhor)" : ""}</small></td><td>${brPct(l.peso, 0)}</td>` +
+      (l.primeira ? `<td class="rk-soma" rowspan="${l.n}"><b>${brPct(l.total, 0)}</b></td>` : "") + `</tr>`).join("")}
+      <tr class="cart-total"><td class="t" colspan="2">Total</td><td>100%</td><td>100%</td></tr></tbody></table></div>
+    <div class="rk-pizza"><canvas id="gRkPesos"></canvas></div></div>`;
+  graficoPesosRk(R.M);
+}
+function graficoPesosRk(M) {
+  const G = gruposPesosRk(M);
+  st.graficos.gRkPesos?.destroy();
+  st.graficos.gRkPesos = new Chart($("#gRkPesos"), {
+    type: "doughnut",
+    data: { labels: G.map((x) => x.g), datasets: [{ data: G.map((x) => x.total * 100), backgroundColor: G.map((x) => CORES_GRUPO[x.g]), borderColor: escuro() ? "#151b41" : "#fff", borderWidth: 2 }] },
+    options: { animation: false, responsive: true, maintainAspectRatio: false, cutout: "45%",
+      plugins: { legend: { position: "bottom", labels: { color: corTexto(), font: { weight: "600" } } },
+        tooltip: { callbacks: { label: (it) => ` ${it.label}: ${br(it.parsed, 0)}% · ${G[it.dataIndex].metricas.map((m) => `${m.nome} ${brPct(m.peso, 0)}`).join(", ")}` } } } },
+    plugins: [{ id: "rotPizza", afterDatasetsDraw(ch) {
+      const ctx = ch.ctx, meta = ch.getDatasetMeta(0); ctx.save(); ctx.font = "800 15px Manrope, sans-serif"; ctx.fillStyle = "#fff"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      meta.data.forEach((arco, i) => { const p = arco.tooltipPosition(); ctx.fillText(`${br(G[i].total * 100, 0)}%`, p.x, p.y); }); ctx.restore(); } }],
+  });
 }
 
 // ---------- partes do relatório (PDF, PNG e Excel)
@@ -2689,7 +2756,8 @@ function blocosRanking(k) {
   const cab = (R) => `${R.nome} · ${R.M.nome} · ${R.ordem.length} fundos analisados · métricas de ${R.M.periodo.toLowerCase()} até ${fmtData(R.fim)}`;
   if (k === "rkTop") {
     for (const R of L) { const t = linhasRelRk(R, topRk(R));
-      B.push({ tipo: "tabela", nome: cab(R), aba: `${R.nome} - top ${TOP_RANK}`, pdfCompacto: { 0: 7, 1: 10, 2: 60, 3: 13, 4: 17, 5: 30 }, ...t }); }
+      B.push({ tipo: "tabela", nome: cab(R), aba: `${R.nome} - top ${TOP_RANK}`, pdfCompacto: { 0: 7, 1: 10, 2: 60, 3: 13, 4: 17, 5: 30 },
+        corLinha: topRk(R).map((x) => medalha(x.pos)?.fundo || null), ...t }); }
     return { titulo: `Top ${TOP_RANK} por ranking`, nota: "Pontuação de 0 a 100. (*) = histórico menor que o período do ranking. Var. mês compara com o ranking de um mês antes.", blocos: B };
   }
   if (k === "rkCompleto") {
@@ -2706,8 +2774,9 @@ function blocosRanking(k) {
   if (k === "rkJM") {
     const antes = st.rk.ativo;
     for (let i = 0; i < L.length; i++) {
-      const R = L[i]; st.rk.ativo = i; semZoom("gRkJM"); renderRkJM();
-      const im = imagemGrafico("gRkJM"); if (im) B.push({ tipo: "img", titulo: R.nome, ...im });
+      const R = L[i]; st.rk.ativo = i; semZoom("gRkJM");
+      const todosAntes = st.rkTodos; st.rkTodos = false; renderRkJM(); st.rkTodos = todosAntes;      // o relatório usa sempre o top 10
+      const im = imagemGrafico("gRkJM"); if (im) B.push({ tipo: "img", titulo: `${R.nome} · janela de ${R.M.jmMeses} meses contra o ${nomeIndice(R.M.bench)}`, mostrarTitulo: true, ...im });
       const top = topRk(R).filter((x) => x.l.rs);
       const bn = nomeIndice(R.M.bench);
       // resumo enxuto (como no relatório de referência) no PDF; a tabela completa da janela móvel vai só para o Excel
@@ -2715,7 +2784,8 @@ function blocosRanking(k) {
         colunas: [{ nome: "Pos.", tipo: "int" }, { nome: "Fundo", tipo: "txt" }, { nome: `Mínimo (${bn}+ a.a.)`, tipo: "pct" }, { nome: `Mediana (${bn}+ a.a.)`, tipo: "pct" },
           { nome: `Máximo (${bn}+ a.a.)`, tipo: "pct" }, { nome: "Prazo (meses)", tipo: "int" }, { nome: "Janelas", tipo: "int" },
           { nome: `Consistência (acima do ${bn})`, tipo: "pct" }, { nome: "Consistência (retorno positivo)", tipo: "pct" }],
-        linhas: top.map((x) => [x.pos, x.l.cad.NOME, x.l.rs.min.dif, x.l.rs.med.dif, x.l.rs.max.dif, R.M.jmMeses, x.l.rs.total, x.l.rs.pAcima, x.l.rs.pPositivas]) });
+        linhas: top.map((x) => [x.pos, x.l.cad.NOME, x.l.rs.min.dif, x.l.rs.med.dif, x.l.rs.max.dif, R.M.jmMeses, x.l.rs.total, x.l.rs.pAcima, x.l.rs.pPositivas]),
+        corLinha: top.map((x) => medalha(x.pos)?.fundo || null) });
       if (top.length) B.push({ tipo: "tabela", soExcel: true, aba: `${R.nome} - janela compl`, ...tabelaResumoJM(`${R.nome} · janela completa`,
         top.map((x) => ({ nome: `${x.pos}. ${x.l.cad.NOME}`, cnpj: cnpjFmt(x.id), resumo: x.l.rs })), bn) });
     }
@@ -2723,19 +2793,23 @@ function blocosRanking(k) {
     return { titulo: `Janela móvel do top ${TOP_RANK}`, nota: `Diferença ao ano para o benchmark em cada data de aplicação (últimos ${JM_ANOS} anos).`, blocos: B };
   }
   if (k === "rkCorr") {
-    for (const R of L) { R.corr ||= dadosCorrRk(R); if (R.corr) B.push({ tipo: "img", titulo: `${R.nome} · ${fmtData(R.corr.ini)} a ${fmtData(R.corr.fim)}`, ...imagemMatriz(R.corr.itens, R.corr.m) },
+    for (const R of L) { R.corr ||= dadosCorrRk(R); if (R.corr) B.push({ tipo: "img", titulo: `${R.nome} · ${fmtData(R.corr.ini)} a ${fmtData(R.corr.fim)}`, mostrarTitulo: true, meia: true, ...imagemMatriz(R.corr.itens, R.corr.m) },
       { tipo: "tabela", ...tabelaMatriz(`${R.nome} - correlação`, R.corr.itens, R.corr.m), soExcel: true }); }
     return { titulo: `Matrizes de correlação do top ${TOP_RANK}`, blocos: B };
   }
   if (k === "rkPesos") {
-    const vistos = new Set();
-    for (const R of L) {
-      if (vistos.has(R.modelo)) continue; vistos.add(R.modelo);
+    const vistos = new Set(), antes = st.rk.ativo;
+    for (let i = 0; i < L.length; i++) {
+      const R = L[i]; if (vistos.has(R.modelo)) continue; vistos.add(R.modelo);
       const usados = L.filter((x) => x.modelo === R.modelo).map((x) => x.nome).join(", ");
-      B.push({ tipo: "tabela", aba: `Pesos ${R.M.nome}`, nome: `${R.M.nome} (usado em: ${usados}) · métricas de ${R.M.periodo.toLowerCase()} · janela de ${R.M.jmMeses} meses contra o ${nomeIndice(R.M.bench)}`,
-        colunas: [{ nome: "Métrica", tipo: "txt" }, { nome: "Peso", tipo: "pct" }, { nome: "Direção", tipo: "txt" }],
-        linhas: [...tabelaPesosRk(R.M).map((l) => [l.total ? `${l.nome} (total do grupo)` : `   ${l.nome}`, l.peso, l.dir || ""]), ["Total", 1, ""]] });
+      st.rk.ativo = i; renderRkPesos();
+      const im = imagemGrafico("gRkPesos");
+      B.push({ tipo: "tabela", aba: `Pesos ${R.M.nome}`, pdfCompacto: { 0: 30, 1: 95, 2: 18, 3: 18 }, imagemAoLado: im,
+        nome: `${R.M.nome} (usado em: ${usados}) · métricas de ${R.M.periodo.toLowerCase()} · janela de ${R.M.jmMeses} meses contra o ${nomeIndice(R.M.bench)}`,
+        colunas: [{ nome: "Categoria", tipo: "txt" }, { nome: "Métrica", tipo: "txt" }, { nome: "Peso", tipo: "pct0" }, { nome: "Soma", tipo: "pct0" }],
+        linhas: [...tabelaPesosRk(R.M).map((l) => [l.primeira ? l.g : "", l.nome + (l.dir === "menor é melhor" ? " (menor é melhor)" : ""), l.peso, l.primeira ? l.total : null]), ["Total", "", 1, 1]] });
     }
+    st.rk.ativo = antes; renderRankings();
     return { titulo: "Critérios e pesos", nota: "Em cada métrica, o pior fundo do ranking recebe 0 e o melhor recebe o peso inteiro; os demais ficam em proporção.", blocos: B };
   }
   return null;
@@ -2783,7 +2857,7 @@ document.addEventListener("click", async (e) => {
   if (t.id === "rkEdCancelar") { rkEd.aberto = false; $("#rkEditor").hidden = true; $("#rkListaBox").hidden = false; return renderRkLista(); }
   if (t.id === "rkEdSalvar") return salvarEditorRk();
   // resultados
-  if (t.closest?.("#rkExpandir")) { st.rkTodos = !st.rkTodos; renderRkTabela(); return renderRkPontos(); }
+  if (t.closest?.(".rk-alterna")) { st.rkTodos = !st.rkTodos; semZoom("gRkJM"); return renderRkTudo(); }
   const pill = t.closest?.("[data-rk-pill]");
   if (pill) { st.rk.ativo = Number(pill.dataset.rkPill); semZoom("gRkJM"); return renderRankings(); }
 });
@@ -2793,7 +2867,7 @@ document.addEventListener("change", (e) => {
   if (t.id === "rkModelo") { rkEd.modelo = t.value; return renderEditorRk(); }
   if (t.id === "rkEdGrupo" && t.value) { const x = lerGrupos()[t.value]; t.value = ""; if (x) juntarNoEditor(x.cnpjs); return; }
   if (t.id === "rkImportar" && t.files[0]) { importarRankings(t.files[0]); t.value = ""; return; }
-  if (false) return;
+  if (t.matches?.("[data-rk-todos]")) { st.rkTodos = t.checked; semZoom("gRkJM"); return renderRkTudo(); }
 });
 resumoLateralRk();
 
