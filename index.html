@@ -398,6 +398,7 @@
     <p class="nota">Cada ranking é uma lista de fundos com um tipo de cálculo (os pesos das métricas). Marque os que quer calcular e clique em Calcular.
       Os rankings ficam guardados neste navegador.</p>
     <div class="cart-acoes"><button id="rkNovo" class="prim" type="button">＋ Novo ranking</button>
+      <button id="rkTipos" class="sec" type="button" title="Criar ou editar os tipos de cálculo: métricas, pesos, período e janela móvel">⚙ Tipos de cálculo…</button>
       <button id="rkExportar" class="sec" type="button">⬇ Exportar rankings</button>
       <label class="sec botao-arquivo">⬆ Importar arquivo<input id="rkImportar" type="file" accept=".json,application/json" hidden></label>
       <span class="nota"><button id="rkMarcarTodos" class="link" type="button">marcar todos</button> · <button id="rkDesmarcar" class="link" type="button">desmarcar</button></span></div>
@@ -405,17 +406,37 @@
     <div class="dlg-pe"><span class="nota" id="rkResumo"></span>
       <div class="botoes"><button id="rkCalcular" class="prim" type="button">🏆 Calcular rankings</button></div></div>
   </div>
+  <div id="rkModelosBox" hidden>
+    <p class="nota">O tipo de cálculo define o período das métricas, a janela móvel e quais métricas entram, com que peso e em que grupo.
+      Os quatro tipos padrão podem ser editados (e voltar ao original); você também pode criar tipos novos. Ficam guardados neste navegador e vão junto ao exportar os rankings.</p>
+    <div class="cart-acoes"><button id="rkModVoltar" class="sec" type="button">← Voltar aos rankings</button>
+      <button id="rkModNovo" class="prim" type="button">＋ Novo tipo de cálculo</button></div>
+    <div id="rkModLista"></div>
+  </div>
+  <div id="rkModEd" hidden>
+    <div class="gr-salvar opcoes rkm-topo">
+      <label><span>Nome do tipo de cálculo</span><input id="rkmNome" type="text" maxlength="40" placeholder="Ex.: Multimercado agressivo"></label>
+      <label><span>Período das métricas</span><select id="rkmPeriodo"><option>3 Meses</option><option>12 Meses</option><option>24 Meses</option><option>36 Meses</option></select></label>
+      <label><span>Janela móvel (meses)</span><input id="rkmJm" type="number" min="1" max="120" step="1"></label>
+      <label><span>Benchmark da janela móvel</span><select id="rkmBench"></select></label>
+    </div>
+    <div id="rkmSoma" class="rkm-soma"></div>
+    <div id="rkmMetricas" class="dlg-tab"></div>
+    <div class="dlg-pe"><span class="nota">Ligue as métricas que entram, escolha o grupo, o peso e se é melhor ter valor maior ou menor. Os pesos precisam somar 100.</span>
+      <div class="botoes"><button id="rkmCancelar" class="sec" type="button">Cancelar</button><button id="rkmSalvar" class="prim" type="button">Salvar tipo de cálculo</button></div></div>
+  </div>
   <div id="rkEditor" hidden>
     <div class="gr-salvar opcoes">
       <label><span>Nome do ranking</span><input id="rkNome" type="text" maxlength="60" placeholder="Ex.: Crédito High Grade"></label>
       <label><span>Tipo de cálculo (pesos)</span><select id="rkModelo"></select></label>
+      <label><span>Comparar posições com</span><select id="rkComparar"></select></label>
     </div>
     <p id="rkModeloInfo" class="nota"></p>
     <div class="botoes-add">
       <button id="rkEdLista" class="sec" type="button">☰ Escolher na lista…</button>
       <button id="rkEdColar" class="sec" type="button">📋 Colar CNPJs…</button>
       <select id="rkEdGrupo" aria-label="Carregar de um grupo"></select>
-      <button id="rkEdSel" class="sec" type="button">Usar os fundos selecionados</button>
+      <button id="rkEdSel" class="sec" type="button" title="Junta os fundos que estão em &quot;Selecionados&quot; na barra lateral (a análise principal)">＋ Selecionados da barra lateral</button>
       <button id="rkEdLimpar" class="sec" type="button">Limpar</button>
     </div>
     <p id="rkEdInfo" class="nota"></p>
