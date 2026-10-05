@@ -25,7 +25,7 @@
   <div class="corpo">
     <!-- ======================= barra lateral ======================= -->
     <aside class="lateral">
-      <section class="bloco">
+      <section class="bloco" data-pg="analise">
         <h2 class="h-lat">Adicionar fundos</h2>
         <input id="busca" type="search" placeholder="Nome, gestor ou CNPJ (mín. 3 letras)…" aria-label="Buscar fundo por nome, gestor ou CNPJ" autocomplete="off" spellcheck="false">
         <div id="resBusca" class="resbusca"></div>
@@ -36,19 +36,19 @@
         </div>
       </section>
 
-      <section class="bloco">
+      <section class="bloco" data-pg="analise">
         <h2 class="h-lat"><span>Selecionados (<span id="nSel">0</span>)</span><button id="limpar" class="link" hidden>limpar</button></h2>
         <div id="avisoSel" class="nota"></div>
         <div id="selecionados" class="chips"></div>
       </section>
 
-      <section class="bloco">
+      <section class="bloco" data-pg="rankings">
         <h2 class="h-lat">Rankings</h2>
         <button id="abrirRank" class="sec botao-largo" type="button" title="Montar, escolher e calcular rankings de fundos">🏆 Rankings…</button>
         <p id="rkResumoLat" class="nota"></p>
       </section>
 
-      <section class="bloco">
+      <section class="bloco" data-pg="analise">
         <h2 class="h-lat">Períodos</h2>
         <div id="periodos" class="pilulas">
           <button data-p="Mês">Mês</button><button data-p="Ano">Ano</button><button data-p="3 Meses">3 Meses</button>
@@ -63,7 +63,7 @@
         </div>
       </section>
 
-      <section class="bloco">
+      <section class="bloco" data-pg="analise">
         <h2 class="h-lat">Índices de comparação</h2>
         <div id="idxChips" class="pilulas"></div>
         <p class="nota">Entram nos gráficos de rentabilidade e de risco × retorno e na correlação (os de preço). Não precisa recalcular.</p>
@@ -76,7 +76,7 @@
         <p class="nota">Deixa as próximas consultas mais rápidas (máx. 150 MB, limpa sozinho). Espaço: <span id="espaco">–</span></p>
       </section>
 
-      <section class="bloco acao">
+      <section class="bloco acao" data-pg="analise">
         <button id="calcular" class="prim" disabled>Calcular</button>
         <div id="progresso" class="progresso" hidden><div></div></div>
         <div id="progTxt" class="nota"></div>
@@ -87,6 +87,13 @@
 
     <!-- ======================= resultado ======================= -->
     <main class="principal" id="principal" tabindex="-1">
+      <nav class="abas" role="tablist" aria-label="Ferramentas">
+        <button id="abaAnalise" role="tab" type="button" data-aba="analise" aria-controls="pgAnalise" aria-selected="true">📊 Análise de fundos</button>
+        <button id="abaRankings" role="tab" type="button" data-aba="rankings" aria-controls="pgRankings" aria-selected="false" tabindex="-1">🏆 Rankings</button>
+        <button id="abaCarteira" role="tab" type="button" data-aba="carteira" aria-controls="pgCarteira" aria-selected="false" tabindex="-1">🧮 Montagem de carteira</button>
+      </nav>
+
+      <div id="pgAnalise" class="pagina" role="tabpanel" aria-labelledby="abaAnalise" data-pagina="analise">
       <div class="barra">
         <div id="barraPer" class="pilulas"></div>
         <div class="slider">
@@ -98,31 +105,6 @@
         <button id="btnTravar" class="sec mini-btn" type="button"></button>
         <button id="btnRel" class="prim mini-btn" type="button" title="Escolher partes e baixar em PDF, PNG ou Excel">⬇ Baixar relatório</button>
       </div>
-
-      <section id="secRank" class="cartao" data-sec="rank" hidden>
-        <div class="cab rk-fixa"><h2>Rankings</h2>
-          <div class="opcoes"><span id="rkPills" class="pilulas mini"></span></div>
-          <div class="opcoes"><label class="ordem">Comparar com <select class="rk-comp-sel" aria-label="Data de comparação das posições"></select></label></div>
-          <button class="rk-alterna sec mini-btn" type="button" title="Vale para todas as tabelas e gráficos dos rankings"></button>
-          <button id="btnRelRk" class="prim mini-btn" type="button" title="Escolher partes e baixar em PDF, PNG ou Excel">⬇ Baixar relatório</button>
-          <button class="btn-min" type="button" data-min="rank" title="Minimizar esta seção" aria-label="Minimizar esta seção" aria-expanded="true">−</button></div>
-        <p id="rkInfo" class="nota"></p>
-        <div id="rkTabela"></div>
-        <button id="rkExpandir" class="rk-expandir rk-alterna" type="button" aria-expanded="false"></button>
-        <p id="rkFora" class="nota"></p>
-        <div class="cab sub-cab"><h3 class="sub">Valores e pontos de cada métrica</h3></div>
-        <p class="nota">O valor calculado de cada métrica, a nota dentro do ranking (0 = pior fundo, 1 = melhor) e os pontos (nota × peso). A soma dos pontos é a pontuação.
-          Sem valor na métrica = 0 ponto nela. Esta parte não entra no PDF; no Excel, está na aba "completo".</p>
-        <div id="rkPontos"></div>
-        <div class="cab sub-cab"><h3 class="sub" id="rkTitJM">Janela móvel do top 10</h3></div>
-        <div class="linha2"><div class="graf"><canvas id="gRkJM"></canvas></div><div id="legRkJM" class="leg"></div></div>
-        <div id="tabRkJM"></div>
-        <div class="cab sub-cab"><h3 class="sub" id="rkTitCorr">Correlação do top 10</h3>
-          <div class="opcoes"><button class="sec mini-btn" type="button" data-corr-tudo="rk">Mostrar tudo</button></div></div>
-        <div id="tabRkCorr"></div>
-        <div class="cab sub-cab"><h3 class="sub">Critérios e pesos</h3></div>
-        <div id="rkPesos" class="rk-pesos"></div>
-      </section>
 
       <div id="semDados"></div>
       <div id="vazio" class="vazio">
@@ -214,8 +196,41 @@
         </div>
       </section>
 
+      </div>
+
+      <div id="pgRankings" class="pagina" role="tabpanel" aria-labelledby="abaRankings" data-pagina="rankings" hidden>
+        <div id="rkVazio" class="vazio"><p>Monte os rankings e clique em calcular em <b>🏆 Rankings…</b>, na barra ao lado.</p></div>
+      <section id="secRank" class="cartao" data-sec="rank" hidden>
+        <div class="cab rk-fixa"><h2>Rankings</h2>
+          <div class="opcoes"><span id="rkPills" class="pilulas mini"></span></div>
+          <div class="opcoes"><label class="ordem">Comparar com <select class="rk-comp-sel" aria-label="Data de comparação das posições"></select></label></div>
+          <button class="rk-alterna sec mini-btn" type="button" title="Vale para todas as tabelas e gráficos dos rankings"></button>
+          <button id="btnRelRk" class="prim mini-btn" type="button" title="Escolher partes e baixar em PDF, PNG ou Excel">⬇ Baixar relatório</button>
+          <button class="btn-min" type="button" data-min="rank" title="Minimizar esta seção" aria-label="Minimizar esta seção" aria-expanded="true">−</button></div>
+        <p id="rkInfo" class="nota"></p>
+        <div id="rkTabela"></div>
+        <button id="rkExpandir" class="rk-expandir rk-alterna" type="button" aria-expanded="false"></button>
+        <p id="rkFora" class="nota"></p>
+        <div class="cab sub-cab"><h3 class="sub">Valores e pontos de cada métrica</h3></div>
+        <p class="nota">O valor calculado de cada métrica, a nota dentro do ranking (0 = pior fundo, 1 = melhor) e os pontos (nota × peso). A soma dos pontos é a pontuação.
+          Sem valor na métrica = 0 ponto nela. Esta parte não entra no PDF; no Excel, está na aba "completo".</p>
+        <div id="rkPontos"></div>
+        <div class="cab sub-cab"><h3 class="sub" id="rkTitJM">Janela móvel do top 10</h3></div>
+        <div class="linha2"><div class="graf"><canvas id="gRkJM"></canvas></div><div id="legRkJM" class="leg"></div></div>
+        <div id="tabRkJM"></div>
+        <div class="cab sub-cab"><h3 class="sub" id="rkTitCorr">Correlação do top 10</h3>
+          <div class="opcoes"><button class="sec mini-btn" type="button" data-corr-tudo="rk">Mostrar tudo</button></div></div>
+        <div id="tabRkCorr"></div>
+        <div class="cab sub-cab"><h3 class="sub">Critérios e pesos</h3></div>
+        <div id="rkPesos" class="rk-pesos"></div>
+      </section>
+
+      </div>
+
+      <div id="pgCarteira" class="pagina" role="tabpanel" aria-labelledby="abaCarteira" data-pagina="carteira" hidden>
       <section id="secCart" class="cartao" data-sec="cart" hidden>
         <div class="cab"><h2>Montagem de carteira</h2>
+          <button id="btnRelCart" class="prim mini-btn" type="button" title="Escolher partes e baixar em PDF, PNG ou Excel">⬇ Baixar relatório</button>
           <button class="btn-min" type="button" data-min="cart" title="Minimizar esta seção" aria-label="Minimizar esta seção" aria-expanded="true">−</button></div>
         <p class="nota">Dê um peso a cada fundo (ou índice) e veja o desempenho da carteira, com rebalanceamento e a contribuição de cada ativo.
           Pode adicionar qualquer fundo da base: os que ainda não foram baixados são buscados ao clicar em <b>Calcular carteira</b>. A carteira fica guardada neste navegador.</p>
@@ -296,6 +311,7 @@
           </div>
         </div>
       </section>
+      </div>
     </main>
   </div>
 </div>
