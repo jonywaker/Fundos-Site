@@ -3,6 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#2b2c78" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0c1030" media="(prefers-color-scheme: dark)">
 <title>Análise de Fundos</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -10,6 +12,7 @@
 <link rel="stylesheet" href="css/estilo.css">
 </head>
 <body>
+<a class="pular" href="#principal">Pular para o conteúdo</a>
 <div id="app" class="carregando">
   <header class="topo">
     <h1>Análise de Fundos</h1>
@@ -23,8 +26,8 @@
     <!-- ======================= barra lateral ======================= -->
     <aside class="lateral">
       <section class="bloco">
-        <h3>Adicionar fundos</h3>
-        <input id="busca" type="search" placeholder="Nome, gestor ou CNPJ (mín. 3 letras)" autocomplete="off">
+        <h2 class="h-lat">Adicionar fundos</h2>
+        <input id="busca" type="search" placeholder="Nome, gestor ou CNPJ (mín. 3 letras)…" aria-label="Buscar fundo por nome, gestor ou CNPJ" autocomplete="off" spellcheck="false">
         <div id="resBusca" class="resbusca"></div>
         <div class="botoes-add">
           <button id="abrirSeletor" class="sec" type="button" title="Tabela com todos os fundos: filtre, ordene e clique nas linhas para escolher">☰ Lista de fundos…</button>
@@ -34,19 +37,19 @@
       </section>
 
       <section class="bloco">
-        <h3><span>Selecionados (<span id="nSel">0</span>)</span><button id="limpar" class="link" hidden>limpar</button></h3>
+        <h2 class="h-lat"><span>Selecionados (<span id="nSel">0</span>)</span><button id="limpar" class="link" hidden>limpar</button></h2>
         <div id="avisoSel" class="nota"></div>
         <div id="selecionados" class="chips"></div>
       </section>
 
       <section class="bloco">
-        <h3>Rankings</h3>
+        <h2 class="h-lat">Rankings</h2>
         <button id="abrirRank" class="sec botao-largo" type="button" title="Montar, escolher e calcular rankings de fundos">🏆 Rankings…</button>
         <p id="rkResumoLat" class="nota"></p>
       </section>
 
       <section class="bloco">
-        <h3>Períodos</h3>
+        <h2 class="h-lat">Períodos</h2>
         <div id="periodos" class="pilulas">
           <button data-p="Mês">Mês</button><button data-p="Ano">Ano</button><button data-p="3 Meses">3 Meses</button>
           <button data-p="12 Meses">12 Meses</button><button data-p="24 Meses">24 Meses</button><button data-p="36 Meses">36 Meses</button>
@@ -61,13 +64,13 @@
       </section>
 
       <section class="bloco">
-        <h3>Índices de comparação</h3>
+        <h2 class="h-lat">Índices de comparação</h2>
         <div id="idxChips" class="pilulas"></div>
         <p class="nota">Entram nos gráficos de rentabilidade e de risco × retorno e na correlação (os de preço). Não precisa recalcular.</p>
       </section>
 
       <section class="bloco">
-        <h3>Opções</h3>
+        <h2 class="h-lat">Opções</h2>
         <label class="campo">Peso total da carteira (%) <input id="peso" type="number" value="100" min="0" step="1"></label>
         <label class="tog"><input id="guardar" type="checkbox" checked> Guardar dados neste computador</label>
         <p class="nota">Deixa as próximas consultas mais rápidas (máx. 150 MB, limpa sozinho). Espaço: <span id="espaco">–</span></p>
@@ -83,7 +86,7 @@
     </aside>
 
     <!-- ======================= resultado ======================= -->
-    <main class="principal">
+    <main class="principal" id="principal" tabindex="-1">
       <div class="barra">
         <div id="barraPer" class="pilulas"></div>
         <div class="slider">
@@ -91,7 +94,7 @@
             <input id="zIni" type="range" aria-label="data inicial"><input id="zFim" type="range" aria-label="data final"></div>
           <span id="zTxt"></span>
         </div>
-        <input id="destaque" type="search" placeholder="Destacar fundo…" autocomplete="off">
+        <input id="destaque" type="search" placeholder="Destacar fundo…" aria-label="Destacar fundo nos gráficos e tabelas" autocomplete="off" spellcheck="false">
         <button id="btnTravar" class="sec mini-btn" type="button"></button>
         <button id="btnRel" class="prim mini-btn" type="button" title="Escolher partes e baixar em PDF, PNG ou Excel">⬇ Baixar relatório</button>
       </div>
@@ -102,7 +105,7 @@
           <div class="opcoes"><label class="ordem">Comparar com <select class="rk-comp-sel" aria-label="Data de comparação das posições"></select></label></div>
           <button class="rk-alterna sec mini-btn" type="button" title="Vale para todas as tabelas e gráficos dos rankings"></button>
           <button id="btnRelRk" class="prim mini-btn" type="button" title="Escolher partes e baixar em PDF, PNG ou Excel">⬇ Baixar relatório</button>
-          <button class="btn-min" type="button" data-min="rank" title="Minimizar esta seção">−</button></div>
+          <button class="btn-min" type="button" data-min="rank" title="Minimizar esta seção" aria-label="Minimizar esta seção" aria-expanded="true">−</button></div>
         <p id="rkInfo" class="nota"></p>
         <div id="rkTabela"></div>
         <button id="rkExpandir" class="rk-expandir rk-alterna" type="button" aria-expanded="false"></button>
@@ -133,7 +136,7 @@
             <div class="opcoes"><label class="ordem">Agrupar por <select id="agrupar">
               <option value="">Sem agrupamento</option><option>Classificação CVM</option><option>Classificação ANBIMA</option>
               <option>Objetivo de retorno</option><option>Gestor</option></select></label></div>
-            <button class="btn-min" type="button" data-min="met" title="Minimizar esta seção">−</button>
+            <button class="btn-min" type="button" data-min="met" title="Minimizar esta seção" aria-label="Minimizar esta seção" aria-expanded="true">−</button>
           </div>
           <p class="nota dica">Clique no título de uma coluna para ordenar; clique de novo para inverter e uma terceira vez para voltar à ordem da seleção.</p>
           <div id="tabMetricas"></div>
@@ -149,7 +152,7 @@
                 <span id="relModo" class="pilulas mini"><button data-m="dif">Diferença (+)</button><button data-m="pct">% do alvo</button></span>
               </span>
             </div>
-            <button class="btn-min" type="button" data-min="acum" title="Minimizar esta seção">−</button>
+            <button class="btn-min" type="button" data-min="acum" title="Minimizar esta seção" aria-label="Minimizar esta seção" aria-expanded="true">−</button>
           </div>
           <p id="relNota" class="nota"></p>
           <div class="linha2">
@@ -160,7 +163,7 @@
 
         <section class="cartao" data-sec="dd">
           <div class="cab"><h2>Drawdown (queda desde o pico)</h2>
-            <button class="btn-min" type="button" data-min="dd" title="Minimizar esta seção">−</button></div>
+            <button class="btn-min" type="button" data-min="dd" title="Minimizar esta seção" aria-label="Minimizar esta seção" aria-expanded="true">−</button></div>
           <div class="linha2">
             <div class="graf"><canvas id="gDd"></canvas></div>
             <div id="legDd" class="leg"></div>
@@ -170,7 +173,7 @@
         <section class="cartao" data-sec="risco">
           <div class="cab"><h2>Risco × Retorno</h2>
             <div class="opcoes"><span class="ordem">Eixo horizontal <span id="riscoEixo" class="pilulas mini"><button data-e="ret">Retorno a.a.</button><button data-e="sharpe">Sharpe</button></span></span></div>
-            <button class="btn-min" type="button" data-min="risco" title="Minimizar esta seção">−</button></div>
+            <button class="btn-min" type="button" data-min="risco" title="Minimizar esta seção" aria-label="Minimizar esta seção" aria-expanded="true">−</button></div>
           <p id="riscoNota" class="nota"></p>
           <div class="linha2 larga">
             <div class="graf"><canvas id="gRisco"></canvas></div>
@@ -181,7 +184,7 @@
         <section class="cartao" data-sec="corr">
           <div class="cab"><h2>Correlação (retornos diários)</h2>
             <div class="opcoes"><button class="sec mini-btn" type="button" data-corr-tudo="corr">Mostrar tudo</button></div>
-            <button class="btn-min" type="button" data-min="corr" title="Minimizar esta seção">−</button></div>
+            <button class="btn-min" type="button" data-min="corr" title="Minimizar esta seção" aria-label="Minimizar esta seção" aria-expanded="true">−</button></div>
           <p id="corrNota" class="nota"></p>
           <div id="tabCorr"></div>
         </section>
@@ -189,7 +192,7 @@
 
       <section id="secJM" class="cartao" data-sec="jm" hidden>
         <div class="cab"><h2>Janela móvel</h2>
-          <button class="btn-min" type="button" data-min="jm" title="Minimizar esta seção">−</button></div>
+          <button class="btn-min" type="button" data-min="jm" title="Minimizar esta seção" aria-label="Minimizar esta seção" aria-expanded="true">−</button></div>
         <p class="nota">Simula aplicações de prazo fixo começando em cada dia: quanto o fundo rendeu ao ano ficando o prazo inteiro investido,
           comparado ao benchmark no mesmo prazo. Ajuste abaixo e clique em Atualizar (não precisa baixar nada de novo).</p>
         <div class="jm-ctl opcoes">
@@ -213,7 +216,7 @@
 
       <section id="secCart" class="cartao" data-sec="cart" hidden>
         <div class="cab"><h2>Montagem de carteira</h2>
-          <button class="btn-min" type="button" data-min="cart" title="Minimizar esta seção">−</button></div>
+          <button class="btn-min" type="button" data-min="cart" title="Minimizar esta seção" aria-label="Minimizar esta seção" aria-expanded="true">−</button></div>
         <p class="nota">Dê um peso a cada fundo (ou índice) e veja o desempenho da carteira, com rebalanceamento e a contribuição de cada ativo.
           Pode adicionar qualquer fundo da base: os que ainda não foram baixados são buscados ao clicar em <b>Calcular carteira</b>. A carteira fica guardada neste navegador.</p>
         <div class="jm-ctl opcoes">
@@ -300,7 +303,7 @@
 <dialog id="seletor" aria-labelledby="selTit">
   <div class="dlg-cab">
     <h2 id="selTit">Lista de fundos</h2>
-    <input id="dlgBusca" type="search" placeholder="Nome, gestor ou CNPJ…" autocomplete="off">
+    <input id="dlgBusca" type="search" placeholder="Nome, gestor ou CNPJ…" aria-label="Buscar na lista de fundos" autocomplete="off" spellcheck="false">
     <label class="tog"><input id="dlgAtivos" type="checkbox" checked> Só fundos ativos (cota nos últimos 30 dias)</label>
     <button id="dlgLimparFiltros" class="sec mini-btn" type="button">Limpar filtros</button>
   </div>
@@ -323,7 +326,7 @@
   <div class="dlg-cab"><h2 id="colTit">Importar CNPJs</h2></div>
   <div id="colPasso1">
     <p class="nota">Cole os CNPJs (um por linha, ou separados por vírgula, ponto e vírgula ou espaço). Pode ser com ou sem pontuação.</p>
-    <textarea id="colTexto" rows="8" placeholder="11.111.111/0001-01&#10;22222222000102"></textarea>
+    <textarea id="colTexto" rows="8" aria-label="Lista de CNPJs para importar" spellcheck="false" placeholder="11.111.111/0001-01&#10;22222222000102…"></textarea>
     <div class="dlg-pe"><span></span><div class="botoes"><button class="sec" type="button" data-fechar-dlg>Cancelar</button>
       <button id="colBuscar" class="prim" type="button">Buscar fundos</button></div></div>
   </div>
@@ -384,7 +387,7 @@
       <p class="nota">Clique nas linhas para destacar (pode escolher vários). Os destacados saem realçados nos gráficos e nas tabelas, como no site.
         Sem nenhum escolhido, o relatório sai sem destaque.</p>
       <div class="rel-dest-ctl">
-        <input id="relDestBusca" type="search" placeholder="Buscar entre os fundos calculados…" autocomplete="off">
+        <input id="relDestBusca" type="search" placeholder="Buscar entre os fundos calculados…" aria-label="Buscar fundo para destacar no relatório" autocomplete="off" spellcheck="false">
         <label class="tog"><input id="relDestSo" type="checkbox"> Mostrar só os destacados</label>
         <button id="relDestTela" class="sec mini-btn" type="button" title="Usa os fundos que batem com o campo Destacar fundo do topo">Usar o destaque da tela</button>
         <button id="relDestLimpar" class="sec mini-btn" type="button">Limpar destaque</button>
