@@ -151,6 +151,7 @@ function atualizarSidebar() {
   $("#campoPers").hidden = !st.periodos.has("Personalizado");
   const pronto = st.sel.length && st.periodos.size && (!st.periodos.has("Personalizado") || ($("#pIni").value && $("#pFim").value));
   $("#calcular").disabled = !pronto;
+  $("#limparTela").disabled = !st.res;
   avisoDesatualizado();
   if (st.idx) sincronizarUrl();
 }
@@ -925,6 +926,7 @@ function renderResultado() {
   $("#semDados").innerHTML = dados.semDados.length
     ? `<details><summary>⏳ ${dados.semDados.length} fundo(s) sem dados neste período · ver quais</summary>${dados.semDados.map((c) => esc(st.porCnpj.get(c)?.NOME || c)).join("; ")}</details>` : "";
   $("#vazio").hidden = true;
+  $("#limparTela").disabled = !st.res;          // o cálculo guarda o resultado depois da última atualização da lateral
   renderJM();
   if (!dados.linhas.length) { $("#resultado").hidden = true; st.ctx = null; renderCarteira(); return; }
   $("#resultado").hidden = false;
@@ -2548,9 +2550,16 @@ function lerUrl() {
 
 // ---------- três páginas: Análise de fundos, Rankings e Montagem de carteira (cada uma mostra só o que é dela)
 const PAGINAS = ["analise", "rankings", "carteira"];
+const TITULOS = {
+  analise: ["Análise de fundos", "Métricas, gráficos, correlação e janela móvel dos fundos selecionados"],
+  rankings: ["Rankings", "Pontuação dos fundos por métricas, janela móvel e correlação de cada ranking"],
+  carteira: ["Montagem de carteira", "Pesos, rebalanceamento, desempenho e contribuição de cada ativo"],
+};
 function mostrarPagina(pg, { rolar = true, foco = false } = {}) {
   if (!PAGINAS.includes(pg)) pg = "analise";
   st.pagina = pg; salvar("pagina", pg);
+  const [tit, sub] = TITULOS[pg];
+  $("#tituloPagina").textContent = tit; $("#subtituloPagina").textContent = sub; document.title = `${tit} · Análise de Fundos`;
   for (const el of $$(".pagina")) el.hidden = el.dataset.pagina !== pg;
   for (const b of $$(".abas [role=tab]")) { const on = b.dataset.aba === pg; b.setAttribute("aria-selected", String(on)); b.tabIndex = on ? 0 : -1; if (on && foco) b.focus(); }
   for (const el of $$(".lateral [data-pg]")) el.hidden = !el.dataset.pg.split(" ").includes(pg);
@@ -2565,7 +2574,8 @@ document.addEventListener("click", (e) => { const b = e.target.closest?.(".abas 
 document.addEventListener("keydown", (e) => {                      // setas entre as abas (padrão de abas acessíveis)
   const b = e.target.closest?.(".abas [role=tab]"); if (!b) return;
   const i = PAGINAS.indexOf(b.dataset.aba), n = PAGINAS.length;
-  const alvo = e.key === "ArrowRight" ? PAGINAS[(i + 1) % n] : e.key === "ArrowLeft" ? PAGINAS[(i - 1 + n) % n] : e.key === "Home" ? PAGINAS[0] : e.key === "End" ? PAGINAS[n - 1] : null;
+  const prox = e.key === "ArrowRight" || e.key === "ArrowDown", ant = e.key === "ArrowLeft" || e.key === "ArrowUp";
+  const alvo = prox ? PAGINAS[(i + 1) % n] : ant ? PAGINAS[(i - 1 + n) % n] : e.key === "Home" ? PAGINAS[0] : e.key === "End" ? PAGINAS[n - 1] : null;
   if (alvo) { e.preventDefault(); mostrarPagina(alvo, { rolar: false, foco: true }); }
 });
 
@@ -2603,6 +2613,20 @@ async function restaurarBackup(arquivo) {
 }
 document.addEventListener("click", (e) => { if (e.target.id === "bkSalvar") salvarBackup(); });
 document.addEventListener("change", (e) => { if (e.target.id === "bkRestaurar" && e.target.files[0]) { restaurarBackup(e.target.files[0]); e.target.value = ""; } });
+
+// ---------- "Limpar tela": tira os resultados da análise e volta ao início (a seleção de fundos e os períodos continuam)
+function limparTela() {
+  if (!st.res) return;
+  for (const id of ["gAcum", "gDd", "gRisco", "gJM"]) { st.graficos[id]?.destroy(); delete st.graficos[id]; }
+  semZoom("gAcum", "gDd", "gRisco", "gJM");
+  st.res = null; st.ctx = null; st.params = null; st.zoom = {};
+  $("#resultado").hidden = true; $("#secJM").hidden = true; $("#vazio").hidden = false;
+  $("#barraPer").innerHTML = ""; $("#semDados").innerHTML = ""; $("#progTxt").textContent = "";
+  atualizarSidebar(); renderCarteira();
+  scrollTo({ top: 0, behavior: "auto" });
+  $("#calcular").focus();
+}
+document.addEventListener("click", (e) => { if (e.target.id === "limparTela") limparTela(); });
 // ============================== rankings ==============================
 // Um ranking = nome + tipo de cálculo (pesos) + lista de fundos. Ficam guardados neste navegador, como os grupos.
 const lerRankings = () => pref("rankings", {});
