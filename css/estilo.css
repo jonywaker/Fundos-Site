@@ -650,3 +650,38 @@ dialog, .dlg-tab, .tb-wrap, .mx-vp, .pc-lista, .combo-lista, .resbusca, #rkLista
 
 .backup { display: flex; gap: 6px; margin-top: 8px; }
 .backup > * { flex: 1 1 0; justify-content: center; padding: 6px 8px; font-size: 12.5px; font-weight: 700; }
+
+/* ============ layout como o Painel de Mercado: lateral de altura inteira, cabeçalho à direita ============ */
+.corpo { display: grid; grid-template-columns: 300px minmax(0, 1fr); min-height: 100vh; background: none; }
+.lateral { position: sticky; top: 0; height: 100vh; max-height: 100vh; display: flex; flex-direction: column; padding: 0; overflow: hidden; }
+.lat-topo { flex: none; padding: 18px 16px 12px; background: linear-gradient(180deg, var(--anil), #20236a); color: #fff; border-bottom: 3px solid var(--ouro); }
+.marca { display: grid; gap: 2px; padding: 0 4px 12px; border-bottom: 1px solid rgba(255,255,255,.18); }
+.marca-nome { font: 700 19px Cinzel, Georgia, serif; letter-spacing: .04em; }
+.marca-sub { font-size: 10.5px; letter-spacing: .14em; text-transform: uppercase; color: #f3e2a6; font-weight: 700; }
+.lat-topo .abas { display: flex; flex-direction: column; gap: 2px; margin: 10px 0 0; padding: 0; background: none; border: 0; box-shadow: none; border-radius: 0; }
+.lat-topo .abas [role=tab] { flex: none; text-align: left; padding: 9px 12px; border: 0; border-left: 4px solid transparent; border-radius: 6px;
+  background: transparent; color: #d9ddf5; font: 700 14px Manrope, sans-serif; box-shadow: none; }
+.lat-topo .abas [role=tab]:hover { background: rgba(255,255,255,.08); color: #fff; }
+.lat-topo .abas [role=tab][aria-selected=true] { background: rgba(255,255,255,.14); color: #fff; border-left-color: var(--ouro); box-shadow: none; }
+.lat-meio { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 2px 14px 10px; overscroll-behavior: contain; }
+.lat-pe { flex: none; display: grid; gap: 6px; padding: 10px 14px 12px; background: var(--card); border-top: 2px solid var(--ouro);
+  box-shadow: 0 -10px 18px -14px rgba(20,26,74,.45); }
+.lat-pe #calcular { width: 100%; padding: 11px; font-size: 15px; }
+.lat-pe #limparTela { width: 100%; padding: 5px 8px; font-size: 12.5px; font-weight: 700; }
+.lat-pe #limparTela:disabled { opacity: .45; cursor: not-allowed; }
+.lat-pe .nota:empty, .lat-pe #avisoMudou[hidden] { display: none; }
+.coluna { min-width: 0; display: flex; flex-direction: column; }
+.coluna > .topo { padding: 20px 28px 18px; align-items: center; border-bottom: 3px solid var(--ouro); }
+.topo-tit { display: grid; gap: 3px; min-width: 0; }
+.topo-sup { font-size: 11px; letter-spacing: .14em; text-transform: uppercase; font-weight: 700; color: #dfe6ff; }
+.coluna > .topo h1 { font: 700 26px Cinzel, Georgia, serif; letter-spacing: .03em; margin: 0; }
+.topo-tit p { margin: 0; font-size: 13.5px; color: #e6ebff; }
+.topo-tit::after { content: ""; width: 38px; height: 3px; background: var(--ouro); border-radius: 2px; margin-top: 6px; }
+.principal { padding: 16px 18px 30px; }
+@media (max-width: 900px) {
+  .corpo { grid-template-columns: 1fr; }
+  .lateral { position: static; height: auto; max-height: none; overflow: visible; }
+  .lat-meio { overflow: visible; }
+  .lat-pe { position: sticky; bottom: 0; z-index: 25; }
+  .coluna > .topo { padding: 14px 16px; }
+}
