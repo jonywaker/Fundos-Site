@@ -397,7 +397,9 @@ document.addEventListener("click", async (e) => {
   if (t.id === "abrirGrupos") return abrirGrupos();
   if (t.closest?.("[data-fechar-dlg]")) return t.closest("dialog").close();
   const bo = t.closest?.("button.ord-f");
-  if (bo) { clicarOrdem(bo.dataset.tab, bo.dataset.col, bo.dataset.txt === "1"); ({ sel: renderSeletor, selB: renderSelDialogo, col: renderColagem, relDest: renderDestRel, rkEd: renderEditorRk })[bo.dataset.tab]?.(); return; }
+  if (bo) { clicarOrdem(bo.dataset.tab, bo.dataset.col, bo.dataset.txt === "1");
+    const fn = ({ sel: renderSeletor, selB: renderSelDialogo, col: renderColagem, relDest: renderDestRel, rkEd: renderEditorRk })[bo.dataset.tab];
+    if (fn) manterRolagem(bo, fn); return; }
   // janela da lista
   const lf = t.closest?.("#dlgTabela tr.linha-f");
   if (lf && !t.closest("input, select, button")) return alternarDlg(lf.dataset.c);
@@ -602,6 +604,20 @@ const casa = (termo, ...textos) => {
 };
 
 // ---------- ordenação por clique no título: 1º clique ordena (maior primeiro; A→Z em textos), 2º inverte, 3º volta ao padrão
+// redesenha uma tabela (ex.: ao ordenar) mantendo a rolagem horizontal/vertical dela e o foco no título clicado
+function manterRolagem(botao, redesenhar) {
+  const wrap = botao.closest(".tb-wrap, .dlg-tab"), cont = wrap?.parentElement;
+  const irmas = cont ? [...cont.querySelectorAll(".tb-wrap, .dlg-tab")] : [], i = irmas.indexOf(wrap);
+  const sx = wrap?.scrollLeft || 0, sy = wrap?.scrollTop || 0, yPag = scrollY;
+  const focado = document.activeElement === botao, col = botao.dataset.col;
+  redesenhar();
+  const novo = wrap?.isConnected ? wrap : cont ? [...cont.querySelectorAll(".tb-wrap, .dlg-tab")][i] : null;
+  if (novo) {
+    novo.scrollLeft = sx; novo.scrollTop = sy;
+    if (focado && col != null) [...novo.querySelectorAll("button.ord, button.ord-f")].find((b) => b.dataset.col === col)?.focus({ preventScroll: true });
+  }
+  if (Math.abs(scrollY - yPag) > 1) scrollTo(scrollX, yPag);
+}
 function clicarOrdem(tab, col, texto) {
   const ini = texto ? 1 : -1, o = st.ord[tab];
   if (!o || o.col !== col) st.ord[tab] = { col, dir: ini };
@@ -731,8 +747,14 @@ function tabelaMetricas(dados) {
 // ---------- tabela-legenda: cor, posição, fundo e valores, do maior para o menor; 5 maiores + 5 menores (+ destacados)
 // opc.rk: legenda de ranking (o interruptor liga o "ranking completo", que vale para todas as tabelas e gráficos)
 function tabelaLegenda(chave, itens, colsValor, opc = {}) {
-  const ord = [...itens].sort((a, b) => (b.Final ?? -Infinity) - (a.Final ?? -Infinity));
-  ord.forEach((it, i) => (it["#"] = String(i + 1)));
+  let ord = [...itens].sort((a, b) => (b.Final ?? -Infinity) - (a.Final ?? -Infinity));
+  ord.forEach((it, i) => (it["#"] = i + 1));                       // posição pelo valor final (continua visível ao ordenar por outra coluna)
+  const okey = "leg:" + chave;
+  const colunas = [{ chave: "#", nome: "#", tipo: "int" },
+    { chave: "Fundo", nome: "Fundo", tipo: "txt", html: (v, l) => `<span class="sw" style="background:${l.cor}"></span>${marcaParado(l)}` +
+      (l._c ? `<span data-mini="${esc(l._c)}">${esc(v)}</span>` : esc(v)) },
+    ...colsValor.map((c) => ({ chave: c, nome: c, tipo: "pct", cor: true }))];
+  if (st.ord[okey]) ord = ordenar(ord, okey, colunas);
   const todos = opc.rk ? !!st.rkTodos : st.todos[chave];
   const marc = ord.map((it) => casa(st.destaque, it.Fundo));
   let vis = ord, seps = new Set();
@@ -745,14 +767,10 @@ function tabelaLegenda(chave, itens, colsValor, opc = {}) {
       }
     });
   }
-  const colunas = [{ chave: "#", nome: "#", tipo: "txt" },
-    { chave: "Fundo", nome: "Fundo", html: (v, l) => `<span class="sw" style="background:${l.cor}"></span>${marcaParado(l)}` +
-      (l._c ? `<span data-mini="${esc(l._c)}">${esc(v)}</span>` : esc(v)) },
-    ...colsValor.map((c) => ({ chave: c, nome: c, tipo: "pct", cor: true }))];
   const dest = vis.map((it, i) => !seps.has(i) && casa(st.destaque, it.Fundo));
   const tog = opc.rk ? (opc.n > 10 ? `<label class="tog"><input type="checkbox" data-rk-todos ${st.rkTodos ? "checked" : ""}> Mostrar o ranking completo (${opc.n})</label>` : "")
     : ord.length > 10 ? `<label class="tog"><input type="checkbox" data-todos="${chave}" ${todos ? "checked" : ""}> Mostrar todos (${ord.length})</label>` : "";
-  return tog + tabelaHTML({ colunas, linhas: vis, fixas: 2, larguras: [34, 210], destacar: dest, separadores: seps, altura: 420, classes: vis.map((it) => it._classe || "") });
+  return tog + tabelaHTML({ colunas, linhas: vis, fixas: 2, larguras: [34, 210], destacar: dest, separadores: seps, altura: 420, classes: vis.map((it) => it._classe || ""), ordenavel: okey });
 }
 
 // ============================== gráficos ==============================
@@ -1461,6 +1479,17 @@ function calcularCarteira() {
   st.cartRes = { validos, pesos, ativos, sim, d0, dN, simRef, eT, eA, eRef, simBH, eBH, cdiAnual, rebal,
     nomes: validos.map(nomeItem), cores: validos.map(corItem) };
 
+  renderCartResumo();
+  $("#cartGraf").hidden = false;
+  renderCartMetricas(); renderCartAcum(); renderCartDd(); renderCartRisco(); renderCartCorr();
+  calcularCartJM(); renderCartJM();
+}
+
+// ---------- resumo: indicadores e a tabela de ativos (ordenável pelo título; as linhas de totais ficam no fim)
+function renderCartResumo() {
+  const R = st.cartRes; if (!R) return;
+  const c = st.cart, res = $("#cartRes");
+  const { validos, pesos, sim, d0, dN, simRef, eT, eA, eRef, eBH, rebal } = R;
   const v0 = Number(c.valor) || 0, pp = (v) => (v == null ? "–" : (v > 0 ? "+" : v < 0 ? "−" : "") + br(Math.abs(v) * 100, 2) + " p.p.");
   const kpi = (rot, val, cor, dest) => `<div class="kpi${dest ? " dest" : ""}"><div class="l">${rot}</div><div class="v" style="${cor || ""}">${val}</div></div>`;
   const exc = eRef && eT.anual != null && eRef.anual != null ? eT.anual - eRef.anual : null;
@@ -1475,16 +1504,22 @@ function calcularCarteira() {
   const maxC = Math.max(1e-9, ...sim.contrib.map(Math.abs));
   const celP = (v) => `<td style="${corSinal(v)}">${brPct(v)}</td>`;
   const nomeFx = (txt) => `<td class="fx t" style="left:0;min-width:240px;max-width:240px" title="${esc(txt.replace(/<[^>]+>/g, ""))}">${txt}</td>`;
-  const linhasA = validos.map((it, k) => `<tr>${nomeFx(`<span class="sw${it.tipo === "i" ? " losango" : ""}" style="background:${corItem(it)}"></span>` +
+  const o = st.ord.cartAtivos;
+  const linhasO = validos.map((it, k) => ({ k, nome: nomeItem(it), peso: pesos[k], total: eA[k].total, anual: eA[k].anual, vol: eA[k].vol, sharpe: eA[k].sharpe, mdd: eA[k].mdd, contrib: sim.contrib[k] }));
+  const colsO = ["nome", "peso", "total", "anual", "vol", "sharpe", "mdd", "contrib"].map((ch) => ({ chave: ch, tipo: ch === "nome" ? "txt" : "pct" }));
+  const ordemA = ordenar(linhasO, "cartAtivos", colsO).map((r) => r.k);
+  const thO = (col, rot, extra = "") => { const at = o && o.col === col;
+    return `<th${extra}${at ? ` aria-sort="${o.dir > 0 ? "ascending" : "descending"}"` : ""}><button class="ord" type="button" data-ord="cartAtivos" data-col="${col}" data-txt="${col === "nome" ? 1 : 0}" title="Ordenar">${rot}${at ? (o.dir > 0 ? " ▲" : " ▼") : ""}</button></th>`; };
+  const linhasA = ordemA.map((k) => { const it = validos[k]; return `<tr>${nomeFx(`<span class="sw${it.tipo === "i" ? " losango" : ""}" style="background:${corItem(it)}"></span>` +
       (it.tipo === "f" ? `<span data-mini="${esc(it.v)}">${esc(nomeItem(it))}</span>` : esc(nomeItem(it))))}
     <td>${br(pesos[k] * 100, 1)}%</td>${celP(eA[k].total)}${celP(eA[k].anual)}<td>${brPct(eA[k].vol)}</td><td style="${corSinal(eA[k].sharpe)}">${eA[k].sharpe == null ? "–" : br(eA[k].sharpe, 2)}</td>
     ${celP(eA[k].mdd)}<td class="contrib"><b style="${corSinal(sim.contrib[k])}">${brPct(sim.contrib[k])}</b>
-    <span class="minibar"><i class="${sim.contrib[k] >= 0 ? "up" : "down"}" style="width:${(Math.abs(sim.contrib[k]) / maxC * 50).toFixed(1)}%"></i></span></td></tr>`).join("");
+    <span class="minibar"><i class="${sim.contrib[k] >= 0 ? "up" : "down"}" style="width:${(Math.abs(sim.contrib[k]) / maxC * 50).toFixed(1)}%"></i></span></td></tr>`; }).join("");
   const linhaE = (cls, rot, e, extra = "") => `<tr class="${cls}">${nomeFx(rot)}<td>${extra}</td>${celP(e.total)}${celP(e.anual)}<td>${brPct(e.vol)}</td>
     <td style="${corSinal(e.sharpe)}">${e.sharpe == null ? "–" : br(e.sharpe, 2)}</td>${celP(e.mdd)}<td></td></tr>`;
   const somaC = sim.contrib.reduce((a, b) => a + b, 0);
-  h += `<div class="tb-wrap"><table class="tb cart-tab"><thead><tr><th class="fx t" style="left:0;min-width:240px;max-width:240px">Ativo</th><th>Peso</th><th>Retorno</th><th>Ao ano</th>
-    <th>Volatilidade</th><th>Sharpe</th><th>Máx. queda</th><th>Contribuição para o retorno</th></tr></thead><tbody>${linhasA}
+  h += `<div class="tb-wrap"><table class="tb cart-tab"><thead><tr>${thO("nome", "Ativo", ' class="fx t" style="left:0;min-width:240px;max-width:240px"')}${thO("peso", "Peso")}${thO("total", "Retorno")}${thO("anual", "Ao ano")}
+    ${thO("vol", "Volatilidade")}${thO("sharpe", "Sharpe")}${thO("mdd", "Máx. queda")}${thO("contrib", "Contribuição para o retorno")}</tr></thead><tbody>${linhasA}
     <tr class="cart-total">${nomeFx(`Carteira${rebal ? ` (rebalanceamento ${REBAL[rebal]})` : " (comprar e manter)"}`)}<td>100%</td>${celP(eT.total)}${celP(eT.anual)}
       <td>${brPct(eT.vol)}</td><td style="${corSinal(eT.sharpe)}">${eT.sharpe == null ? "–" : br(eT.sharpe, 2)}</td>${celP(eT.mdd)}<td style="${corSinal(somaC)}"><b>${brPct(somaC)}</b></td></tr>` +
     (eRef ? linhaE("cart-ref", `Referência: ${esc(c.ref.rot)}`, eRef) +
@@ -1501,9 +1536,6 @@ function calcularCarteira() {
     Contribuição = quanto cada ativo gerou de resultado sobre o valor inicial, considerando o peso que ele tinha a cada dia; a soma é o retorno da carteira.
     Sharpe sobre o CDI do mesmo período. Não considera impostos, taxas de saída nem prazos de resgate.</p>`;
   res.innerHTML = h;
-  $("#cartGraf").hidden = false;
-  renderCartMetricas(); renderCartAcum(); renderCartDd(); renderCartRisco(); renderCartCorr();
-  calcularCartJM(); renderCartJM();
 }
 
 // ---------- métricas completas (as mesmas da tabela de cima), para a carteira e cada ativo no período da carteira
@@ -3204,8 +3236,11 @@ document.addEventListener("click", (e) => {
   const ord = t.closest("button.ord");
   if (ord) {
     const tab = ord.dataset.ord; clicarOrdem(tab, ord.dataset.col, ord.dataset.txt === "1");
-    ({ met: renderMetricas, risco: renderTabRisco, jm: renderTabJM, cartMet: renderCartMetricas, cartRisco: renderTabCartRisco, cartJM: renderTabCartJM,
-       rk: renderRkTabela, rkPts: renderRkPontos, rkJMt: renderRkJMTab })[tab]?.(); return;
+    const LEGENDAS = { acum: renderAcum, dd: renderDd, jm: renderJM, cartAcum: renderCartAcum, cartDd: renderCartDd, cartJM: renderCartJM, rkJM: renderRkJM };
+    const fn = tab.startsWith("leg:") ? LEGENDAS[tab.slice(4)] : ({ met: renderMetricas, risco: renderTabRisco, jm: renderTabJM, cartMet: renderCartMetricas,
+      cartRisco: renderTabCartRisco, cartJM: renderTabCartJM, cartAtivos: renderCartResumo, rk: renderRkTabela, rkPts: renderRkPontos, rkJMt: renderRkJMTab })[tab];
+    if (fn) manterRolagem(ord, fn);
+    return;
   }
   const min = t.closest(".btn-min");
   if (min) {
