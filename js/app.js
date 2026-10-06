@@ -717,15 +717,23 @@ const CAMPOS_GRUPO = {
   "Objetivo de retorno": (l) => (l["Objetivo de retorno"] === "N/D" ? "" : l["Objetivo de retorno"]), "Gestor": (l) => l._gestor,
 };
 const nomeFundoHTML = (v, l) => `${marcaParado(l)}${l._selo || ""}<span data-mini="${esc(l._c)}">${esc(v ?? "")}</span>`;
+const COLS_GU = new Set(["% Acumulado", "% Anualizado", "%CDI", "CDI +"]);
 function tabelaMetricas(dados) {
-  const colunas = COLUNAS.map(([, n, t]) => {
-    const c = { chave: n, nome: n, tipo: t, cor: t === "pct" };
+  let colunas = COLUNAS.map(([g, n, t]) => {
+    const c = { chave: n, nome: n, tipo: t, cor: t === "pct", g };
     if (n === "Fundo") c.html = nomeFundoHTML;
-    if (n === "Data Final") c.html = (v, l) => (l._parado
-      ? `<span class="parado-dt" title="${esc(l._parado.txt)}">${esc(FMT.data(v))}</span>` : esc(FMT.data(v)));
+    if (n === "Data Final") c.html = (v, l) => {
+      const xp = st.res?.fundos.get(l._c)?.cotaExtra, comXP = xp && xp.d === v;
+      const txt = l._parado ? `<span class="parado-dt" title="${esc(l._parado.txt)}">${esc(FMT.data(v))}</span>` : esc(FMT.data(v));
+      return txt + (comXP ? ` <span class="xp-cota" title="Cota de ${esc(FMT.data(v))} informada pela XP, mais recente que a da CVM">XP</span>` : "");
+    };
+    if (st.grossUp && COLS_GU.has(n)) c.html = (v, l) => `<span style="${corSinal(v)}">${esc(FMT[t] ? FMT[t](v) : v)}</span>` +
+      (l._gu ? `<sup class="gu" title="Com gross up: fundo isento de IR para pessoa física (equivalente com IR de 15%)">GU</sup>` : "");
     return c;
   });
-  const grupos = COLUNAS.map(([g]) => g);
+  // com login: grupo de colunas da XP logo depois do cadastro
+  if (st.xp) { const fimCad = colunas.map((c) => c.g).lastIndexOf("Cadastro") + 1 || 2; colunas = [...colunas.slice(0, fimCad), ...colunasXP(), ...colunas.slice(fimCad)]; }
+  const grupos = colunas.map((c) => c.g);
   // selos de maior e menor retorno no período (com 3 fundos ou mais)
   const comRet = dados.linhas.filter((l) => typeof l["% Acumulado"] === "number");
   dados.linhas.forEach((l) => delete l._selo);
@@ -734,7 +742,8 @@ function tabelaMetricas(dados) {
     mx._selo = `<span class="selo up" title="Maior retorno no período">▲</span>`;
     mn._selo = `<span class="selo down" title="Menor retorno no período">▼</span>`;
   }
-  let linhas = ordenar(dados.linhas, "met", colunas);
+  let linhas = st.xp ? dados.linhas.map((l) => aplicarGrossUp({ ...l, ...camposXP(l._c) })) : dados.linhas;
+  linhas = ordenar(linhas, "met", colunas);
   if (st.agrupar && CAMPOS_GRUPO[st.agrupar]) {
     linhas = agruparLinhas(linhas, "met", CAMPOS_GRUPO[st.agrupar], (m) => {
       const v = m.map((l) => l["% Acumulado"]).filter((x) => typeof x === "number");
@@ -744,9 +753,11 @@ function tabelaMetricas(dados) {
   const dest = linhas.map((l) => !l._cab && casa(st.destaque, l.Fundo, l.CNPJ));
   const classes = linhas.map((l) => (l._selo ? (l._selo.includes("up") ? "top-up" : "top-down") : ""));
   const parados = dados.linhas.filter((l) => l._parado);
-  const nota = parados.length ? `<p class="nota-parado"><span class="parado">⊘</span> ${parados.length} fundo(s) sem cotas até o fim do período
+  const notaGU = st.grossUp ? `<p class="nota">Gross up ligado: nos fundos isentos de IR para pessoa física (marcados com <sup class="gu">GU</sup>), a rentabilidade
+    mostrada é a equivalente a um fundo tributado com IR de 15% (rentabilidade ÷ 0,85). Perdas não mudam.</p>` : "";
+  const nota = notaGU + (parados.length ? `<p class="nota-parado"><span class="parado">⊘</span> ${parados.length} fundo(s) sem cotas até o fim do período
     (cancelado, em liquidação ou sem envio recente). O cálculo usa o mesmo início dos demais e vai até a última cota de cada um.
-    Passe o mouse sobre o símbolo para ver a data.</p>` : "";
+    Passe o mouse sobre o símbolo para ver a data.</p>` : "");
   return tabelaHTML({ colunas, linhas, fixas: 2, grupos, destacar: dest, classes, altura: 520, ordenavel: "met" }) + nota;
 }
 
@@ -2662,12 +2673,12 @@ async function carregarDadosEquipe() {
   if (!r.ok) { sairEquipe(true); if (r.erro) avisoSel(`<span class="neg">${esc(r.erro)}</span>`); return; }
   st.xpCols = r.colunas;
   st.xp = new Map(Object.entries(r.fundos).map(([c, linhas]) => [c, linhas.map((l) => Object.fromEntries(r.colunas.map((k, i) => [k, l[i]])))]));
-  desenharEquipe();
+  desenharEquipe(); aplicarDadosEquipe();
 }
 async function sairEquipe(silencioso = false) {
   const token = sessionStorage.getItem(SESSAO_EQUIPE);
   sessionStorage.removeItem(SESSAO_EQUIPE); st.equipe = null; st.xp = null; st.xpCols = [];
-  desenharEquipe();
+  desenharEquipe(); aplicarDadosEquipe();
   if (token && !silencioso) apiEquipe("sair", { token });
 }
 // oferta da XP "aberta" = alguma oferta do CNPJ sem captação bloqueada
@@ -2722,6 +2733,101 @@ document.addEventListener("keydown", (e) => {
   else if (e.target.id === "loginCodigo") { e.preventDefault(); entrarEquipe(); }
 });
 document.addEventListener("change", (e) => { if (e.target.id === "dlgXP" || e.target.id === "dlgXPAberto") renderSeletor(); });
+
+// ---------- dados da XP no site (só com login): colunas, gross up, cotas mais recentes e planilha
+const IR_GROSS_UP = 0.15;
+st.grossUp = false;
+const verdadeiro = (v) => v === true || String(v).toLowerCase() === "true";
+function diaXP(v) {                                   // "2026-09-18", "2026-09-18T00:00:00" ou "18/09/2026"
+  const s = String(v ?? "");
+  let m = s.match(/^(\d{4})-(\d{2})-(\d{2})/); if (m) return diaYMD(+m[1], +m[2], +m[3]);
+  m = s.match(/^(\d{2})\/(\d{2})\/(\d{4})/); if (m) return diaYMD(+m[3], +m[2], +m[1]);
+  return null;
+}
+// uma linha por CNPJ: usa a oferta aberta (se houver) e guarda quantas ofertas existem
+function ofertaXP(cnpj) {
+  const of = st.xp?.get(cnpj); if (!of?.length) return null;
+  return of.find((o) => !verdadeiro(o.FUNDINGBLOCKED)) || of[0];
+}
+const tipoInvestidor = (o) => (verdadeiro(o.ONLYPROFESSIONAL) ? "IP" : verdadeiro(o.ONLYQUALIFIED) ? "IQ" : "IG");
+const numXP = (v) => (typeof v === "number" ? v : v == null || v === "" ? null : Number(String(v).replace(",", ".")));
+function camposXP(cnpj) {
+  const o = ofertaXP(cnpj), n = st.xp?.get(cnpj)?.length || 0;
+  if (!o) return { "XP Nome": null, _naXP: false };
+  const abertas = st.xp.get(cnpj).filter((x) => !verdadeiro(x.FUNDINGBLOCKED));
+  const minimos = (abertas.length ? abertas : st.xp.get(cnpj)).map((x) => numXP(x.MINIMALINITIALINVESTMENT)).filter((x) => x != null);
+  return { _naXP: true, _xpOfertas: n, "XP Nome": o.NAME, "Investidor": tipoInvestidor(o), "Captação": abertas.length ? "Aberto" : "Fechado",
+    "Cotização": o.REDEMPTIONQUOTATION, "Liquidação": o.REDEMPTIONSETTLEMENT, "Classificação XP": o.CLASSIFICATIONXP,
+    "Taxa adm.": numXP(o.ADMINISTRATIONRATE), "Taxa perf.": numXP(o.PERFORMANCERATE), "ROA": numXP(o.RETURNONASSETS),
+    "Risco": numXP(o.RISKGENIUS), _riscoCor: o.RISKGENIUSCOLOR, _riscoDesc: o.RISKGENIUSDESCRIPTION,
+    "Aplicação mín.": minimos.length ? Math.min(...minimos) : null, _isento: verdadeiro(o.ISTAXFREEONINCOMEPF) };
+}
+const pctXP = (v, d = 2) => (v == null ? "" : `${br(v, d)}%`);          // na planilha 0,1 já é 0,1%
+const badgeInv = (v) => (v ? `<span class="xp-inv xp-${v.toLowerCase()}" title="${{ IG: "Investidor em geral", IQ: "Investidor qualificado", IP: "Investidor profissional" }[v]}">${v}</span>` : "");
+const textoCurto = (v, n = 26) => (v == null ? "" : String(v).length > n ? `<span title="${esc(v)}">${esc(String(v).slice(0, n - 1))}…</span>` : esc(v));
+function colunasXP(g = "XP · confidencial", semInternas = false) {
+  const cols = [
+    { chave: "XP Nome", nome: "Nome comercial", tipo: "txt", g, html: (v, l) => (l._naXP ? textoCurto(v, 34) + (l._xpOfertas > 1 ? ` <small class="nota" title="${l._xpOfertas} ofertas deste CNPJ na XP">(${l._xpOfertas})</small>` : "") : `<span class="nota">não está na XP</span>`) },
+    { chave: "Investidor", nome: "Investidor", tipo: "txt", g, html: badgeInv },
+    { chave: "Captação", nome: "Captação", tipo: "txt", g, html: (v) => (v ? `<span class="xp-cap ${v === "Aberto" ? "ab" : "fe"}">${v}</span>` : "") },
+    { chave: "Cotização", nome: "Cotização do resgate", tipo: "txt", g, html: (v) => textoCurto(v) },
+    { chave: "Liquidação", nome: "Liquidação do resgate", tipo: "txt", g, html: (v) => textoCurto(v) },
+    { chave: "Classificação XP", nome: "Classificação XP", tipo: "txt", g, html: (v) => textoCurto(v, 30) },
+    { chave: "Taxa adm.", nome: "Taxa de adm.", tipo: "num2", g, html: (v) => pctXP(v) },
+    { chave: "Taxa perf.", nome: "Taxa de perf.", tipo: "num2", g, html: (v) => pctXP(v, 0) },
+    { chave: "ROA", nome: "ROA", tipo: "num2", g, html: (v) => pctXP(v), interno: true },
+    { chave: "Risco", nome: "Risco XP", tipo: "int", g, html: (v, l) => (v == null ? "" : `<span class="xp-risco" style="--c:${esc(l._riscoCor || "#888")}" title="Risco ${esc(l._riscoDesc || "")}">${br(v, 0)}</span>`) },
+    { chave: "Aplicação mín.", nome: "Aplicação mínima", tipo: "valor", g, html: (v) => (v == null ? "" : `R$ ${br(v, v % 1 ? 2 : 0)}`) },
+  ];
+  return semInternas ? cols.filter((c) => !c.interno) : cols;
+}
+// gross up: para fundos isentos de IR para pessoa física, a rentabilidade equivalente a um fundo tributado (IR de 15%)
+function aplicarGrossUp(l) {
+  const r = l["% Acumulado"];
+  if (!st.grossUp || !l._isento || typeof r !== "number" || r <= 0) return l;
+  const rg = r / (1 - IR_GROSS_UP), out = { ...l, _gu: true, "% Acumulado": rg };
+  const aa = l["% Anualizado"];
+  if (typeof aa === "number" && aa > -1) { const k = Math.log(1 + aa) / Math.log(1 + r); out["% Anualizado"] = (1 + rg) ** k - 1;
+    if (typeof l["CDI +"] === "number") out["CDI +"] = out["% Anualizado"] - (aa - l["CDI +"]); }
+  if (typeof l["%CDI"] === "number" && l["%CDI"] !== 0) out["%CDI"] = rg / (r / l["%CDI"]);
+  return out;
+}
+// cotas da XP mais recentes que as da CVM entram no cálculo (aplicadas ao baixar os fundos)
+function cotasXP() {
+  const m = new Map();
+  for (const [c, ofs] of st.xp || []) for (const o of ofs) {
+    const d = diaXP(o.QUOTADATE), q = numXP(o.QUOTAVALUE);
+    if (d && q > 0 && (!m.has(c) || d > m.get(c).d)) m.set(c, { d, q, origem: "XP" });
+  }
+  return m;
+}
+async function baixarPlanilhaXP() {
+  if (!st.xp) return;
+  const b = $("#equipeBaixar"); b.disabled = true; b.textContent = "Gerando…";
+  try {
+    await carregarLib("excel");
+    const wb = new window.ExcelJS.Workbook(), ws = wb.addWorksheet("Fundos XP", { views: [{ state: "frozen", xSplit: 2, ySplit: 1 }] });
+    ws.columns = [{ header: "CNPJ", width: 20 }, ...st.xpCols.map((c) => ({ header: c, width: c === "NAME" ? 44 : Math.min(30, Math.max(12, c.length + 2)) }))];
+    for (const [c, ofs] of st.xp) for (const o of ofs) ws.addRow([cnpjFmt(c), ...st.xpCols.map((k) => o[k])]);
+    const cab = ws.getRow(1); cab.font = { bold: true, color: { argb: "FFFFFFFF" } };
+    cab.eachCell((x) => { x.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF2B2C78" } }; });
+    ws.autoFilter = { from: { row: 1, column: 1 }, to: { row: 1, column: st.xpCols.length + 1 } };
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([await wb.xlsx.writeBuffer()], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }));
+    a.download = `fundos_xp_${new Date().toISOString().slice(0, 10)}.xlsx`; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 3000);
+  } catch (e) { avisoSel(`<span class="neg">Não foi possível gerar a planilha: ${esc(e.message || e)}</span>`); }
+  finally { b.disabled = false; b.textContent = "⬇ Planilha XP"; }
+}
+document.addEventListener("click", (e) => { if (e.target.id === "equipeBaixar") baixarPlanilhaXP(); });
+document.addEventListener("change", (e) => { if (e.target.id === "grossUp") { st.grossUp = e.target.checked; renderMetricas(); } });
+// ao entrar ou sair: aplica as cotas, mostra/esconde as colunas e avisa se é preciso recalcular
+function aplicarDadosEquipe() {
+  D.definirCotasExtras(st.xp ? cotasXP() : null);
+  $("#guBox").hidden = !st.xp; if (!st.xp) { st.grossUp = false; $("#grossUp").checked = false; }
+  if (st.ctx) renderMetricas();
+  if (st.rk?.lista.length) renderRkTabela();
+  if (st.res && st.xp) avisoSel(`<span class="ok">Dados da equipe carregados.</span> Clique em <b>Calcular</b> para usar as cotas da XP mais recentes que as da CVM.`);
+}
 // ============================== rankings ==============================
 // Um ranking = nome + tipo de cálculo (pesos) + lista de fundos. Ficam guardados neste navegador, como os grupos.
 const lerRankings = () => pref("rankings", {});
@@ -2905,7 +3011,7 @@ function linhaRk(R, x) {
     pl: cad.VL_PATRIM_LIQ ?? null, rentAA: r["% Anualizado"], capt: r["Captação Líquida no Período"], pctCDI: r["%CDI"], cdiMais: r["CDI +"],
     obj: x.l.obj, objIdx: x.l.kObj, dias: usaIbov(R) ? r["% de dias acima do IBOV"] : r["% de dias acima do CDI"], beta: r.Beta, vol: r.Volatilidade,
     sharpe: r["Sharpe Anualizado"], mdd: r.Queda, recup: r["Duração da Recuperação"], total: x.total, perf: x.grupos.Performance, cons: x.grupos["Consistência"],
-    risco: x.grupos.Risco, curto: x.l.curto, ini: r["Data Inicial"] };
+    risco: x.grupos.Risco, curto: x.l.curto, ini: r["Data Inicial"], ...(st.xp ? camposXP(x.id) : {}) };
 }
 const varHTML = (v) => (v == null ? `<span class="rk-novo" title="Não estava no ranking do mês anterior">novo</span>` : v > 0 ? `<span class="rk-sobe">▲ ${v}</span>`
   : v < 0 ? `<span class="rk-desce">▼ ${-v}</span>` : `<span class="rk-igual">▬ 0</span>`);
@@ -2929,6 +3035,7 @@ function colunasRk(R) {
     ...(usaIbov(R) ? [{ chave: "beta", nome: "Beta", tipo: "num2", g: "Risco" }] : []),
     { chave: "vol", nome: "Volatilidade", tipo: "pct", g: "Risco" }, { chave: "sharpe", nome: "Sharpe", tipo: "num2", cor: true, g: "Risco" },
     { chave: "mdd", nome: "MDD", tipo: "pct", cor: true, g: "Risco" }, { chave: "recup", nome: "Dias para recuperação do MDD", tipo: "int", g: "Risco" },
+    ...(st.xp ? colunasXP() : []),
   ];
 }
 function renderRkTabela() {
@@ -3043,26 +3150,34 @@ function graficoPesosRk(M) {
 }
 
 // ---------- partes do relatório (PDF, PNG e Excel)
-function linhasRelRk(R, lista) {
-  const cols = colunasRk(R).filter((c) => !["perf", "cons", "risco"].includes(c.chave));
-  return { colunas: cols.map((c) => ({ nome: c.nome, tipo: c.chave === "pl" || c.chave === "capt" ? "valor" : c.chave === "var" ? "txt" : c.tipo })),
+// enxuto (top 10 em PDF/PNG): com os dados da XP, segue o relatório de referência — classificação XP no lugar da CVM/ANBIMA,
+// público, captação, prazo de liquidação e aplicação mínima; o resto da XP fica na tela e no Excel completo
+const FORA_ENXUTO_XP = new Set(["cvm", "anbima", "XP Nome", "Cotização", "Taxa adm.", "Taxa perf.", "Risco"]);
+function linhasRelRk(R, lista, enxuto = false) {
+  const cols = colunasRk(R).filter((c) => !["perf", "cons", "risco"].includes(c.chave) && !c.interno     // o ROA fica só na tela
+    && !(enxuto && st.xp && FORA_ENXUTO_XP.has(c.chave)));
+  const PCT_XP = new Set(["Taxa adm.", "Taxa perf."]);       // na planilha da XP 0,4 = 0,4%: nos relatórios vira percentual de verdade
+  return { chaves: cols.map((c) => c.chave), colunas: cols.map((c) => ({ nome: c.nome, tipo: c.chave === "pl" || c.chave === "capt" ? "valor" : c.chave === "var" ? "txt" : PCT_XP.has(c.chave) ? "pct" : c.tipo })),
     linhas: lista.map((x) => { const l = linhaRk(R, x);
       return cols.map((c) => c.chave === "var" ? (l.var == null ? "novo" : l.var > 0 ? `▲ ${l.var}` : l.var < 0 ? `▼ ${-l.var}` : "▬ 0")
-        : c.chave === "pl" || c.chave === "capt" ? (typeof l[c.chave] === "number" ? l[c.chave] / 1e6 : null) : c.chave === "Fundo" ? (l.curto ? `${l.Fundo} (*)` : l.Fundo) : l[c.chave]); }) };
+        : c.chave === "pl" || c.chave === "capt" ? (typeof l[c.chave] === "number" ? l[c.chave] / 1e6 : null) : c.chave === "Fundo" ? (l.curto ? `${l.Fundo} (*)` : l.Fundo)
+        : PCT_XP.has(c.chave) ? (typeof l[c.chave] === "number" ? l[c.chave] / 100 : null) : l[c.chave]); }) };
 }
 function blocosRanking(k) {
   const L = st.rk.lista, B = [];
   const cab = (R) => `${R.nome} · ${R.M.nome} · ${R.ordem.length} fundos analisados · métricas de ${R.M.periodo.toLowerCase()} até ${fmtData(R.fim)}`;
   if (k === "rkTop") {
-    for (const R of L) { const t = linhasRelRk(R, topRk(R));
-      B.push({ tipo: "tabela", nome: cab(R), aba: `${R.nome} - top ${TOP_RANK}`, pdfCompacto: { 0: 7, 1: 10, 2: 60, 3: 13, 4: 17, 5: 30 },
+    const LARG = { pos: 7, var: 10, Fundo: 56, total: 13, cvm: 17, anbima: 30, "Classificação XP": 24, Investidor: 11, "Captação": 13, "Liquidação": 15, "Aplicação mín.": 14 };
+    for (const R of L) { const { chaves, ...t } = linhasRelRk(R, topRk(R), true);
+      const larguras = Object.fromEntries(chaves.map((k, i) => [i, LARG[k]]).filter(([, w]) => w));
+      B.push({ tipo: "tabela", nome: cab(R), aba: `${R.nome} - top ${TOP_RANK}`, pdfCompacto: larguras,
         corLinha: topRk(R).map((x) => medalha(x.pos)?.fundo || null), ...t }); }
     return { titulo: `Top ${TOP_RANK} por ranking`, nota: `Pontuação de 0 a 100. (*) = histórico menor que o período do ranking. A variação compara com o ranking calculado na data escolhida (${L.map((R) => `${R.nome}: ${fmtData(R.fimAnt)}`).join("; ")}).`, blocos: B };
   }
   if (k === "rkCompleto") {
     for (const R of L) {
       const ks = GRUPOS_RANK.flatMap((g) => Object.keys(R.M.pesos).filter((x) => grupoMetrica(R.M, x) === g));
-      const t = linhasRelRk(R, R.ordem);
+      const { chaves: _k, ...t } = linhasRelRk(R, R.ordem);
       B.push({ tipo: "tabela", soExcel: true, nome: `${R.nome} - completo`, colunas: [...t.colunas, { nome: "Performance (pontos)", tipo: "num2" }, { nome: "Consistência (pontos)", tipo: "num2" },
           { nome: "Risco (pontos)", tipo: "num2" }, ...ks.flatMap((x) => [{ nome: `${metricaRank(x).nome}: valor`, tipo: metricaRank(x).tipo },
             { nome: `${metricaRank(x).nome}: nota (0 a 1)`, tipo: "num" }, { nome: `${metricaRank(x).nome}: pontos (peso ${Math.abs(R.M.pesos[x])})`, tipo: "num2" }])],
