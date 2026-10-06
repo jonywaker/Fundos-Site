@@ -701,10 +701,10 @@ function tabelaHTML({ colunas, linhas, fixas = 0, larguras = [260, 150], grupos 
     h += `</tr><tr class="h2">`;
   } else h += "<tr>";
   colunas.forEach((c, j) => {
-    if (!ordenavel || c.ord === false) { h += `<th${fx(j)}>${esc(c.nome)}</th>`; return; }
+    if (!ordenavel || c.ord === false) { h += `<th${fx(j)}><span class="th-txt">${esc(c.nome)}</span></th>`; return; }
     const at = o && o.col === c.chave, texto = (c.tipo === "txt" && !c.valor) || c.crescente;   // texto e prazos: 1º clique do menor para o maior
     h += `<th${fx(j)}${at ? ` aria-sort="${o.dir > 0 ? "ascending" : "descending"}"` : ""}><button class="ord" data-ord="${esc(ordenavel)}" data-col="${esc(c.chave)}"
-      data-txt="${texto ? 1 : 0}" title="Ordenar">${esc(c.nome)}${at ? (o.dir > 0 ? " ▲" : " ▼") : ""}</button></th>`;
+      data-txt="${texto ? 1 : 0}" title="Ordenar"><span class="th-txt">${esc(c.nome)}${at ? (o.dir > 0 ? " ▲" : " ▼") : ""}</span></button></th>`;
   });
   h += "</tr></thead><tbody>";
   linhas.forEach((l, i) => {
@@ -726,7 +726,10 @@ function tabelaHTML({ colunas, linhas, fixas = 0, larguras = [260, 150], grupos 
       const estilo = c.cor ? corSinal(v) : "";
       const alinh = c.tipo === "txt" || c.tipo === "data" || c.html ? " t" : "";
       if (j < fixas) h += `<td class="fx t" style="left:${esq[j]}px;min-width:${larguras[j]}px;max-width:${larguras[j]}px;${estilo}" title="${esc(typeof v === "number" ? "" : v)}">${txt}</td>`;
-      else h += `<td class="${alinh.trim()}" style="${estilo}">${txt}</td>`;
+      else {                                   // texto longo (ex.: "Índice de Preços ao Consumidor Amplo"): largura máxima e "…", texto inteiro ao passar o mouse
+        const longo = c.tipo === "txt" && typeof v === "string" && v.length > 30;
+        h += `<td class="${(alinh + (longo ? " longo" : "")).trim()}" style="${estilo}"${longo ? ` title="${esc(v)}"` : ""}>${txt}</td>`;
+      }
     });
     h += "</tr>";
   });
@@ -780,7 +783,7 @@ function tabelaMetricas(dados) {
   const nota = notaGU + (parados.length ? `<p class="nota-parado"><span class="parado">⊘</span> ${parados.length} fundo(s) sem cotas até o fim do período
     (cancelado, em liquidação ou sem envio recente). O cálculo usa o mesmo início dos demais e vai até a última cota de cada um.
     Passe o mouse sobre o símbolo para ver a data.</p>` : "");
-  return tabelaHTML({ colunas, linhas, fixas: st.xp ? 3 : 2, ...(st.xp ? { larguras: [74, 260, 150] } : {}), grupos, destacar: dest, classes, altura: 520, ordenavel: "met" }) + nota;
+  return tabelaHTML({ colunas, linhas, fixas: st.xp ? 3 : 2, ...(st.xp ? { larguras: [64, 260, 150] } : {}), grupos, destacar: dest, classes, altura: 520, ordenavel: "met" }) + nota;
 }
 
 // ---------- tabela-legenda: cor, posição, fundo e valores, do maior para o menor; 5 maiores + 5 menores (+ destacados)
@@ -2560,7 +2563,11 @@ const rolagemSuave = () => (matchMedia("(prefers-reduced-motion: reduce)").match
 function sincronizarUrl() {
   const url = new URL(location.href), p = url.searchParams;
   const pon = (k, v) => (v ? p.set(k, v) : p.delete(k));
-  pon("fundos", st.sel.join(","));
+  // até ~100 fundos a seleção vai no endereço (link compartilhável); acima disso o endereço ficaria longo demais
+  // (o GitHub recusa com "URI Too Long"): a seleção fica só salva no navegador, e para compartilhar usa-se os Grupos
+  salvar("sel", st.sel);
+  const fundos = st.sel.join(",");
+  pon("fundos", fundos.length <= 1500 ? fundos : "");
   pon("per", [...st.periodos].join(","));
   pon("mes", st.periodos.has("Mês") ? $("#refMes").value : "");
   pon("ano", st.periodos.has("Ano") ? $("#refAno").value : "");
@@ -2574,6 +2581,7 @@ function lerUrl() {
   const p = new URLSearchParams(location.search);
   const fundos = p.get("fundos");
   if (fundos) adicionar(fundos.split(",").map((c) => c.replace(/\D/g, "").padStart(14, "0")));
+  else { const salvos = pref("sel", []); if (Array.isArray(salvos) && salvos.length) adicionar(salvos.filter((c) => /^\d{14}$/.test(c))); }
   const per = (p.get("per") || "").split(",").filter((x) => PERIODOS.includes(x));
   if (per.length) st.periodos = new Set(per);
   if (p.get("mes")) $("#refMes").value = p.get("mes");
@@ -2620,7 +2628,7 @@ document.addEventListener("keydown", (e) => {                      // setas entr
 // ---------- backup completo das configurações (grupos, rankings, tipos de cálculo, carteira e preferências)
 // As configurações ficam no navegador e presas ao endereço do site: mudar de computador, de navegador ou de endereço
 // (ex.: trocar o usuário do GitHub) começa do zero. O backup leva tudo num arquivo.
-const CHAVES_BACKUP = ["grupos", "rankings", "rankingsSel", "modelosRank", "rkCompPadrao", "carteira", "indices", "agrupar", "gruposFechados",
+const CHAVES_BACKUP = ["sel", "grupos", "rankings", "rankingsSel", "modelosRank", "rkCompPadrao", "carteira", "indices", "agrupar", "gruposFechados",
   "minimizados", "pagina", "relFmt", "relSel", "riscoEixo", "travar", "guardar"];
 function salvarBackup() {
   const dados = {};
@@ -2672,6 +2680,7 @@ document.addEventListener("click", (e) => { if (e.target.id === "limparTela") li
 // "Sair" apaga a sessão aqui e no servidor; tirar a pessoa da lista da equipe corta o acesso na hora.
 st.equipe = null; st.xp = null; st.xpCols = [];
 const SESSAO_EQUIPE = "fundos.sessaoEquipe";
+const VERSAO_MIN_EQUIPE = "2026-10-06.5";        // versão do Apps Script que envia o ID (link do Hub)
 const lerSessaoEquipe = () => { try { return localStorage.getItem(SESSAO_EQUIPE) || sessionStorage.getItem(SESSAO_EQUIPE); } catch { return null; } };
 const gravarSessaoEquipe = (t) => { try { t ? localStorage.setItem(SESSAO_EQUIPE, t) : (localStorage.removeItem(SESSAO_EQUIPE), sessionStorage.removeItem(SESSAO_EQUIPE)); } catch { /* sem armazenamento */ } };
 async function apiEquipe(acao, dados = {}) {
@@ -2699,6 +2708,9 @@ async function carregarDadosEquipe() {
   st.xpCols = r.colunas;
   st.xp = new Map(Object.entries(r.fundos).map(([c, linhas]) => [c, linhas.map((l) => Object.fromEntries(r.colunas.map((k, i) => [k, l[i]])))]));
   st.xpOfertas = r.linhas;
+  if (!r.colunas.includes("ID") || (r.versao && r.versao < VERSAO_MIN_EQUIPE))
+    setTimeout(() => avisoSel(`<span class="neg">O Apps Script da equipe está numa versão antiga (${esc(r.versao || "anterior a " + VERSAO_MIN_EQUIPE)}).
+      Para o Link Hub e as correções mais recentes, publique a versão nova: Implantar → Gerenciar implantações → lápis → Nova versão.</span>`), 50);
   incluirFundosSoXP();
   desenharEquipe(); aplicarDadosEquipe();
 }
@@ -2887,7 +2899,8 @@ function aplicarDadosEquipe() {
 // coluna "Link Hub": abre a página do fundo no Hub da XP numa nova aba
 const URL_HUB = (id) => `https://hub.xpi.com.br/new/fundos-de-investimento#/${id}/detalhes`;
 const colunaHub = () => ({ chave: "_hubId", nome: "Link Hub", tipo: "txt", ord: false, g: "XP",
-  html: (v, l) => (v ? `<a class="hub-link" href="${URL_HUB(v)}" target="_blank" rel="noopener noreferrer" title="Abrir no Hub XP (nova aba)" aria-label="Abrir ${esc(l.Fundo || "")} no Hub XP">↗ Hub</a>` : "") });
+  html: (v, l) => (v ? `<a class="hub-link" href="${URL_HUB(v)}" target="_blank" rel="noopener noreferrer" title="Abrir no Hub XP (nova aba)" aria-label="Abrir ${esc(l.Fundo || "")} no Hub XP">↗ Hub</a>`
+    : `<span class="nota" title="${l._naXP ? "Sem o ID da XP: o Apps Script precisa estar na versão " + VERSAO_MIN_EQUIPE + " ou mais nova" : "Fundo fora da XP"}">–</span>`) });
 // ============================== rankings ==============================
 // Um ranking = nome + tipo de cálculo (pesos) + lista de fundos. Ficam guardados neste navegador, como os grupos.
 const lerRankings = () => pref("rankings", {});
