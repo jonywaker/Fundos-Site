@@ -153,8 +153,19 @@ export async function carregarFundos(cnpjs, cdiAnterior, aoAvancar) {
   await Promise.all(Array.from({ length: Math.min(6, fila.length) }, trabalhar));
   const out = new Map();
   for (const c of cnpjs) {
-    const linhas = (await carregarGrupo(grupoDe(c))).get(c);
-    if (linhas?.length) out.set(c, prepararFundo(linhas, cdiAnterior));
+    let linhas = (await carregarGrupo(grupoDe(c))).get(c);
+    if (!linhas?.length) continue;
+    // cota mais recente informada pela corretora (área da equipe): entra no fim da série só se for posterior à última da CVM
+    const x = cotasExtras?.get(c), ult = linhas[linhas.length - 1];
+    const comExtra = x && x.d > ult.d && x.q > 0;
+    if (comExtra) linhas = [...linhas, { d: x.d, q: x.q, capt: 0, resg: 0, pl: ult.pl, cot: ult.cot }];
+    const f = prepararFundo(linhas, cdiAnterior);
+    if (comExtra) f.cotaExtra = { d: x.d, origem: x.origem || "corretora" };
+    out.set(c, f);
   }
   return out;
 }
+
+// cotas mais recentes de outra fonte (ex.: a planilha da corretora, só com login): Map CNPJ -> { d (dia), q (cota), origem }
+let cotasExtras = null;
+export function definirCotasExtras(mapa) { cotasExtras = mapa && mapa.size ? mapa : null; }
