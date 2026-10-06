@@ -719,3 +719,11 @@ sup.gu { font-size: 9px; font-weight: 800; color: var(--link); margin-left: 2px;
 .hub-link { display: inline-block; padding: 2px 9px; border-radius: 7px; border: 1.5px solid var(--azul); color: var(--azul); font-weight: 800; font-size: 12px; text-decoration: none; white-space: nowrap; }
 .hub-link:hover { background: var(--azul); color: #fff; }
 @media (prefers-color-scheme: dark) { .hub-link { color: #9cc2ff; border-color: #9cc2ff; } .hub-link:hover { background: #9cc2ff; color: #0c1030; } }
+
+/* títulos das colunas quebram em linhas quando são mais largos que o conteúdo; textos longos com "…" */
+.tb thead th { white-space: normal; vertical-align: bottom; }
+.tb thead th .th-txt { display: inline-block; max-width: 8.5em; white-space: normal; line-height: 1.2; text-align: inherit; }
+.tb thead th.fx .th-txt { max-width: none; }
+.tb thead th.g .th-txt, .tb thead tr:not(.h2) th .th-txt { max-width: none; }
+.tb td.longo { max-width: 240px; overflow: hidden; text-overflow: ellipsis; }
+.hub-link { padding: 2px 6px; font-size: 11.5px; }
