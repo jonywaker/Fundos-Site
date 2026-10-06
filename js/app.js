@@ -2924,25 +2924,51 @@ function abrirEnviar(origem) {
   env.origem = origem; env.marcados = new Set();
   if (origem === "rk") {
     const R = rkAtivo(); if (!R) return;
-    env.titulo = `do ranking ${R.nome}`;
-    env.lista = R.ordem.map((x) => ({ c: x.id, nome: x.l.cad.NOME, pos: x.pos }));
+    env.titulo = `do ranking ${R.nome}`; env.periodo = `nas métricas do ranking, de ${R.M.periodo.toLowerCase()}`;
+    env.lista = R.ordem.map((x) => ({ c: x.id, nome: x.l.cad.NOME, pos: x.pos, classif: x.l.cad.CLASSIFICACAO_CVM, rentAA: x.l.r["% Anualizado"], vol: x.l.r.Volatilidade,
+      rk: { total: x.total, perf: x.grupos.Performance, cons: x.grupos["Consistência"], risco: x.grupos.Risco } }));
   } else {
     if (!st.res) return;
-    env.titulo = "da análise";
-    env.lista = st.res.sel.filter((c) => st.res.fundos.get(c)).map((c) => ({ c, nome: st.porCnpj.get(c)?.NOME || cnpjFmt(c) }));
+    const porC = new Map((st.ctx?.dados.linhas || []).map((l) => [l._c, l]));
+    env.titulo = "da análise"; env.periodo = `no período ${st.perAtivo || ""}`;
+    env.lista = st.res.sel.filter((c) => st.res.fundos.get(c)).map((c) => { const l = porC.get(c), cad = st.porCnpj.get(c) || {};
+      return { c, nome: cad.NOME || cnpjFmt(c), classif: cad.CLASSIFICACAO_CVM, rentAA: l?.["% Anualizado"], vol: l?.Volatilidade }; });
   }
   renderEnviar(); $("#dlgEnviar").showModal();
 }
+// prazo de resgate em uma linha: "D+30 / D+2" (cotização / liquidação), com o texto completo ao passar o mouse
+const prazoCurto = (t) => { const m = String(t ?? "").match(/D\s*\+\s*(\d+)/i); return m ? `D+${m[1]}` : t ? "…" : ""; };
 function renderEnviar() {
-  const naCart = new Set(st.cart.itens.filter((it) => it.tipo === "f").map((it) => it.v)), rk = env.origem === "rk";
+  const naCart = new Set(st.cart.itens.filter((it) => it.tipo === "f").map((it) => it.v)), rk = env.origem === "rk", xp = !!st.xp;
   const novos = [...env.marcados].filter((c) => !naCart.has(c)).length;
-  $("#envInfo").innerHTML = `Marque os fundos ${esc(env.titulo)} que vão para a montagem de carteira. ` +
+  $("#envInfo").innerHTML = `Marque os fundos ${esc(env.titulo)} que vão para a montagem de carteira (rentabilidade e volatilidade ${esc(env.periodo)}). ` +
     (st.cart.itens.length ? "A carteira já tem ativos: os novos entram com peso 0 (defina os pesos depois ou use “Pesos iguais”)." : "A carteira está vazia: os fundos enviados entram com pesos iguais.");
-  $("#envLista").innerHTML = `<table class="tb tab-fundos"><thead><tr><th><span class="sr-only">Enviar</span></th>${rk ? "<th>Pos.</th>" : ""}<th class="t">Fundo</th><th>CNPJ</th><th class="t">Situação</th></tr></thead><tbody>${env.lista.map((x) => {
-    const ja = naCart.has(x.c), on = ja || env.marcados.has(x.c);
-    return `<tr class="linha-f${on ? " marcado" : ""}" data-env="${x.c}" ${ja ? "" : 'tabindex="0"'} title="${ja ? "Já está na carteira" : "Clique para marcar"}">
-      <td><input type="checkbox" ${on ? "checked" : ""} ${ja ? "disabled" : ""} aria-label="Enviar ${esc(x.nome)}" tabindex="-1"></td>${rk ? `<td>${posHTML(x.pos)}</td>` : ""}
-      <td class="t">${esc(x.nome)}</td><td>${cnpjFmt(x.c)}</td><td class="t">${ja ? '<span class="nota">já está na carteira</span>' : ""}</td></tr>`; }).join("")}</tbody></table>`;
+  // colunas pequenas com largura fixa; o nome ocupa o que sobrar (a tabela nunca passa da largura da janela)
+  // [chave, largura, título curto, título completo (ao passar o mouse)]
+  const cols = [["sel", 30, ""], ...(rk ? [["pos", 42, "Pos.", "Posição no ranking"]] : []), ["nome", null, "Fundo"], ["classif", 96, "Classificação", "Classificação CVM"],
+    ["rent", 68, "Rent. a.a.", "Rentabilidade ao ano"], ["vol", 60, "Volat.", "Volatilidade ao ano"],
+    ...(rk ? [["tot", 52, "Pont.", "Pontuação no ranking (0 a 100)"], ["perf", 48, "Perf.", "Pontos de Performance"], ["cons", 52, "Cons.", "Pontos de Consistência"], ["risco", 48, "Risco", "Pontos de Risco"]] : []),
+    ...(xp ? [["inv", 54, "Invest.", "Tipo de investidor"], ["cap", 42, "Capt.", "Captação: aberto ou fechado para aplicação"], ["resg", 96, "Resgate", "Prazo de resgate: cotização / liquidação"],
+      ["roa", 52, "ROA", "ROA"], ["rxp", 50, "Risco XP", "Risco XP"]] : [])];
+  const minimo = cols.reduce((s2, [, w]) => s2 + (w || 150), 0);     // abaixo disso (tela muito estreita) a lista rola para o lado
+  const n1 = (v) => (typeof v === "number" ? br(v, 1) : "");
+  $("#envLista").innerHTML = `<table class="tb env-tab" style="min-width:${minimo}px"><colgroup>${cols.map(([, w]) => `<col${w ? ` style="width:${w}px"` : ""}>`).join("")}</colgroup>
+    <thead><tr>${cols.map(([k, , n, compl]) => `<th class="${k === "nome" || k === "classif" ? "t" : ""}"${compl ? ` title="${compl}"` : ""}>${k === "sel" ? '<span class="sr-only">Enviar</span>' : `<span class="th-txt">${n}</span>`}</th>`).join("")}</tr></thead><tbody>${env.lista.map((x) => {
+    const ja = naCart.has(x.c), on = ja || env.marcados.has(x.c), q = xp ? camposXP(x.c) : null;
+    const cel = {
+      sel: `<td><input type="checkbox" ${on ? "checked" : ""} ${ja ? "disabled" : ""} aria-label="Enviar ${esc(x.nome)}" tabindex="-1"></td>`,
+      pos: `<td>${posHTML(x.pos)}</td>`,
+      nome: `<td class="t env-nome" title="${esc(x.nome)} · ${cnpjFmt(x.c)}${ja ? " · já está na carteira" : ""}">${ja ? '<span class="env-ja">na carteira</span>' : ""}${esc(x.nome)}</td>`,
+      classif: `<td class="t env-nome" title="${esc(x.classif || "")}">${esc(x.classif || "")}</td>`,
+      rent: `<td style="${corSinal(x.rentAA)}">${typeof x.rentAA === "number" ? brPct(x.rentAA) : ""}</td>`,
+      vol: `<td>${typeof x.vol === "number" ? brPct(x.vol) : ""}</td>`,
+      tot: `<td><b>${n1(x.rk?.total)}</b></td>`, perf: `<td>${n1(x.rk?.perf)}</td>`, cons: `<td>${n1(x.rk?.cons)}</td>`, risco: `<td>${n1(x.rk?.risco)}</td>`,
+      inv: `<td>${q?._naXP ? badgeInv(q.Investidor) : ""}</td>`, cap: `<td>${q?._naXP ? cadeado(q["Captação"]) : ""}</td>`,
+      resg: `<td title="${q?._naXP ? esc(`Cotização: ${q["Cotização"] || "–"} · Liquidação: ${q["Liquidação"] || "–"}`) : ""}">${q?._naXP ? `${prazoCurto(q["Cotização"])} / ${prazoCurto(q["Liquidação"])}` : ""}</td>`,
+      roa: `<td>${q?._naXP && q.ROA != null ? pctXP(q.ROA) : ""}</td>`,
+      rxp: `<td>${q?._naXP && q.Risco != null ? `<span class="xp-risco ${faixaRisco(q._riscoDesc)}" title="Risco ${esc(q._riscoDesc || "")}">${br(q.Risco, 0)}</span>` : ""}</td>`,
+    };
+    return `<tr class="linha-f${on ? " marcado" : ""}${ja ? " env-bloq" : ""}" data-env="${x.c}" ${ja ? "" : 'tabindex="0"'}>${cols.map(([k]) => cel[k]).join("")}</tr>`; }).join("")}</tbody></table>`;
   $("#envOk").textContent = `Enviar ${novos} fundo${novos === 1 ? "" : "s"}`; $("#envOk").disabled = !novos;
 }
 function enviarParaCarteira() {
