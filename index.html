@@ -74,6 +74,11 @@
         <label class="campo">Peso total da carteira (%) <input id="peso" type="number" value="100" min="0" step="1"></label>
         <label class="tog"><input id="guardar" type="checkbox" checked> Guardar dados neste computador</label>
         <p class="nota">Deixa as próximas consultas mais rápidas (máx. 150 MB, limpa sozinho). Espaço: <span id="espaco">–</span></p>
+        <div class="backup">
+          <button id="bkSalvar" class="sec" type="button" title="Grupos, rankings, tipos de cálculo, carteira e preferências num arquivo">⬇ Salvar backup</button>
+          <label class="sec botao-arquivo" title="Restaura um backup salvo antes (substitui as configurações deste navegador)">⬆ Restaurar<input id="bkRestaurar" type="file" accept=".json,application/json" hidden></label>
+        </div>
+        <p class="nota">Para levar tudo para outro computador, navegador ou endereço do site.</p>
       </section>
 
       <section class="bloco acao" data-pg="analise">
