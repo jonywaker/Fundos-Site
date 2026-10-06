@@ -5,6 +5,7 @@ import { COLUNAS, PERIODOS, calcularFundo, prepararFundo, serieAcumulada, fmtDat
 import { INDICES, corIndice, nomeIndice, serieIndice, retornoVol, nivelEm } from "./indices.js";
 import { janelaMovel, resumoJanela, retornosFundo, retornosDiarios, matrizCorrelacao } from "./analises.js";
 import { simularCarteira, estatisticas, curvaDrawdown } from "./carteira.js";
+import { EQUIPE_URL } from "./config.js";
 import { GRUPOS_RANK, METRICAS_RANK, metricaRank, grupoMetrica, MODELOS_RANK, JM_ANOS, indiceObjetivo, pontuar, ordenarRanking, COMPARACOES, ROTULO_VAR, dataComparacao } from "./ranking.js";
 
 // ============================== CONFIGURAÇÃO (único lugar para editar) ==============================
@@ -73,6 +74,7 @@ async function iniciar() {
     atualizarSidebar();
     atualizarEspaco();
     renderCarteira();
+    iniciarEquipe();
     mostrarPagina(new URLSearchParams(location.search).get("pagina") || pref("pagina", "analise"), { rolar: false });
   } catch (e) {
     $("#status").textContent = "erro ao carregar";
@@ -253,8 +255,11 @@ function filtrarLista() {
   const lst = COLS_FUNDO.filter((c) => c.filtro === "lista" && f[c.k]).map((c) => [c.k, f[c.k]]);
   const mins = COLS_FUNDO.filter((c) => c.filtro === "min" && f[c.k] !== "" && f[c.k] != null && !Number.isNaN(Number(f[c.k])))
     .map((c) => [c.k, c.tipo === "mi" ? Number(f[c.k]) * 1e6 : Number(f[c.k]) / 100]);
+  const soXP = st.xp && $("#dlgXP").checked, soAberto = st.xp && $("#dlgXPAberto").checked;
   return st.lista.filter((x) => {
     if (soSel) return marcados.has(x.CNPJ);
+    if (soXP && !st.xp.has(x.CNPJ)) return false;
+    if (soAberto && !xpAberto(x.CNPJ)) return false;
     if (ativos && !(x._dia && x._dia >= limiteDia)) return false;
     if (q.length >= 3 && !(x._busca.includes(q) || (dig.length >= 3 && x.CNPJ.includes(dig)))) return false;
     for (const [k, t, d] of txt) { const v = k === "CNPJ" ? x.CNPJ : String(x[k] || "").toUpperCase(); if (!(v.includes(t) || (k === "CNPJ" && d && v.includes(d)))) return false; }
@@ -2627,6 +2632,96 @@ function limparTela() {
   $("#calcular").focus();
 }
 document.addEventListener("click", (e) => { if (e.target.id === "limparTela") limparTela(); });
+
+// ---------- área da equipe: login pelo Apps Script e dados confidenciais (planilha da XP)
+// Os dados confidenciais ficam só na memória desta página: nunca no armazenamento do navegador, no backup, nos relatórios nem no endereço.
+// A sessão (uma chave aleatória, que expira) fica na sessionStorage: some ao fechar a aba.
+st.equipe = null; st.xp = null; st.xpCols = [];
+const SESSAO_EQUIPE = "fundos.sessaoEquipe";
+async function apiEquipe(acao, dados = {}) {
+  const ctl = new AbortController(), t = setTimeout(() => ctl.abort(), 30000);
+  try {
+    const r = await fetch(EQUIPE_URL, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" }, body: JSON.stringify({ acao, ...dados }), signal: ctl.signal });
+    return await r.json();
+  } catch (e) {
+    return { ok: false, erro: e.name === "AbortError" ? "O servidor demorou para responder. Tente de novo." : "Sem conexão com o servidor da equipe." };
+  } finally { clearTimeout(t); }
+}
+function desenharEquipe() {
+  $("#equipeBox").hidden = !EQUIPE_URL;
+  const on = !!st.equipe;
+  $("#equipeEntrar").hidden = on; $("#equipeLogado").hidden = !on;
+  if (on) { $("#equipeNome").textContent = `👤 ${st.equipe.nome}`; $("#equipeInfo").textContent = st.xp ? `${st.xp.size} fundos XP` : "carregando dados…"; }
+  $("#dlgFiltrosXP").hidden = !st.xp;
+  if (!st.xp) { $("#dlgXP").checked = false; $("#dlgXPAberto").checked = false; }
+  if ($("#seletor").open) renderSeletor();
+}
+async function carregarDadosEquipe() {
+  const token = sessionStorage.getItem(SESSAO_EQUIPE); if (!token) return;
+  const r = await apiEquipe("dados", { token });
+  if (!r.ok) { sairEquipe(true); if (r.erro) avisoSel(`<span class="neg">${esc(r.erro)}</span>`); return; }
+  st.xpCols = r.colunas;
+  st.xp = new Map(Object.entries(r.fundos).map(([c, linhas]) => [c, linhas.map((l) => Object.fromEntries(r.colunas.map((k, i) => [k, l[i]])))]));
+  desenharEquipe();
+}
+async function sairEquipe(silencioso = false) {
+  const token = sessionStorage.getItem(SESSAO_EQUIPE);
+  sessionStorage.removeItem(SESSAO_EQUIPE); st.equipe = null; st.xp = null; st.xpCols = [];
+  desenharEquipe();
+  if (token && !silencioso) apiEquipe("sair", { token });
+}
+// oferta da XP "aberta" = alguma oferta do CNPJ sem captação bloqueada
+const xpAberto = (cnpj) => !!st.xp?.get(cnpj)?.some((o) => o.FUNDINGBLOCKED !== true && String(o.FUNDINGBLOCKED).toLowerCase() !== "true");
+function abrirLogin() {
+  $("#loginPasso1").hidden = false; $("#loginPasso2").hidden = true; $("#loginErro").textContent = "";
+  $("#dlgLogin").showModal(); $("#loginEmail").focus();
+}
+async function enviarCodigo() {
+  const email = $("#loginEmail").value.trim(), b = $("#loginEnviar");
+  $("#loginErro").textContent = "";
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { $("#loginErro").textContent = "Digite um e-mail válido."; $("#loginEmail").focus(); return; }
+  b.disabled = true; b.textContent = "Enviando…";
+  const r = await apiEquipe("pedirCodigo", { email });
+  b.disabled = false; b.textContent = "Enviar código";
+  if (!r.ok) { $("#loginErro").textContent = r.erro; return; }
+  $("#loginMsg").textContent = r.msg; $("#loginPasso1").hidden = true; $("#loginPasso2").hidden = false; $("#loginCodigo").value = ""; $("#loginCodigo").focus();
+}
+async function entrarEquipe() {
+  const codigo = $("#loginCodigo").value.replace(/\D/g, ""), b = $("#loginEntrar");
+  $("#loginErro").textContent = "";
+  if (codigo.length !== 6) { $("#loginErro").textContent = "Digite o código de 6 números."; $("#loginCodigo").focus(); return; }
+  b.disabled = true; b.textContent = "Entrando…";
+  const r = await apiEquipe("entrar", { email: $("#loginEmail").value.trim(), codigo });
+  b.disabled = false; b.textContent = "Entrar";
+  if (!r.ok) { $("#loginErro").textContent = r.erro; $("#loginCodigo").select(); return; }
+  sessionStorage.setItem(SESSAO_EQUIPE, r.token);
+  st.equipe = { nome: r.nome, email: r.email, expira: r.expira };
+  $("#dlgLogin").close(); desenharEquipe();
+  await carregarDadosEquipe();
+  if (st.xp) avisoSel(`<span class="ok">Bem-vindo, ${esc(r.nome)}! Dados da equipe carregados: ${st.xp.size} fundos XP.</span>`);
+}
+async function iniciarEquipe() {
+  desenharEquipe();
+  const token = EQUIPE_URL && sessionStorage.getItem(SESSAO_EQUIPE); if (!token) return;
+  const s = await apiEquipe("sessao", { token });
+  if (!s.ok) { sairEquipe(true); return; }
+  st.equipe = { nome: s.nome, email: s.email, expira: s.expira }; desenharEquipe();
+  await carregarDadosEquipe();
+}
+document.addEventListener("click", (e) => {
+  const id = e.target.id;
+  if (id === "equipeEntrar") abrirLogin();
+  else if (id === "equipeSair") sairEquipe();
+  else if (id === "loginEnviar") enviarCodigo();
+  else if (id === "loginEntrar") entrarEquipe();
+  else if (id === "loginVoltar") { $("#loginPasso1").hidden = false; $("#loginPasso2").hidden = true; $("#loginErro").textContent = ""; $("#loginEmail").focus(); }
+});
+document.addEventListener("keydown", (e) => {
+  if (e.key !== "Enter") return;
+  if (e.target.id === "loginEmail") { e.preventDefault(); enviarCodigo(); }
+  else if (e.target.id === "loginCodigo") { e.preventDefault(); entrarEquipe(); }
+});
+document.addEventListener("change", (e) => { if (e.target.id === "dlgXP" || e.target.id === "dlgXPAberto") renderSeletor(); });
 // ============================== rankings ==============================
 // Um ranking = nome + tipo de cálculo (pesos) + lista de fundos. Ficam guardados neste navegador, como os grupos.
 const lerRankings = () => pref("rankings", {});
