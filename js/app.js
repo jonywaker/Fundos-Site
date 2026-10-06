@@ -202,6 +202,10 @@ function celFundo(f, c) {
   if (c.tipo === "data") return `<td>${v ? fmtData(v) : ""}</td>`;
   if (c.tipo === "pct") return `<td style="${corSinal(v)}">${brPct(v)}</td>`;
   if (c.tipo === "mi") return `<td>${v != null ? br(v / 1e6, 1) : ""}</td>`;
+  if (c.k === "NOME" && f._soXP) {
+    const t = "Só na XP: sem cotas na base da CVM usada pelo site (ex.: FIDC, FII, FIP, FIAGRO ou fundo novo). Aparece com os dados da XP, mas não dá para calcular métricas.";
+    return `<td class="t" title="${esc((v || "") + " · " + t)}"><span class="so-xp" title="${esc(t)}">⚠</span>${esc(v || "")}</td>`;
+  }
   if (c.k === "NOME") { const sp = situacaoCadastro(f);
     return `<td class="t" title="${esc((v || "") + (sp ? ` · ${sp.txt}` : ""))}">${sp ? `<span class="parado" title="${esc(sp.txt)}">⊘</span>` : ""}${esc(v || "")}</td>`; }
   return `<td class="t" title="${esc(v || "")}">${esc(v || "")}</td>`;
@@ -258,9 +262,10 @@ function filtrarLista() {
   const soXP = st.xp && $("#dlgXP").checked, soAberto = st.xp && $("#dlgXPAberto").checked;
   return st.lista.filter((x) => {
     if (soSel) return marcados.has(x.CNPJ);
+    if (x._soXP && !soXP) return false;                       // fundos sem dados na CVM só aparecem com o filtro da XP
     if (soXP && !st.xp.has(x.CNPJ)) return false;
     if (soAberto && !xpAberto(x.CNPJ)) return false;
-    if (ativos && !(x._dia && x._dia >= limiteDia)) return false;
+    if (ativos && !x._soXP && !(x._dia && x._dia >= limiteDia)) return false;
     if (q.length >= 3 && !(x._busca.includes(q) || (dig.length >= 3 && x.CNPJ.includes(dig)))) return false;
     for (const [k, t, d] of txt) { const v = k === "CNPJ" ? x.CNPJ : String(x[k] || "").toUpperCase(); if (!(v.includes(t) || (k === "CNPJ" && d && v.includes(d)))) return false; }
     for (const [k, v] of lst) if (x[k] !== v) return false;
@@ -279,7 +284,8 @@ function renderSeletor() {
       : `Mostrando ${LIMITE_LISTA} de <b>${br(todos.length, 0)}</b> fundos da XP (${br(todos.length - LIMITE_LISTA, 0)} não aparecem).`) +
     ` <button class="link" type="button" data-xp-todos="1" ${dlg.xpTodos ? "disabled" : ""}>Mostrar todos</button> · <button class="link" type="button" data-xp-todos="0" ${dlg.xpTodos ? "" : "disabled"}>Voltar a ${LIMITE_LISTA}</button>`;
   dlg.visiveis = linhas.map((f) => f.CNPJ);
-  $("#dlgInfo").innerHTML = `<b>${br(todos.length, 0)}</b> fundo(s)` + (todos.length > linhas.length ? ` · mostrando os ${br(linhas.length, 0)} primeiros (use os filtros ou a ordenação)` : "") +
+  const nSoXP = todos.filter((f) => f._soXP).length;
+  $("#dlgInfo").innerHTML = `<b>${br(todos.length, 0)}</b> fundo(s)` + (nSoXP ? ` · <span class="so-xp">⚠</span> ${br(nSoXP, 0)} só na XP (sem dados na CVM: não dá para calcular)` : "") + (todos.length > linhas.length ? ` · mostrando os ${br(linhas.length, 0)} primeiros (use os filtros ou a ordenação)` : "") +
     ` · clique no título da coluna para ordenar`;
   // preserva o foco num campo de filtro enquanto se digita
   const foco = document.activeElement?.dataset?.filtro, pos = document.activeElement?.selectionStart;
@@ -571,6 +577,9 @@ async function calcular() {
     $("#progTxt").textContent = `pronto em ${br((performance.now() - t0) / 1000, 1)} s`;
     fecharCarga();
     atualizarEspaco();
+    const recValor = D.recusadasPorValor ? [...D.recusadasPorValor()] : [];
+    if (recValor.length) avisoSel(`<span class="neg">${recValor.length} cota(s) da XP ignorada(s) por valor muito diferente da última cota da CVM: ` +
+      `${recValor.slice(0, 3).map(([c]) => esc(curto(st.porCnpj.get(c)?.NOME || cnpjFmt(c), 40))).join("; ")}${recValor.length > 3 ? "…" : ""}. O cálculo usou a cota da CVM.</span>`);
   } catch (e) {
     $("#progTxt").textContent = "erro: " + e.message;
     fecharCarga(e.message);
@@ -745,7 +754,7 @@ function tabelaMetricas(dados) {
     return c;
   });
   // com login: grupo de colunas da XP logo depois do cadastro
-  if (st.xp) { const fimCad = colunas.map((c) => c.g).lastIndexOf("Cadastro") + 1 || 2; colunas = [...colunas.slice(0, fimCad), ...colunasXP(), ...colunas.slice(fimCad)]; }
+  if (st.xp) { const fimCad = colunas.map((c) => c.g).lastIndexOf("Cadastro") + 1 || 2; colunas = [colunaHub(), ...colunas.slice(0, fimCad), ...colunasXP(), ...colunas.slice(fimCad)]; }
   const grupos = colunas.map((c) => c.g);
   // selos de maior e menor retorno no período (com 3 fundos ou mais)
   const comRet = dados.linhas.filter((l) => typeof l["% Acumulado"] === "number");
@@ -771,7 +780,7 @@ function tabelaMetricas(dados) {
   const nota = notaGU + (parados.length ? `<p class="nota-parado"><span class="parado">⊘</span> ${parados.length} fundo(s) sem cotas até o fim do período
     (cancelado, em liquidação ou sem envio recente). O cálculo usa o mesmo início dos demais e vai até a última cota de cada um.
     Passe o mouse sobre o símbolo para ver a data.</p>` : "");
-  return tabelaHTML({ colunas, linhas, fixas: 2, grupos, destacar: dest, classes, altura: 520, ordenavel: "met" }) + nota;
+  return tabelaHTML({ colunas, linhas, fixas: st.xp ? 3 : 2, ...(st.xp ? { larguras: [74, 260, 150] } : {}), grupos, destacar: dest, classes, altura: 520, ordenavel: "met" }) + nota;
 }
 
 // ---------- tabela-legenda: cor, posição, fundo e valores, do maior para o menor; 5 maiores + 5 menores (+ destacados)
@@ -2659,9 +2668,12 @@ document.addEventListener("click", (e) => { if (e.target.id === "limparTela") li
 
 // ---------- área da equipe: login pelo Apps Script e dados confidenciais (planilha da XP)
 // Os dados confidenciais ficam só na memória desta página: nunca no armazenamento do navegador, no backup, nos relatórios nem no endereço.
-// A sessão (uma chave aleatória, que expira) fica na sessionStorage: some ao fechar a aba.
+// A sessão (uma chave aleatória, que vale 30 dias) fica salva no navegador: continua ao recarregar e ao fechar e reabrir.
+// "Sair" apaga a sessão aqui e no servidor; tirar a pessoa da lista da equipe corta o acesso na hora.
 st.equipe = null; st.xp = null; st.xpCols = [];
 const SESSAO_EQUIPE = "fundos.sessaoEquipe";
+const lerSessaoEquipe = () => { try { return localStorage.getItem(SESSAO_EQUIPE) || sessionStorage.getItem(SESSAO_EQUIPE); } catch { return null; } };
+const gravarSessaoEquipe = (t) => { try { t ? localStorage.setItem(SESSAO_EQUIPE, t) : (localStorage.removeItem(SESSAO_EQUIPE), sessionStorage.removeItem(SESSAO_EQUIPE)); } catch { /* sem armazenamento */ } };
 async function apiEquipe(acao, dados = {}) {
   const ctl = new AbortController(), t = setTimeout(() => ctl.abort(), 30000);
   try {
@@ -2675,22 +2687,24 @@ function desenharEquipe() {
   $("#equipeBox").hidden = !EQUIPE_URL;
   const on = !!st.equipe;
   $("#equipeEntrar").hidden = on; $("#equipeLogado").hidden = !on;
-  if (on) { $("#equipeNome").textContent = `👤 ${st.equipe.nome}`; $("#equipeInfo").textContent = st.xp ? `${st.xp.size} fundos XP` : "carregando dados…"; }
+  if (on) { $("#equipeNome").textContent = `👤 ${st.equipe.nome}`; $("#equipeInfo").textContent = st.xp ? `${st.xp.size} fundos XP` + (st.xpOfertas > st.xp.size ? ` (${st.xpOfertas} ofertas)` : "") : "carregando dados…"; }
   $("#dlgFiltrosXP").hidden = !st.xp;
   if (!st.xp) { $("#dlgXP").checked = false; $("#dlgXPAberto").checked = false; }
   if ($("#seletor").open) renderSeletor();
 }
 async function carregarDadosEquipe() {
-  const token = sessionStorage.getItem(SESSAO_EQUIPE); if (!token) return;
+  const token = lerSessaoEquipe(); if (!token) return;
   const r = await apiEquipe("dados", { token });
   if (!r.ok) { sairEquipe(true); if (r.erro) avisoSel(`<span class="neg">${esc(r.erro)}</span>`); return; }
   st.xpCols = r.colunas;
   st.xp = new Map(Object.entries(r.fundos).map(([c, linhas]) => [c, linhas.map((l) => Object.fromEntries(r.colunas.map((k, i) => [k, l[i]])))]));
+  st.xpOfertas = r.linhas;
+  incluirFundosSoXP();
   desenharEquipe(); aplicarDadosEquipe();
 }
 async function sairEquipe(silencioso = false) {
-  const token = sessionStorage.getItem(SESSAO_EQUIPE);
-  sessionStorage.removeItem(SESSAO_EQUIPE); st.equipe = null; st.xp = null; st.xpCols = [];
+  const token = lerSessaoEquipe();
+  gravarSessaoEquipe(null); removerFundosSoXP(); st.equipe = null; st.xp = null; st.xpCols = [];
   desenharEquipe(); aplicarDadosEquipe();
   if (token && !silencioso) apiEquipe("sair", { token });
 }
@@ -2718,15 +2732,15 @@ async function entrarEquipe() {
   const r = await apiEquipe("entrar", { email: $("#loginEmail").value.trim(), codigo });
   b.disabled = false; b.textContent = "Entrar";
   if (!r.ok) { $("#loginErro").textContent = r.erro; $("#loginCodigo").select(); return; }
-  sessionStorage.setItem(SESSAO_EQUIPE, r.token);
+  gravarSessaoEquipe(r.token);
   st.equipe = { nome: r.nome, email: r.email, expira: r.expira };
   $("#dlgLogin").close(); desenharEquipe();
   await carregarDadosEquipe();
-  if (st.xp) avisoSel(`<span class="ok">Bem-vindo, ${esc(r.nome)}! Dados da equipe carregados: ${st.xp.size} fundos XP.</span>`);
+  if (st.xp) avisoSel(`<span class="ok">Bem-vindo, ${esc(r.nome)}! Dados da equipe carregados: ${st.xp.size} fundos XP${st.xpOfertas > st.xp.size ? ` (${st.xpOfertas} ofertas: alguns fundos têm mais de uma)` : ""}.</span>` + avisoCotasIgnoradas());
 }
 async function iniciarEquipe() {
   desenharEquipe();
-  const token = EQUIPE_URL && sessionStorage.getItem(SESSAO_EQUIPE); if (!token) return;
+  const token = EQUIPE_URL && lerSessaoEquipe(); if (!token) return;
   const s = await apiEquipe("sessao", { token });
   if (!s.ok) { sairEquipe(true); return; }
   st.equipe = { nome: s.nome, email: s.email, expira: s.expira }; desenharEquipe();
@@ -2779,7 +2793,8 @@ function camposXP(cnpj) {
     "Cotização": o.REDEMPTIONQUOTATION, "Liquidação": o.REDEMPTIONSETTLEMENT, "Classificação XP": o.CLASSIFICATIONXP,
     "Taxa adm.": numXP(o.ADMINISTRATIONRATE), "Taxa perf.": numXP(o.PERFORMANCERATE), "ROA": numXP(o.RETURNONASSETS),
     "Risco": numXP(o.RISKGENIUS), _riscoCor: o.RISKGENIUSCOLOR, _riscoDesc: o.RISKGENIUSDESCRIPTION,
-    "Aplicação mín.": minimos.length ? Math.min(...minimos) : null, _isento: verdadeiro(o.ISTAXFREEONINCOMEPF) };
+    "Aplicação mín.": minimos.length ? Math.min(...minimos) : null, _isento: verdadeiro(o.ISTAXFREEONINCOMEPF),
+    _hubId: /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(o.ID || "")) ? String(o.ID) : null };
 }
 const pctXP = (v, d = 2) => (v == null ? "" : `${br(v, d)}%`);          // na planilha 0,1 já é 0,1%
 const badgeInv = (v) => (v ? `<span class="xp-inv xp-${v.toLowerCase()}" title="${{ IG: "Investidor em geral", IQ: "Investidor qualificado", IP: "Investidor profissional" }[v]}">${v}</span>` : "");
@@ -2813,12 +2828,33 @@ function aplicarGrossUp(l) {
 }
 // cotas da XP mais recentes que as da CVM entram no cálculo (aplicadas ao baixar os fundos)
 function cotasXP() {
-  const m = new Map();
+  const m = new Map(), hoje = diaDe(new Date()), base = st.meta ? diaDe(new Date(st.meta.ultimo_dado)) : hoje, limite = Math.min(hoje, base + 10);
+  st.xpCotasIgnoradas = [];
   for (const [c, ofs] of st.xp || []) for (const o of ofs) {
     const d = diaXP(o.QUOTADATE), q = numXP(o.QUOTAVALUE);
-    if (d && q > 0 && (!m.has(c) || d > m.get(c).d)) m.set(c, { d, q, origem: "XP" });
+    if (!d || !(q > 0)) continue;
+    if (d > limite) { st.xpCotasIgnoradas.push({ c, nome: o.NAME, d, motivo: d > hoje ? "data no futuro" : "data muito depois da base da CVM" }); continue; }
+    if (!m.has(c) || d > m.get(c).d) m.set(c, { d, q, origem: "XP" });
   }
   return m;
+}
+function avisoCotasIgnoradas() {
+  const L = st.xpCotasIgnoradas || [];
+  return L.length ? `<br><span class="neg">${L.length} cota(s) da XP ignorada(s) por data impossível: ${L.slice(0, 3).map((x) => `${esc(x.nome || cnpjFmt(x.c))} (${fmtData(x.d)}, ${x.motivo})`).join("; ")}${L.length > 3 ? "…" : ""}.</span>` : "";
+}
+// fundos que estão na XP mas não na base da CVM do site (ex.: FIDC, FII, FIP, FIAGRO ou fundo novo): entram na lista com aviso
+function incluirFundosSoXP() {
+  for (const [c] of st.xp || []) {
+    if (st.porCnpj.has(c)) continue;
+    const o = ofertaXP(c), nome = String(o?.NAME || cnpjFmt(c));
+    const f = { CNPJ: c, NOME: nome, CLASSIFICACAO_CVM: o?.CLASSIFICATIONCVM || null, CLASSIFICACAO_ANBIMA: null, GESTOR: null, _busca: nome.toUpperCase(), _dia: null, _soXP: true };
+    st.lista.push(f); st.porCnpj.set(c, f);
+  }
+}
+function removerFundosSoXP() {
+  const so = new Set(st.lista.filter((f) => f._soXP).map((f) => f.CNPJ)); if (!so.size) return;
+  st.lista = st.lista.filter((f) => !f._soXP); for (const c of so) st.porCnpj.delete(c);
+  st.sel = st.sel.filter((c) => !so.has(c)); atualizarSidebar();
 }
 async function baixarPlanilhaXP() {
   if (!st.xp) return;
@@ -2845,8 +2881,13 @@ function aplicarDadosEquipe() {
   $("#guBox").hidden = !st.xp; if (!st.xp) { st.grossUp = false; $("#grossUp").checked = false; }
   if (st.ctx) renderMetricas();
   if (st.rk?.lista.length) renderRkTabela();
-  if (st.res && st.xp) avisoSel(`<span class="ok">Dados da equipe carregados.</span> Clique em <b>Calcular</b> para usar as cotas da XP mais recentes que as da CVM.`);
+  if (st.res && st.xp) avisoSel(`<span class="ok">Dados da equipe carregados.</span> Clique em <b>Calcular</b> para usar as cotas da XP mais recentes que as da CVM.` + avisoCotasIgnoradas());
 }
+
+// coluna "Link Hub": abre a página do fundo no Hub da XP numa nova aba
+const URL_HUB = (id) => `https://hub.xpi.com.br/new/fundos-de-investimento#/${id}/detalhes`;
+const colunaHub = () => ({ chave: "_hubId", nome: "Link Hub", tipo: "txt", ord: false, g: "XP",
+  html: (v, l) => (v ? `<a class="hub-link" href="${URL_HUB(v)}" target="_blank" rel="noopener noreferrer" title="Abrir no Hub XP (nova aba)" aria-label="Abrir ${esc(l.Fundo || "")} no Hub XP">↗ Hub</a>` : "") });
 // ============================== rankings ==============================
 // Um ranking = nome + tipo de cálculo (pesos) + lista de fundos. Ficam guardados neste navegador, como os grupos.
 const lerRankings = () => pref("rankings", {});
