@@ -714,3 +714,8 @@ sup.gu { font-size: 9px; font-weight: 800; color: var(--link); margin-left: 2px;
 .filtros-xp .xp-aviso { flex-basis: 100%; font-size: 12px; color: var(--sub); }
 .filtros-xp .xp-aviso[hidden] { display: none; }
 .xp-aviso .link:disabled { color: var(--sub); text-decoration: none; cursor: default; opacity: .7; }
+
+.so-xp { color: #b7791f; font-weight: 800; margin-right: 4px; cursor: help; }
+.hub-link { display: inline-block; padding: 2px 9px; border-radius: 7px; border: 1.5px solid var(--azul); color: var(--azul); font-weight: 800; font-size: 12px; text-decoration: none; white-space: nowrap; }
+.hub-link:hover { background: var(--azul); color: #fff; }
+@media (prefers-color-scheme: dark) { .hub-link { color: #9cc2ff; border-color: #9cc2ff; } .hub-link:hover { background: #9cc2ff; color: #0c1030; } }
