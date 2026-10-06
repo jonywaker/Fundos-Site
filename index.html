@@ -105,6 +105,7 @@
       <div id="equipeBox" class="equipe-box" hidden>
         <button id="equipeEntrar" class="equipe-btn" type="button" title="Entrar com o e-mail da equipe para ver as informações confidenciais">🔒 Área da equipe</button>
         <span id="equipeLogado" class="equipe-logado" hidden><span id="equipeNome"></span><small id="equipeInfo"></small>
+          <button id="equipeBaixar" class="link-claro" type="button" title="Baixar os dados da XP em Excel">⬇ Planilha XP</button>
           <button id="equipeSair" class="link-claro" type="button">Sair</button></span>
       </div>
       <button id="abrirFontes" class="link-claro" type="button">Fontes e metodologia</button>
@@ -136,7 +137,8 @@
             <h2 id="tituloMet">Métricas</h2>
             <div class="opcoes"><label class="ordem">Agrupar por <select id="agrupar">
               <option value="">Sem agrupamento</option><option>Classificação CVM</option><option>Classificação ANBIMA</option>
-              <option>Objetivo de retorno</option><option>Gestor</option></select></label></div>
+              <option>Objetivo de retorno</option><option>Gestor</option></select></label>
+              <label id="guBox" class="tog" hidden title="Só para fundos isentos de IR para pessoa física (informação da XP)"><input id="grossUp" type="checkbox"> Gross up dos isentos (IR 15%)</label></div>
             <button class="btn-min" type="button" data-min="met" title="Minimizar esta seção" aria-label="Minimizar esta seção" aria-expanded="true">−</button>
           </div>
           <p class="nota dica">Clique no título de uma coluna para ordenar; clique de novo para inverter e uma terceira vez para voltar à ordem da seleção.</p>
