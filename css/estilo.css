@@ -752,3 +752,6 @@ sup.gu { font-size: 9px; font-weight: 800; color: var(--link); margin-left: 2px;
 .env-tab tr.linha-f { cursor: pointer; }
 .env-tab thead th { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 12px; }
 .env-tab td { white-space: nowrap; }
+
+.env-tab td.env-fora { text-align: center; color: var(--sub); font-style: italic; font-size: 12px; }
+.minigraf .mini-nomes { font-size: 11px; line-height: 1.4; color: var(--sub); margin: 2px 0 6px; white-space: normal; }
