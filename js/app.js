@@ -269,9 +269,17 @@ function filtrarLista() {
   });
 }
 function renderSeletor() {
-  const todos = ordenarFundos(filtrarLista(), "sel"), linhas = todos.slice(0, LIMITE_LISTA), marcados = new Set(dlg.sel);
+  const soXP = !!st.xp && $("#dlgXP").checked;
+  const todos = ordenarFundos(filtrarLista(), "sel"), limite = soXP && dlg.xpTodos ? Infinity : LIMITE_LISTA;
+  const linhas = todos.slice(0, limite), marcados = new Set(dlg.sel);
+  // fundos da XP: aviso de quantos ficam de fora do limite de 300, com botões para mostrar todos ou voltar ao padrão
+  const av = $("#dlgXPAviso");
+  av.hidden = !soXP || todos.length <= LIMITE_LISTA;
+  if (!av.hidden) av.innerHTML = (dlg.xpTodos ? `Mostrando todos os <b>${br(todos.length, 0)}</b> fundos da XP.`
+      : `Mostrando ${LIMITE_LISTA} de <b>${br(todos.length, 0)}</b> fundos da XP (${br(todos.length - LIMITE_LISTA, 0)} não aparecem).`) +
+    ` <button class="link" type="button" data-xp-todos="1" ${dlg.xpTodos ? "disabled" : ""}>Mostrar todos</button> · <button class="link" type="button" data-xp-todos="0" ${dlg.xpTodos ? "" : "disabled"}>Voltar a ${LIMITE_LISTA}</button>`;
   dlg.visiveis = linhas.map((f) => f.CNPJ);
-  $("#dlgInfo").innerHTML = `<b>${br(todos.length, 0)}</b> fundo(s)` + (todos.length > LIMITE_LISTA ? ` · mostrando os ${LIMITE_LISTA} primeiros (use os filtros ou a ordenação)` : "") +
+  $("#dlgInfo").innerHTML = `<b>${br(todos.length, 0)}</b> fundo(s)` + (todos.length > linhas.length ? ` · mostrando os ${br(linhas.length, 0)} primeiros (use os filtros ou a ordenação)` : "") +
     ` · clique no título da coluna para ordenar`;
   // preserva o foco num campo de filtro enquanto se digita
   const foco = document.activeElement?.dataset?.filtro, pos = document.activeElement?.selectionStart;
@@ -280,6 +288,8 @@ function renderSeletor() {
     COLS_FUNDO.map((c) => celFundo(f, c)).join("") + "</tr>").join("")}</tbody></table>` + (linhas.length ? "" : `<p class="nota" style="padding:12px">Nenhum fundo com esses filtros.</p>`);
   if (foco) { const el = $(`#dlgTabela [data-filtro="${foco}"]`); if (el) { el.focus(); try { el.setSelectionRange(pos, pos); } catch { /* number */ } } }
   $("#dlgMarcarVis").textContent = `Selecionar todos os mostrados (${linhas.length})`;
+  const selVis = linhas.filter((f) => marcados.has(f.CNPJ)).length;
+  $("#dlgTirarVis").textContent = `Tirar os mostrados (${selVis})`; $("#dlgTirarVis").disabled = !selVis;
 }
 function renderSelDialogo() {
   const lista = ordenarFundos(dlg.sel.map((c) => st.porCnpj.get(c)).filter(Boolean), "selB");
@@ -411,6 +421,9 @@ document.addEventListener("click", async (e) => {
   if (lf && !t.closest("input, select, button")) return alternarDlg(lf.dataset.c);
   if (t.dataset?.dlgrm) { dlg.sel = dlg.sel.filter((c) => c !== t.dataset.dlgrm); renderSeletor(); renderSelDialogo(); return; }
   if (t.id === "dlgMarcarVis") { dlg.sel = [...new Set([...dlg.sel, ...(dlg.visiveis || [])])]; renderSeletor(); renderSelDialogo(); return; }
+  if (t.id === "dlgTirarVis") { const vis = new Set(dlg.visiveis || []); dlg.sel = dlg.sel.filter((c) => !vis.has(c)); renderSeletor(); renderSelDialogo(); return; }
+  const xt = t.closest?.("[data-xp-todos]");
+  if (xt) { dlg.xpTodos = xt.dataset.xpTodos === "1"; renderSeletor(); return; }
   if (t.id === "dlgLimparSel") { if (dlg.sel.length && !(await perguntar("Limpar a seleção?", `Tirar os ${dlg.sel.length} fundos marcados?`, [{ rot: "Cancelar", v: false }, { rot: "Limpar", v: true, classe: "prim" }]))) return;
     dlg.sel = []; renderSeletor(); renderSelDialogo(); return; }
   if (t.id === "dlgLimparFiltros") { dlg.f = {}; $("#dlgBusca").value = ""; $("#dlgSoSel").checked = false; delete st.ord.sel; renderSeletor(); return; }
@@ -680,7 +693,7 @@ function tabelaHTML({ colunas, linhas, fixas = 0, larguras = [260, 150], grupos 
   } else h += "<tr>";
   colunas.forEach((c, j) => {
     if (!ordenavel || c.ord === false) { h += `<th${fx(j)}>${esc(c.nome)}</th>`; return; }
-    const at = o && o.col === c.chave, texto = c.tipo === "txt" && !c.valor;
+    const at = o && o.col === c.chave, texto = (c.tipo === "txt" && !c.valor) || c.crescente;   // texto e prazos: 1º clique do menor para o maior
     h += `<th${fx(j)}${at ? ` aria-sort="${o.dir > 0 ? "ascending" : "descending"}"` : ""}><button class="ord" data-ord="${esc(ordenavel)}" data-col="${esc(c.chave)}"
       data-txt="${texto ? 1 : 0}" title="Ordenar">${esc(c.nome)}${at ? (o.dir > 0 ? " ▲" : " ▼") : ""}</button></th>`;
   });
@@ -2682,7 +2695,7 @@ async function sairEquipe(silencioso = false) {
   if (token && !silencioso) apiEquipe("sair", { token });
 }
 // oferta da XP "aberta" = alguma oferta do CNPJ sem captação bloqueada
-const xpAberto = (cnpj) => !!st.xp?.get(cnpj)?.some((o) => o.FUNDINGBLOCKED !== true && String(o.FUNDINGBLOCKED).toLowerCase() !== "true");
+const xpAberto = (cnpj) => !!st.xp?.get(cnpj)?.some((o) => !verdadeiro(o.FUNDINGBLOCKED));
 function abrirLogin() {
   $("#loginPasso1").hidden = false; $("#loginPasso2").hidden = true; $("#loginErro").textContent = "";
   $("#dlgLogin").showModal(); $("#loginEmail").focus();
@@ -2737,7 +2750,13 @@ document.addEventListener("change", (e) => { if (e.target.id === "dlgXP" || e.ta
 // ---------- dados da XP no site (só com login): colunas, gross up, cotas mais recentes e planilha
 const IR_GROSS_UP = 0.15;
 st.grossUp = false;
-const verdadeiro = (v) => v === true || String(v).toLowerCase() === "true";
+// sim/não da planilha: aceita true/false, VERDADEIRO/FALSO (Sheets em português), SIM/NÃO e 1/0
+const verdadeiro = (v) => v === true || v === 1 || /^(true|verdadeiro|sim|s|yes|1)$/i.test(String(v ?? "").trim());
+// prazo em dias para ordenar: "D+30 (Dias Corridos)" -> 30; com o mesmo número, corridos antes de úteis; textos especiais no fim
+function prazoDias(v) {
+  const m = String(v ?? "").match(/D\s*\+\s*(\d+)/i); if (!m) return null;
+  return Number(m[1]) + (/[uú]teis/i.test(String(v)) ? 0.5 : 0);
+}
 function diaXP(v) {                                   // "2026-09-18", "2026-09-18T00:00:00" ou "18/09/2026"
   const s = String(v ?? "");
   let m = s.match(/^(\d{4})-(\d{2})-(\d{2})/); if (m) return diaYMD(+m[1], +m[2], +m[3]);
@@ -2770,8 +2789,8 @@ function colunasXP(g = "XP · confidencial", semInternas = false) {
     { chave: "XP Nome", nome: "Nome comercial", tipo: "txt", g, html: (v, l) => (l._naXP ? textoCurto(v, 34) + (l._xpOfertas > 1 ? ` <small class="nota" title="${l._xpOfertas} ofertas deste CNPJ na XP">(${l._xpOfertas})</small>` : "") : `<span class="nota">não está na XP</span>`) },
     { chave: "Investidor", nome: "Investidor", tipo: "txt", g, html: badgeInv },
     { chave: "Captação", nome: "Captação", tipo: "txt", g, html: (v) => (v ? `<span class="xp-cap ${v === "Aberto" ? "ab" : "fe"}">${v}</span>` : "") },
-    { chave: "Cotização", nome: "Cotização do resgate", tipo: "txt", g, html: (v) => textoCurto(v) },
-    { chave: "Liquidação", nome: "Liquidação do resgate", tipo: "txt", g, html: (v) => textoCurto(v) },
+    { chave: "Cotização", nome: "Cotização do resgate", tipo: "txt", g, html: (v, l) => textoCurto(l["Cotização"]), valor: (l) => prazoDias(l["Cotização"]), crescente: true },
+    { chave: "Liquidação", nome: "Liquidação do resgate", tipo: "txt", g, html: (v, l) => textoCurto(l["Liquidação"]), valor: (l) => prazoDias(l["Liquidação"]), crescente: true },
     { chave: "Classificação XP", nome: "Classificação XP", tipo: "txt", g, html: (v) => textoCurto(v, 30) },
     { chave: "Taxa adm.", nome: "Taxa de adm.", tipo: "num2", g, html: (v) => pctXP(v) },
     { chave: "Taxa perf.", nome: "Taxa de perf.", tipo: "num2", g, html: (v) => pctXP(v, 0) },
