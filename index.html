@@ -123,6 +123,7 @@
         </div>
         <input id="destaque" type="search" placeholder="Destacar fundo…" aria-label="Destacar fundo nos gráficos e tabelas" autocomplete="off" spellcheck="false">
         <button id="btnTravar" class="sec mini-btn" type="button"></button>
+        <button id="btnEnviarCart" class="sec mini-btn" type="button" title="Escolher fundos desta análise e mandar para a montagem de carteira">🧮 Enviar à montagem de carteira</button>
         <button id="btnRel" class="prim mini-btn" type="button" title="Escolher partes e baixar em PDF, PNG ou Excel">⬇ Baixar relatório</button>
       </div>
 
@@ -226,6 +227,7 @@
           <div class="opcoes"><span id="rkPills" class="pilulas mini"></span></div>
           <div class="opcoes"><label class="ordem">Comparar com <select class="rk-comp-sel" aria-label="Data de comparação das posições"></select></label></div>
           <button class="rk-alterna sec mini-btn" type="button" title="Vale para todas as tabelas e gráficos dos rankings"></button>
+          <button id="btnEnviarCartRk" class="sec mini-btn" type="button" title="Escolher fundos deste ranking e mandar para a montagem de carteira">🧮 Enviar à carteira</button>
           <button id="btnRelRk" class="prim mini-btn" type="button" title="Escolher partes e baixar em PDF, PNG ou Excel">⬇ Baixar relatório</button>
           <button class="btn-min" type="button" data-min="rank" title="Minimizar esta seção" aria-label="Minimizar esta seção" aria-expanded="true">−</button></div>
         <p id="rkInfo" class="nota"></p>
@@ -272,7 +274,8 @@
           <button id="cartTodos" class="sec" type="button">Adicionar todos os fundos calculados</button>
           <button id="cartLimpar" class="sec" type="button">Limpar carteira</button>
           <button id="cartPeriodo" class="sec" type="button" title="Usa as datas do período escolhido na barra do topo">Usar o período ativo</button>
-          <span id="cartSoma" class="nota"></span>
+          <p id="cartAviso" class="nota cart-aviso" aria-live="polite"></p>
+        <span id="cartSoma" class="nota"></span>
         </div>
         <div id="cartItens"></div>
         <div id="cartRes"></div>
@@ -510,6 +513,15 @@
     <div class="botoes"><button id="loginVoltar" class="sec" type="button">Trocar e-mail</button><button id="loginEntrar" class="prim" type="button">Entrar</button></div>
   </div>
   <p id="loginErro" class="neg" role="alert"></p>
+</dialog>
+
+<dialog id="dlgEnviar" class="dlg-medio" aria-labelledby="envTit">
+  <div class="dlg-cab"><h2 id="envTit">Enviar à montagem de carteira</h2><button class="sec" type="button" data-fechar-dlg>Fechar</button></div>
+  <p id="envInfo" class="nota"></p>
+  <p class="nota"><button id="envTodos" class="link" type="button">marcar todos</button> · <button id="envNenhum" class="link" type="button">desmarcar</button></p>
+  <div id="envLista" class="dlg-tab"></div>
+  <div class="dlg-pe"><label class="tog"><input id="envIr" type="checkbox" checked> Abrir a montagem de carteira depois de enviar</label>
+    <div class="botoes"><button class="sec" type="button" data-fechar-dlg>Cancelar</button><button id="envOk" class="prim" type="button">Enviar</button></div></div>
 </dialog>
 
 <dialog id="dlgPergunta" class="dlg-pergunta" aria-labelledby="pergTit">
