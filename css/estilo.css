@@ -755,3 +755,6 @@ sup.gu { font-size: 9px; font-weight: 800; color: var(--link); margin-left: 2px;
 
 .env-tab td.env-fora { text-align: center; color: var(--sub); font-style: italic; font-size: 12px; }
 .minigraf .mini-nomes { font-size: 11px; line-height: 1.4; color: var(--sub); margin: 2px 0 6px; white-space: normal; }
+
+.rel-conf { border-left: 3px solid #b7791f; padding: 6px 10px; background: color-mix(in srgb, #b7791f 8%, var(--card)); border-radius: 0 8px 8px 0; color: var(--txt); }
+.rel-conf[hidden] { display: none; }

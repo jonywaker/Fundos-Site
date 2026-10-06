@@ -754,7 +754,7 @@ const COLS_GU = new Set(["% Acumulado", "% Anualizado", "%CDI", "CDI +"]);
 function tabelaMetricas(dados) {
   let colunas = COLUNAS.map(([g, n, t]) => {
     const c = { chave: n, nome: n, tipo: t, cor: t === "pct", g };
-    if (n === "Fundo") { c.html = nomeFundoHTML; c.titulo = (l) => (l._nomeCVM ? `XP: ${l.Fundo}\nCVM: ${l._nomeCVM}` : l.Fundo); }
+    if (n === "Fundo") { c.html = nomeFundoHTML; c.titulo = () => ""; }      // o nome (XP e CVM) aparece no minigráfico ao passar o mouse
     if (n === "Data Final") c.html = (v, l) => {
       const xp = st.res?.fundos.get(l._c)?.cotaExtra, comXP = xp && xp.d === v;
       const txt = l._parado ? `<span class="parado-dt" title="${esc(l._parado.txt)}">${esc(FMT.data(v))}</span>` : esc(FMT.data(v));
@@ -1865,6 +1865,7 @@ function abrirRelatorio() {
     (g === "Dados" ? `<span class="nota">Uma linha por fundo (ou ativo) e por dia, "um embaixo do outro": bom para tabela dinâmica e filtros.</span>` : "") +
     SECOES_REL.filter((s) => s.g === g).map((s) => `<label class="tog" data-sec-rel="${s.k}"><input type="checkbox" data-rel="${s.k}"> ${esc(s.nome)} <small></small></label>`).join("") + `</div>`).join("");
   desenharFormatoRel();
+  $("#relConf").hidden = !st.xp;
   // destaque do relatório: na 1ª vez, começa com os fundos destacados na tela
   if (!rel.destIni && st.res) {
     rel.destIni = true;
@@ -2088,11 +2089,13 @@ function blocosRel(k) {
         linhas: res.sel.map((c) => { const f = res.fundos.get(c), cad = st.porCnpj.get(c) || {}, pa = f ? situacaoParado(f, cad, fim) : null;
           return [cad.NOME || c, cnpjFmt(c), cad.CLASSIFICACAO_CVM || "", cad.CLASSIFICACAO_ANBIMA || "", cad.GESTOR || "", f ? f.d[0] : null, f ? f.d[f.d.length - 1] : null,
             !f ? "sem cotas na base" : pa ? pa.txt : "ativo"]; }) });
+      B[B.length - 1] = { ...B[B.length - 1], ...anexarXPRel(B[B.length - 1], (k) => res.sel[k]) };
       return { titulo: "Fundos analisados", blocos: B };
     }
     case "met": {
       const cols = COLUNAS.map(([, n, t]) => ({ chave: n, nome: n, tipo: t }));
-      for (const p of Object.keys(res.periodos)) B.push({ tipo: "tabela", ...tabelaMetricasRel(`Métricas ${p}`, res.periodos[p].linhas, cols) });
+      for (const p of Object.keys(res.periodos)) { const L = res.periodos[p].linhas;
+        B.push({ tipo: "tabela", ...anexarXPRel(tabelaMetricasRel(`Métricas ${p}`, L, cols), (k) => L[k]._c) }); }
       return { titulo: "Métricas", blocos: B, nota: "Uma tabela por período calculado." };
     }
     case "acum": img("gAcum", "Rentabilidade acumulada"); B.push({ tipo: "tabela", ...tabelaFinal("gAcum", "Rentab. acumulada - final") }, { tipo: "tabela", ...tabelaDoGrafico("gAcum", "Rentab. acumulada - diária") });
@@ -2124,7 +2127,7 @@ function blocosRel(k) {
         { nome: "Volatilidade", tipo: "pct" }, { nome: "Sharpe", tipo: "num2" }, { nome: "Máx. queda", tipo: "pct" }, { nome: "Contribuição", tipo: "pct" }], linhas: lin });
       return { titulo: "Montagem de carteira · resumo", blocos: B };
     }
-    case "cartMet": B.push({ tipo: "tabela", ...tabelaMetricasRel("Carteira - métricas", R.metricas.linhas.map((l) => ({ ...l, Fundo: String(l.Fundo) })), R.metricas.colunas) });
+    case "cartMet": B.push({ tipo: "tabela", ...anexarXPRel(tabelaMetricasRel("Carteira - métricas", R.metricas.linhas.map((l) => ({ ...l, Fundo: String(l.Fundo) })), R.metricas.colunas), (k) => R.metricas.linhas[k]._c || null) });
       return { titulo: "Montagem de carteira · métricas", blocos: B };
     case "cartAcum": img("gCartEvol", "Carteira - rentabilidade"); B.push({ tipo: "tabela", ...tabelaFinal("gCartEvol", "Carteira - rentab. final") }, { tipo: "tabela", ...tabelaDoGrafico("gCartEvol", "Carteira - rentab. diária") });
       return { titulo: `Montagem de carteira · rentabilidade acumulada${st.cartUI.rel.on ? ` · relativa a ${st.cartUI.rel.alvo}` : ""}`, blocos: B };
@@ -2388,8 +2391,8 @@ async function baixarRelatorio() {
         ext = "zip";
       } else blob = await gerarExcel(partes, prog, rel.xlsImg);
     }
-    else if (rel.fmt === "pdf") blob = await gerarPDF(partes.filter((p) => p.blocos.some((b) => !b.bruto)), prog);
-    else ({ blob, ext } = await gerarPNG(partes.filter((p) => p.blocos.some((b) => !b.bruto)), prog, rel.pngUm));
+    else if (rel.fmt === "pdf") blob = await gerarPDF(semColunasSoExcel(partes.filter((p) => p.blocos.some((b) => !b.bruto))), prog);
+    else ({ blob, ext } = await gerarPNG(semColunasSoExcel(partes.filter((p) => p.blocos.some((b) => !b.bruto))), prog, rel.pngUm));
     const a = document.createElement("a"), hoje = new Date().toISOString().slice(0, 10);
     a.href = URL.createObjectURL(blob); a.download = `relatorio_fundos_${hoje}.${ext}`; a.click();
     setTimeout(() => URL.revokeObjectURL(a.href), 4000);
@@ -2815,7 +2818,7 @@ function camposXP(cnpj) {
   const abertas = st.xp.get(cnpj).filter((x) => !verdadeiro(x.FUNDINGBLOCKED));
   const minimos = (abertas.length ? abertas : st.xp.get(cnpj)).map((x) => numXP(x.MINIMALINITIALINVESTMENT)).filter((x) => x != null);
   return { _naXP: true, _xpOfertas: n, "XP Nome": o.NAME, "Investidor": tipoInvestidor(o), "Captação": abertas.length ? "Aberto" : "Fechado",
-    "Cotização": o.REDEMPTIONQUOTATION, "Liquidação": o.REDEMPTIONSETTLEMENT, "Classificação XP": o.CLASSIFICATIONXP,
+    "Cotização": resumirPrazo(o.REDEMPTIONQUOTATION), "Liquidação": resumirPrazo(o.REDEMPTIONSETTLEMENT), "Classificação XP": o.CLASSIFICATIONXP,
     "Taxa adm.": numXP(o.ADMINISTRATIONRATE), "Taxa perf.": numXP(o.PERFORMANCERATE), "ROA": numXP(o.RETURNONASSETS),
     "Risco": numXP(o.RISKGENIUS), _riscoCor: o.RISKGENIUSCOLOR, _riscoDesc: o.RISKGENIUSDESCRIPTION,
     "Aplicação mín.": minimos.length ? Math.min(...minimos) : null, _isento: verdadeiro(o.ISTAXFREEONINCOMEPF), "Isento": verdadeiro(o.ISTAXFREEONINCOMEPF) ? "Sim" : "",
@@ -2827,6 +2830,7 @@ const faixaRisco = (d) => { const t = String(d || "").toLowerCase(); return t.st
 const SVG_CADEADO = { ab: '<path d="M7 11V7a5 5 0 0 1 9.6-2"/>', fe: '<path d="M7 11V7a5 5 0 0 1 10 0v4"/>' };
 const cadeado = (v) => { if (!v) return ""; const k = v === "Aberto" ? "ab" : "fe", txt = v === "Aberto" ? "Aberto para aplicação" : "Fechado para aplicação";
   return `<span class="xp-cad ${k}" title="${txt}" role="img" aria-label="${txt}"><svg viewBox="0 0 24 24" width="17" height="17" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="11" width="16" height="10" rx="2" fill="currentColor" stroke="none"/>${SVG_CADEADO[k]}</svg></span>`; };
+const resumirPrazo = (t) => (t == null ? t : String(t).replace(/\(\s*dias?\s+[uú]teis\s*\)/gi, "(úteis)").replace(/\(\s*dias?\s+corridos\s*\)/gi, "(corridos)"));
 const pctXP = (v, d = 2) => (v == null ? "" : `${br(v, d)}%`);          // na planilha 0,1 já é 0,1%
 const badgeInv = (v) => (v ? `<span class="xp-inv xp-${v.toLowerCase()}" title="${{ IG: "Investidor em geral", IQ: "Investidor qualificado", IP: "Investidor profissional" }[v]}">${v}</span>` : "");
 const textoCurto = (v, n = 26) => (v == null ? "" : String(v).length > n ? `<span title="${esc(v)}">${esc(String(v).slice(0, n - 1))}…</span>` : esc(v));
@@ -3007,6 +3011,35 @@ function rankingsDoFundo(c) {
   const out = [];
   for (const R of st.rk?.lista || []) { const x = R.ordem.find((o) => o.id === c); if (x) out.push(`${posHTML(x.pos)} <span class="nota">${esc(R.nome)}</span>`); }
   return out.join("<br>");
+}
+
+// colunas da XP para os relatórios (com login): os valores em % da planilha (0,4 = 0,4%) viram percentual de verdade
+function colunasXPRel() {
+  if (!st.xp) return [];
+  const pct = (v) => (typeof v === "number" ? v / 100 : null);
+  return [
+    { nome: "Nome comercial (XP)", tipo: "txt", v: (q) => q["XP Nome"] ?? "" }, { nome: "Investidor", tipo: "txt", v: (q) => q.Investidor ?? "" },
+    { nome: "Captação", tipo: "txt", v: (q) => q["Captação"] ?? "" }, { nome: "Isento de IR (PF)", tipo: "txt", v: (q) => q.Isento ?? "" },
+    { nome: "Cotização do resgate", tipo: "txt", v: (q) => q["Cotização"] ?? "" }, { nome: "Liquidação do resgate", tipo: "txt", v: (q) => q["Liquidação"] ?? "" },
+    { nome: "Classificação XP", tipo: "txt", v: (q) => q["Classificação XP"] ?? "" }, { nome: "Taxa de adm.", tipo: "pct", v: (q) => pct(q["Taxa adm."]) },
+    { nome: "Taxa de perf.", tipo: "pct", v: (q) => pct(q["Taxa perf."]) }, { nome: "ROA", tipo: "pct", v: (q) => pct(q.ROA) },
+    { nome: "Risco XP", tipo: "int", v: (q) => q.Risco ?? null }, { nome: "Aplicação mínima", tipo: "valor", v: (q) => q["Aplicação mín."] ?? null },
+    { nome: "Link Hub", tipo: "txt", soExcel: true, v: (q) => (q._hubId ? URL_HUB(q._hubId) : "") },
+  ];
+}
+// acrescenta as colunas da XP a uma tabela do relatório; cnpjDe(i) dá o CNPJ da linha i (ou null para linhas sem fundo, como a carteira)
+function anexarXPRel(t, cnpjDe) {
+  const cols = colunasXPRel(); if (!cols.length) return t;
+  return { ...t, colunas: [...t.colunas, ...cols.map(({ nome, tipo, soExcel }) => ({ nome, tipo, soExcel }))],
+    linhas: t.linhas.map((l, i) => { const c = cnpjDe(i), q = c ? camposXP(c) : {}; return [...l, ...cols.map((k) => (q._naXP ? k.v(q) : ""))]; }) };
+}
+// PDF e PNG não levam colunas marcadas como "só Excel" (ex.: o link do Hub, longo demais para a página)
+function semColunasSoExcel(partes) {
+  return partes.map((p) => ({ ...p, blocos: p.blocos.map((b) => {
+    if (b.tipo !== "tabela" || !b.colunas.some((c) => c.soExcel)) return b;
+    const manter = b.colunas.map((c, j) => (c.soExcel ? -1 : j)).filter((j) => j >= 0);
+    return { ...b, colunas: manter.map((j) => b.colunas[j]), linhas: b.linhas.map((l) => manter.map((j) => l[j])) };
+  }) }));
 }
 // ============================== rankings ==============================
 // Um ranking = nome + tipo de cálculo (pesos) + lista de fundos. Ficam guardados neste navegador, como os grupos.
@@ -3334,9 +3367,9 @@ function graficoPesosRk(M) {
 // público, captação, prazo de liquidação e aplicação mínima; o resto da XP fica na tela e no Excel completo
 const FORA_ENXUTO_XP = new Set(["cvm", "anbima", "XP Nome", "Cotização", "Taxa adm.", "Taxa perf.", "Risco"]);
 function linhasRelRk(R, lista, enxuto = false) {
-  const cols = colunasRk(R).filter((c) => !["perf", "cons", "risco"].includes(c.chave) && !c.interno     // o ROA fica só na tela
+  const cols = colunasRk(R).filter((c) => !["perf", "cons", "risco"].includes(c.chave)       // com login, tudo vai junto (inclusive o ROA)
     && !(enxuto && st.xp && FORA_ENXUTO_XP.has(c.chave)));
-  const PCT_XP = new Set(["Taxa adm.", "Taxa perf."]);       // na planilha da XP 0,4 = 0,4%: nos relatórios vira percentual de verdade
+  const PCT_XP = new Set(["Taxa adm.", "Taxa perf.", "ROA"]);       // na planilha da XP 0,4 = 0,4%: nos relatórios vira percentual de verdade
   return { chaves: cols.map((c) => c.chave), colunas: cols.map((c) => ({ nome: c.nome, tipo: c.chave === "pl" || c.chave === "capt" ? "valor" : c.chave === "var" ? "txt" : PCT_XP.has(c.chave) ? "pct" : c.tipo })),
     linhas: lista.map((x) => { const l = linhaRk(R, x);
       return cols.map((c) => c.chave === "var" ? (l.var == null ? "novo" : l.var > 0 ? `▲ ${l.var}` : l.var < 0 ? `▼ ${-l.var}` : "▬ 0")
@@ -3347,7 +3380,7 @@ function blocosRanking(k) {
   const L = st.rk.lista, B = [];
   const cab = (R) => `${R.nome} · ${R.M.nome} · ${R.ordem.length} fundos analisados · métricas de ${R.M.periodo.toLowerCase()} até ${fmtData(R.fim)}`;
   if (k === "rkTop") {
-    const LARG = { pos: 7, var: 10, Fundo: 56, total: 13, cvm: 17, anbima: 30, "Classificação XP": 24, Investidor: 11, "Captação": 13, "Liquidação": 15, "Aplicação mín.": 14 };
+    const LARG = { pos: 7, var: 10, Fundo: 52, total: 13, cvm: 17, anbima: 30, "Classificação XP": 24, Investidor: 11, "Captação": 13, "Isento": 10, "Liquidação": 17, "ROA": 11, "Aplicação mín.": 14 };
     for (const R of L) { const { chaves, ...t } = linhasRelRk(R, topRk(R), true);
       const larguras = Object.fromEntries(chaves.map((k, i) => [i, LARG[k]]).filter(([, w]) => w));
       B.push({ tipo: "tabela", nome: cab(R), aba: `${R.nome} - top ${TOP_RANK}`, pdfCompacto: larguras,
@@ -3360,8 +3393,10 @@ function blocosRanking(k) {
       const { chaves: _k, ...t } = linhasRelRk(R, R.ordem);
       B.push({ tipo: "tabela", soExcel: true, nome: `${R.nome} - completo`, colunas: [...t.colunas, { nome: "Performance (pontos)", tipo: "num2" }, { nome: "Consistência (pontos)", tipo: "num2" },
           { nome: "Risco (pontos)", tipo: "num2" }, ...ks.flatMap((x) => [{ nome: `${metricaRank(x).nome}: valor`, tipo: metricaRank(x).tipo },
-            { nome: `${metricaRank(x).nome}: nota (0 a 1)`, tipo: "num" }, { nome: `${metricaRank(x).nome}: pontos (peso ${Math.abs(R.M.pesos[x])})`, tipo: "num2" }])],
-        linhas: R.ordem.map((x, i) => [...t.linhas[i], x.grupos.Performance, x.grupos["Consistência"], x.grupos.Risco, ...ks.flatMap((q) => [x.notas[q].valor, x.notas[q].nota, x.notas[q].pontos])]) });
+            { nome: `${metricaRank(x).nome}: nota (0 a 1)`, tipo: "num" }, { nome: `${metricaRank(x).nome}: pontos (peso ${Math.abs(R.M.pesos[x])})`, tipo: "num2" }]),
+          ...(st.xp ? [{ nome: "Link Hub", tipo: "txt", soExcel: true }] : [])],
+        linhas: R.ordem.map((x, i) => [...t.linhas[i], x.grupos.Performance, x.grupos["Consistência"], x.grupos.Risco, ...ks.flatMap((q) => [x.notas[q].valor, x.notas[q].nota, x.notas[q].pontos]),
+          ...(st.xp ? [(() => { const h = camposXP(x.id)._hubId; return h ? URL_HUB(h) : ""; })()] : [])]) });
     }
     return { titulo: "Rankings completos com a pontuação de cada métrica", blocos: B };
   }
