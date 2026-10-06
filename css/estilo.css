@@ -710,3 +710,7 @@ dialog, .dlg-tab, .tb-wrap, .mx-vp, .pc-lista, .combo-lista, .resbusca, #rkLista
 .xp-cota { display: inline-block; padding: 0 5px; border-radius: 5px; background: var(--ouro); color: #2a2200; font-size: 10px; font-weight: 800; vertical-align: 1px; }
 sup.gu { font-size: 9px; font-weight: 800; color: var(--link); margin-left: 2px; }
 #guBox[hidden] { display: none; }
+
+.filtros-xp .xp-aviso { flex-basis: 100%; font-size: 12px; color: var(--sub); }
+.filtros-xp .xp-aviso[hidden] { display: none; }
+.xp-aviso .link:disabled { color: var(--sub); text-decoration: none; cursor: default; opacity: .7; }
