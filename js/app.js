@@ -2568,6 +2568,41 @@ document.addEventListener("keydown", (e) => {                      // setas entr
   const alvo = e.key === "ArrowRight" ? PAGINAS[(i + 1) % n] : e.key === "ArrowLeft" ? PAGINAS[(i - 1 + n) % n] : e.key === "Home" ? PAGINAS[0] : e.key === "End" ? PAGINAS[n - 1] : null;
   if (alvo) { e.preventDefault(); mostrarPagina(alvo, { rolar: false, foco: true }); }
 });
+
+// ---------- backup completo das configurações (grupos, rankings, tipos de cálculo, carteira e preferências)
+// As configurações ficam no navegador e presas ao endereço do site: mudar de computador, de navegador ou de endereço
+// (ex.: trocar o usuário do GitHub) começa do zero. O backup leva tudo num arquivo.
+const CHAVES_BACKUP = ["grupos", "rankings", "rankingsSel", "modelosRank", "rkCompPadrao", "carteira", "indices", "agrupar", "gruposFechados",
+  "minimizados", "pagina", "relFmt", "relSel", "riscoEixo", "travar", "guardar"];
+function salvarBackup() {
+  const dados = {};
+  for (const k of CHAVES_BACKUP) { const v = localStorage.getItem("fundos." + k); if (v != null) { try { dados[k] = JSON.parse(v); } catch { /* valor inválido: fica de fora */ } } }
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([JSON.stringify({ tipo: "backup-analise-de-fundos", versao: 1, criado: new Date().toISOString(), origem: location.origin, dados }, null, 1)],
+    { type: "application/json" }));
+  a.download = `backup_analise_de_fundos_${new Date().toISOString().slice(0, 10)}.json`; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+  const n = (x) => (Array.isArray(x) ? x.length : x && typeof x === "object" ? Object.keys(x).length : 0);
+  avisoSel(`<span class="ok">Backup salvo: ${n(dados.grupos)} grupo(s), ${n(dados.rankings)} ranking(s), ${n(dados.modelosRank)} tipo(s) de cálculo próprio(s)` +
+    `${dados.carteira?.itens?.length ? `, carteira com ${dados.carteira.itens.length} ativo(s)` : ""} e as preferências.</span>`);
+}
+async function restaurarBackup(arquivo) {
+  let b;
+  try { b = JSON.parse(await arquivo.text()); } catch { b = null; }
+  if (b?.tipo !== "backup-analise-de-fundos" || !b.dados) {
+    await perguntar("Arquivo inválido", "Este arquivo não é um backup da Análise de Fundos. Para grupos ou rankings soltos, use os botões de importar de cada janela.", [{ rot: "OK", v: 1, classe: "prim" }]);
+    return;
+  }
+  const d = b.dados, n = (x) => (x && typeof x === "object" ? Object.keys(x).length : 0);
+  const ok = await perguntar("Restaurar o backup?", `Backup de ${new Date(b.criado).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" })}` +
+    `${b.origem ? ` (feito em ${esc(b.origem.replace(/^https?:\/\//, ""))})` : ""}: ${n(d.grupos)} grupo(s), ${n(d.rankings)} ranking(s), ${n(d.modelosRank)} tipo(s) de cálculo` +
+    `${d.carteira?.itens?.length ? ` e uma carteira com ${d.carteira.itens.length} ativo(s)` : ""}.<br><b>As configurações deste navegador serão substituídas</b> e a página vai recarregar.`,
+    [{ rot: "Cancelar", v: false }, { rot: "Restaurar", v: true, classe: "prim" }]);
+  if (!ok) return;
+  for (const k of CHAVES_BACKUP) { if (k in d) localStorage.setItem("fundos." + k, JSON.stringify(d[k])); else localStorage.removeItem("fundos." + k); }
+  location.reload();
+}
+document.addEventListener("click", (e) => { if (e.target.id === "bkSalvar") salvarBackup(); });
+document.addEventListener("change", (e) => { if (e.target.id === "bkRestaurar" && e.target.files[0]) { restaurarBackup(e.target.files[0]); e.target.value = ""; } });
 // ============================== rankings ==============================
 // Um ranking = nome + tipo de cálculo (pesos) + lista de fundos. Ficam guardados neste navegador, como os grupos.
 const lerRankings = () => pref("rankings", {});
