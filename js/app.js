@@ -646,6 +646,14 @@ function manterRolagem(botao, redesenhar) {
   }
   if (Math.abs(scrollY - yPag) > 1) scrollTo(scrollX, yPag);
 }
+// mesma ideia de manterRolagem, para redesenhos que não vêm de um título de coluna (ex.: interruptor do gross up)
+function redesenharMantendo(cont, redesenhar) {
+  const wraps = cont ? [...cont.querySelectorAll(".tb-wrap")] : [], pos = wraps.map((w) => [w.scrollLeft, w.scrollTop]), yPag = scrollY;
+  redesenhar();
+  const novos = cont ? [...cont.querySelectorAll(".tb-wrap")] : [];
+  novos.forEach((w, i) => { if (pos[i]) { w.scrollLeft = pos[i][0]; w.scrollTop = pos[i][1]; } });
+  if (Math.abs(scrollY - yPag) > 1) scrollTo(scrollX, yPag);
+}
 function clicarOrdem(tab, col, texto) {
   const ini = texto ? 1 : -1, o = st.ord[tab];
   if (!o || o.col !== col) st.ord[tab] = { col, dir: ini };
@@ -1472,11 +1480,12 @@ function renderCarteira() {
   $("#cartJmIni").value = st.cartUI.jmIni; $("#cartJmFim").value = st.cartUI.jmFim;
   definirCombo("cbCartRef", c.ref.rot);
   $("#cartItens").innerHTML = !c.itens.length ? `<p class="nota">Nenhum ativo ainda. Use "Adicionar fundo ou índice" acima ou "Adicionar todos os fundos calculados".</p>` :
-    `<div class="tb-wrap cart-lista"><table class="tb"><thead><tr><th class="t">Ativo</th><th>Peso (%)</th><th><span class="sr-only">Remover</span></th></tr></thead><tbody>${c.itens.map((it, i) => {
+    `<div class="tb-wrap cart-lista"><table class="tb"><thead><tr><th class="t">Ativo</th>${st.rk?.lista.length ? '<th class="t">Ranking</th>' : ""}<th>Peso (%)</th><th><span class="sr-only">Remover</span></th></tr></thead><tbody>${c.itens.map((it, i) => {
       const ok = serieItem(it);
       return `<tr${ok ? "" : ' class="indisp"'}><td class="t"><span class="sw${it.tipo === "i" ? " losango" : ""}" style="background:${corItem(it)}"></span>` +
         (it.tipo === "f" && ok ? `<span data-mini="${esc(it.v)}">${esc(nomeItem(it))}</span>` : esc(nomeItem(it))) +
         (ok ? "" : ` <small>· ainda não baixado: clique em 🧮 Calcular carteira</small>`) + `</td>
+        ${st.rk?.lista.length ? `<td class="t cart-rk">${it.tipo === "f" ? rankingsDoFundo(it.v) : ""}</td>` : ""}
         <td><input class="cart-peso" data-i="${i}" type="number" min="0" step="1" value="${it.peso}" aria-label="Peso de ${esc(nomeItem(it))}"></td>
         <td><button class="cart-rm" data-i="${i}" type="button" title="Tirar da carteira" aria-label="Tirar ${esc(nomeItem(it))} da carteira">×</button></td></tr>`; }).join("")}</tbody></table></div>`;
   atualizarSoma();
@@ -2805,9 +2814,15 @@ function camposXP(cnpj) {
     "Cotização": o.REDEMPTIONQUOTATION, "Liquidação": o.REDEMPTIONSETTLEMENT, "Classificação XP": o.CLASSIFICATIONXP,
     "Taxa adm.": numXP(o.ADMINISTRATIONRATE), "Taxa perf.": numXP(o.PERFORMANCERATE), "ROA": numXP(o.RETURNONASSETS),
     "Risco": numXP(o.RISKGENIUS), _riscoCor: o.RISKGENIUSCOLOR, _riscoDesc: o.RISKGENIUSDESCRIPTION,
-    "Aplicação mín.": minimos.length ? Math.min(...minimos) : null, _isento: verdadeiro(o.ISTAXFREEONINCOMEPF),
+    "Aplicação mín.": minimos.length ? Math.min(...minimos) : null, _isento: verdadeiro(o.ISTAXFREEONINCOMEPF), "Isento": verdadeiro(o.ISTAXFREEONINCOMEPF) ? "Sim" : "",
     _hubId: /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(o.ID || "")) ? String(o.ID) : null };
 }
+// risco da XP pela faixa: baixo verde, médio amarelo, alto vermelho
+const faixaRisco = (d) => { const t = String(d || "").toLowerCase(); return t.startsWith("baix") ? "rb" : t.startsWith("m") ? "rm" : t.startsWith("alt") ? "ra" : ""; };
+// captação: cadeado aberto (verde) ou fechado (vermelho)
+const SVG_CADEADO = { ab: '<path d="M7 11V7a5 5 0 0 1 9.6-2"/>', fe: '<path d="M7 11V7a5 5 0 0 1 10 0v4"/>' };
+const cadeado = (v) => { if (!v) return ""; const k = v === "Aberto" ? "ab" : "fe", txt = v === "Aberto" ? "Aberto para aplicação" : "Fechado para aplicação";
+  return `<span class="xp-cad ${k}" title="${txt}" role="img" aria-label="${txt}"><svg viewBox="0 0 24 24" width="17" height="17" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="11" width="16" height="10" rx="2" fill="currentColor" stroke="none"/>${SVG_CADEADO[k]}</svg></span>`; };
 const pctXP = (v, d = 2) => (v == null ? "" : `${br(v, d)}%`);          // na planilha 0,1 já é 0,1%
 const badgeInv = (v) => (v ? `<span class="xp-inv xp-${v.toLowerCase()}" title="${{ IG: "Investidor em geral", IQ: "Investidor qualificado", IP: "Investidor profissional" }[v]}">${v}</span>` : "");
 const textoCurto = (v, n = 26) => (v == null ? "" : String(v).length > n ? `<span title="${esc(v)}">${esc(String(v).slice(0, n - 1))}…</span>` : esc(v));
@@ -2815,14 +2830,15 @@ function colunasXP(g = "XP · confidencial", semInternas = false) {
   const cols = [
     { chave: "XP Nome", nome: "Nome comercial", tipo: "txt", g, html: (v, l) => (l._naXP ? textoCurto(v, 34) + (l._xpOfertas > 1 ? ` <small class="nota" title="${l._xpOfertas} ofertas deste CNPJ na XP">(${l._xpOfertas})</small>` : "") : `<span class="nota">não está na XP</span>`) },
     { chave: "Investidor", nome: "Investidor", tipo: "txt", g, html: badgeInv },
-    { chave: "Captação", nome: "Captação", tipo: "txt", g, html: (v) => (v ? `<span class="xp-cap ${v === "Aberto" ? "ab" : "fe"}">${v}</span>` : "") },
+    { chave: "Captação", nome: "Captação", tipo: "txt", g, html: (v) => cadeado(v) },
+    { chave: "Isento", nome: "Isento", tipo: "txt", g, html: (v) => (v ? `<span class="xp-isento" title="Isento de IR para pessoa física" aria-label="Isento de IR para pessoa física">$</span>` : "") },
     { chave: "Cotização", nome: "Cotização do resgate", tipo: "txt", g, html: (v, l) => textoCurto(l["Cotização"]), valor: (l) => prazoDias(l["Cotização"]), crescente: true },
     { chave: "Liquidação", nome: "Liquidação do resgate", tipo: "txt", g, html: (v, l) => textoCurto(l["Liquidação"]), valor: (l) => prazoDias(l["Liquidação"]), crescente: true },
     { chave: "Classificação XP", nome: "Classificação XP", tipo: "txt", g, html: (v) => textoCurto(v, 30) },
     { chave: "Taxa adm.", nome: "Taxa de adm.", tipo: "num2", g, html: (v) => pctXP(v) },
     { chave: "Taxa perf.", nome: "Taxa de perf.", tipo: "num2", g, html: (v) => pctXP(v, 0) },
     { chave: "ROA", nome: "ROA", tipo: "num2", g, html: (v) => pctXP(v), interno: true },
-    { chave: "Risco", nome: "Risco XP", tipo: "int", g, html: (v, l) => (v == null ? "" : `<span class="xp-risco" style="--c:${esc(l._riscoCor || "#888")}" title="Risco ${esc(l._riscoDesc || "")}">${br(v, 0)}</span>`) },
+    { chave: "Risco", nome: "Risco XP", tipo: "int", g, html: (v, l) => (v == null ? "" : `<span class="xp-risco ${faixaRisco(l._riscoDesc)}" title="Risco ${esc(l._riscoDesc || "")}">${br(v, 0)}</span>`) },
     { chave: "Aplicação mín.", nome: "Aplicação mínima", tipo: "valor", g, html: (v) => (v == null ? "" : `R$ ${br(v, v % 1 ? 2 : 0)}`) },
   ];
   return semInternas ? cols.filter((c) => !c.interno) : cols;
@@ -2886,7 +2902,7 @@ async function baixarPlanilhaXP() {
   finally { b.disabled = false; b.textContent = "⬇ Planilha XP"; }
 }
 document.addEventListener("click", (e) => { if (e.target.id === "equipeBaixar") baixarPlanilhaXP(); });
-document.addEventListener("change", (e) => { if (e.target.id === "grossUp") { st.grossUp = e.target.checked; renderMetricas(); } });
+document.addEventListener("change", (e) => { if (e.target.id === "grossUp") { st.grossUp = e.target.checked; redesenharMantendo($("#tabMetricas"), renderMetricas); } });
 // ao entrar ou sair: aplica as cotas, mostra/esconde as colunas e avisa se é preciso recalcular
 function aplicarDadosEquipe() {
   D.definirCotasExtras(st.xp ? cotasXP() : null);
@@ -2901,6 +2917,65 @@ const URL_HUB = (id) => `https://hub.xpi.com.br/new/fundos-de-investimento#/${id
 const colunaHub = () => ({ chave: "_hubId", nome: "Link Hub", tipo: "txt", ord: false, g: "XP",
   html: (v, l) => (v ? `<a class="hub-link" href="${URL_HUB(v)}" target="_blank" rel="noopener noreferrer" title="Abrir no Hub XP (nova aba)" aria-label="Abrir ${esc(l.Fundo || "")} no Hub XP">↗ Hub</a>`
     : `<span class="nota" title="${l._naXP ? "Sem o ID da XP: o Apps Script precisa estar na versão " + VERSAO_MIN_EQUIPE + " ou mais nova" : "Fundo fora da XP"}">–</span>`) });
+
+// ---------- enviar fundos da análise ou de um ranking para a montagem de carteira
+const env = { origem: null, lista: [], marcados: new Set() };
+function abrirEnviar(origem) {
+  env.origem = origem; env.marcados = new Set();
+  if (origem === "rk") {
+    const R = rkAtivo(); if (!R) return;
+    env.titulo = `do ranking ${R.nome}`;
+    env.lista = R.ordem.map((x) => ({ c: x.id, nome: x.l.cad.NOME, pos: x.pos }));
+  } else {
+    if (!st.res) return;
+    env.titulo = "da análise";
+    env.lista = st.res.sel.filter((c) => st.res.fundos.get(c)).map((c) => ({ c, nome: st.porCnpj.get(c)?.NOME || cnpjFmt(c) }));
+  }
+  renderEnviar(); $("#dlgEnviar").showModal();
+}
+function renderEnviar() {
+  const naCart = new Set(st.cart.itens.filter((it) => it.tipo === "f").map((it) => it.v)), rk = env.origem === "rk";
+  const novos = [...env.marcados].filter((c) => !naCart.has(c)).length;
+  $("#envInfo").innerHTML = `Marque os fundos ${esc(env.titulo)} que vão para a montagem de carteira. ` +
+    (st.cart.itens.length ? "A carteira já tem ativos: os novos entram com peso 0 (defina os pesos depois ou use “Pesos iguais”)." : "A carteira está vazia: os fundos enviados entram com pesos iguais.");
+  $("#envLista").innerHTML = `<table class="tb tab-fundos"><thead><tr><th><span class="sr-only">Enviar</span></th>${rk ? "<th>Pos.</th>" : ""}<th class="t">Fundo</th><th>CNPJ</th><th class="t">Situação</th></tr></thead><tbody>${env.lista.map((x) => {
+    const ja = naCart.has(x.c), on = ja || env.marcados.has(x.c);
+    return `<tr class="linha-f${on ? " marcado" : ""}" data-env="${x.c}" ${ja ? "" : 'tabindex="0"'} title="${ja ? "Já está na carteira" : "Clique para marcar"}">
+      <td><input type="checkbox" ${on ? "checked" : ""} ${ja ? "disabled" : ""} aria-label="Enviar ${esc(x.nome)}" tabindex="-1"></td>${rk ? `<td>${posHTML(x.pos)}</td>` : ""}
+      <td class="t">${esc(x.nome)}</td><td>${cnpjFmt(x.c)}</td><td class="t">${ja ? '<span class="nota">já está na carteira</span>' : ""}</td></tr>`; }).join("")}</tbody></table>`;
+  $("#envOk").textContent = `Enviar ${novos} fundo${novos === 1 ? "" : "s"}`; $("#envOk").disabled = !novos;
+}
+function enviarParaCarteira() {
+  const naCart = new Set(st.cart.itens.filter((it) => it.tipo === "f").map((it) => it.v));
+  const novos = [...env.marcados].filter((c) => !naCart.has(c)); if (!novos.length) return;
+  const vazia = !st.cart.itens.length;
+  for (const c of novos) st.cart.itens.push({ tipo: "f", v: c, peso: 0 });
+  if (vazia) st.cart.itens.forEach((it) => (it.peso = Math.round(10000 / st.cart.itens.length) / 100));
+  salvarCart(); $("#dlgEnviar").close();
+  renderCarteira();
+  $("#cartAviso").innerHTML = `<span class="ok">${novos.length} fundo(s) enviado(s) ${esc(env.titulo)}.</span>` + (vazia ? " Pesos iguais aplicados." : " Entraram com peso 0: defina os pesos ou use “Pesos iguais”.");
+  if ($("#envIr").checked) mostrarPagina("carteira");
+  else avisoSel(`<span class="ok">${novos.length} fundo(s) enviado(s) à montagem de carteira.</span> <button class="link" type="button" data-ir-carteira>Abrir a montagem de carteira</button>`);
+}
+document.addEventListener("click", (e) => {
+  const t = e.target;
+  if (t.id === "btnEnviarCart") return abrirEnviar("analise");
+  if (t.id === "btnEnviarCartRk") return abrirEnviar("rk");
+  if (t.id === "envOk") return enviarParaCarteira();
+  if (t.closest?.("[data-ir-carteira]")) return mostrarPagina("carteira");
+  if (t.id === "envTodos" || t.id === "envNenhum") { env.marcados = t.id === "envTodos" ? new Set(env.lista.map((x) => x.c)) : new Set(); return renderEnviar(); }
+  const tr = t.closest?.("#envLista tr[data-env]");
+  if (tr && !tr.querySelector("input")?.disabled) { const c = tr.dataset.env; env.marcados.has(c) ? env.marcados.delete(c) : env.marcados.add(c); renderEnviar(); }
+});
+document.addEventListener("keydown", (e) => {
+  if ((e.key === "Enter" || e.key === " ") && e.target.matches?.("#envLista tr[data-env]")) { e.preventDefault(); e.target.click(); }
+});
+// posição do fundo nos rankings calculados (coluna da tabela de pesos da carteira)
+function rankingsDoFundo(c) {
+  const out = [];
+  for (const R of st.rk?.lista || []) { const x = R.ordem.find((o) => o.id === c); if (x) out.push(`${posHTML(x.pos)} <span class="nota">${esc(R.nome)}</span>`); }
+  return out.join("<br>");
+}
 // ============================== rankings ==============================
 // Um ranking = nome + tipo de cálculo (pesos) + lista de fundos. Ficam guardados neste navegador, como os grupos.
 const lerRankings = () => pref("rankings", {});
@@ -3047,7 +3122,7 @@ async function calcularRankings() {
     st.rk = { lista, fundos, ativo: 0 }; semZoom("gRkJM");
     faseCarga("montando as tabelas…", 99); await pausa();
     mostrarPagina("rankings");
-    renderRankings(); fecharCarga(); atualizarEspaco();
+    renderRankings(); renderCarteira(); fecharCarga(); atualizarEspaco();
   } catch (e) { console.error(e); fecharCarga(e.message); }
 }
 
