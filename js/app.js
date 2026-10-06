@@ -709,7 +709,7 @@ function tabelaHTML({ colunas, linhas, fixas = 0, larguras = [260, 150], grupos 
     h += `</tr><tr class="h2">`;
   } else h += "<tr>";
   colunas.forEach((c, j) => {
-    if (!ordenavel || c.ord === false) { h += `<th${fx(j)}><span class="th-txt">${esc(c.nome)}</span></th>`; return; }
+    if (!ordenavel || c.ord === false) { h += `<th${fx(j)}>${c.nomeOculto ? `<span class="sr-only">${esc(c.nomeOculto)}</span>` : `<span class="th-txt">${esc(c.nome)}</span>`}</th>`; return; }
     const at = o && o.col === c.chave, texto = (c.tipo === "txt" && !c.valor) || c.crescente;   // texto e prazos: 1º clique do menor para o maior
     h += `<th${fx(j)}${at ? ` aria-sort="${o.dir > 0 ? "ascending" : "descending"}"` : ""}><button class="ord" data-ord="${esc(ordenavel)}" data-col="${esc(c.chave)}"
       data-txt="${texto ? 1 : 0}" title="Ordenar"><span class="th-txt">${esc(c.nome)}${at ? (o.dir > 0 ? " ▲" : " ▼") : ""}</span></button></th>`;
@@ -765,7 +765,12 @@ function tabelaMetricas(dados) {
     return c;
   });
   // com login: grupo de colunas da XP logo depois do cadastro
-  if (st.xp) { const fimCad = colunas.map((c) => c.g).lastIndexOf("Cadastro") + 1 || 2; colunas = [colunaHub(), ...colunas.slice(0, fimCad), ...colunasXP().filter((c) => c.chave !== "XP Nome"), ...colunas.slice(fimCad)]; }
+  if (st.xp) {
+    colunas = colunas.filter((c) => c.chave !== "Classificação ANBIMA").map((c) => (c.chave === "Classificação CVM" ? colunaClassif("Cadastro") : c));
+    const fimCad = colunas.map((c) => c.g).lastIndexOf("Cadastro") + 1 || 2;
+    colunas = [colunaHub(), colunaCadeado(), ...colunas.slice(0, fimCad),
+      ...colunasXP().filter((c) => !["XP Nome", "Classificação XP", "Captação"].includes(c.chave)), ...colunas.slice(fimCad)];
+  }
   const grupos = colunas.map((c) => c.g);
   // selos de maior e menor retorno no período (com 3 fundos ou mais)
   const comRet = dados.linhas.filter((l) => typeof l["% Acumulado"] === "number");
@@ -777,6 +782,7 @@ function tabelaMetricas(dados) {
   }
   let linhas = st.xp ? dados.linhas.map((l) => {
     const x = { ...l, ...camposXP(l._c) };
+    x._classif = x["Classificação XP"] || l["Classificação ANBIMA"] || l["Classificação CVM"] || "";
     if (x["XP Nome"]) { x._nomeCVM = l.Fundo; x.Fundo = String(x["XP Nome"]).toLocaleUpperCase("pt-BR"); }   // nome da XP primeiro; o da CVM na dica
     return aplicarGrossUp(x);
   }) : dados.linhas;
@@ -795,7 +801,7 @@ function tabelaMetricas(dados) {
   const nota = notaGU + (parados.length ? `<p class="nota-parado"><span class="parado">⊘</span> ${parados.length} fundo(s) sem cotas até o fim do período
     (cancelado, em liquidação ou sem envio recente). O cálculo usa o mesmo início dos demais e vai até a última cota de cada um.
     Passe o mouse sobre o símbolo para ver a data.</p>` : "");
-  return tabelaHTML({ colunas, linhas, fixas: st.xp ? 3 : 2, ...(st.xp ? { larguras: [64, 260, 150] } : {}), grupos, destacar: dest, classes, altura: 520, ordenavel: "met" }) + nota;
+  return tabelaHTML({ colunas, linhas, fixas: st.xp ? 4 : 2, ...(st.xp ? { larguras: [64, 36, 260, 150] } : {}), grupos, destacar: dest, classes, altura: 520, ordenavel: "met" }) + nota;
 }
 
 // ---------- tabela-legenda: cor, posição, fundo e valores, do maior para o menor; 5 maiores + 5 menores (+ destacados)
@@ -2819,6 +2825,7 @@ function camposXP(cnpj) {
   const minimos = (abertas.length ? abertas : st.xp.get(cnpj)).map((x) => numXP(x.MINIMALINITIALINVESTMENT)).filter((x) => x != null);
   return { _naXP: true, _xpOfertas: n, "XP Nome": o.NAME, "Investidor": tipoInvestidor(o), "Captação": abertas.length ? "Aberto" : "Fechado",
     "Cotização": resumirPrazo(o.REDEMPTIONQUOTATION), "Liquidação": resumirPrazo(o.REDEMPTIONSETTLEMENT), "Classificação XP": o.CLASSIFICATIONXP,
+    "Resgate": [prazoCompacto(o.REDEMPTIONQUOTATION), prazoCompacto(o.REDEMPTIONSETTLEMENT)].filter(Boolean).join("+"),
     "Taxa adm.": numXP(o.ADMINISTRATIONRATE), "Taxa perf.": numXP(o.PERFORMANCERATE), "ROA": numXP(o.RETURNONASSETS),
     "Risco": numXP(o.RISKGENIUS), _riscoCor: o.RISKGENIUSCOLOR, _riscoDesc: o.RISKGENIUSDESCRIPTION,
     "Aplicação mín.": minimos.length ? Math.min(...minimos) : null, _isento: verdadeiro(o.ISTAXFREEONINCOMEPF), "Isento": verdadeiro(o.ISTAXFREEONINCOMEPF) ? "Sim" : "",
@@ -2830,7 +2837,10 @@ const faixaRisco = (d) => { const t = String(d || "").toLowerCase(); return t.st
 const SVG_CADEADO = { ab: '<path d="M7 11V7a5 5 0 0 1 9.6-2"/>', fe: '<path d="M7 11V7a5 5 0 0 1 10 0v4"/>' };
 const cadeado = (v) => { if (!v) return ""; const k = v === "Aberto" ? "ab" : "fe", txt = v === "Aberto" ? "Aberto para aplicação" : "Fechado para aplicação";
   return `<span class="xp-cad ${k}" title="${txt}" role="img" aria-label="${txt}"><svg viewBox="0 0 24 24" width="17" height="17" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="11" width="16" height="10" rx="2" fill="currentColor" stroke="none"/>${SVG_CADEADO[k]}</svg></span>`; };
-const resumirPrazo = (t) => (t == null ? t : String(t).replace(/\(\s*dias?\s+[uú]teis\s*\)/gi, "(úteis)").replace(/\(\s*dias?\s+corridos\s*\)/gi, "(corridos)"));
+const resumirPrazo = (t) => (t == null ? t : String(t).replace(/\(\s*dias?\s+[uú]teis\s*\)/gi, "(Úteis)").replace(/\(\s*dias?\s+corridos\s*\)/gi, "(Corridos)"));
+// prazo compacto: "D+30 (Corridos)" -> "D30(C)"; o resgate junta cotização e liquidação: "D30(C)+D1(U)"
+const prazoCompacto = (t) => { const m = String(t ?? "").match(/D\s*\+\s*(\d+)/i); if (!m) return t ? "…" : "";
+  return `D${m[1]}${/[uú]teis/i.test(t) ? "(U)" : /corrid/i.test(t) ? "(C)" : ""}`; };
 const pctXP = (v, d = 2) => (v == null ? "" : `${br(v, d)}%`);          // na planilha 0,1 já é 0,1%
 const badgeInv = (v) => (v ? `<span class="xp-inv xp-${v.toLowerCase()}" title="${{ IG: "Investidor em geral", IQ: "Investidor qualificado", IP: "Investidor profissional" }[v]}">${v}</span>` : "");
 const textoCurto = (v, n = 26) => (v == null ? "" : String(v).length > n ? `<span title="${esc(v)}">${esc(String(v).slice(0, n - 1))}…</span>` : esc(v));
@@ -2840,8 +2850,9 @@ function colunasXP(g = "XP · confidencial", semInternas = false) {
     { chave: "Investidor", nome: "Investidor", tipo: "txt", g, html: badgeInv },
     { chave: "Captação", nome: "Captação", tipo: "txt", g, html: (v) => cadeado(v) },
     { chave: "Isento", nome: "Isento", tipo: "txt", g, html: (v) => (v ? `<span class="xp-isento" title="Isento de IR para pessoa física" aria-label="Isento de IR para pessoa física">$</span>` : "") },
-    { chave: "Cotização", nome: "Cotização do resgate", tipo: "txt", g, html: (v, l) => textoCurto(l["Cotização"]), valor: (l) => prazoDias(l["Cotização"]), crescente: true },
-    { chave: "Liquidação", nome: "Liquidação do resgate", tipo: "txt", g, html: (v, l) => textoCurto(l["Liquidação"]), valor: (l) => prazoDias(l["Liquidação"]), crescente: true },
+    { chave: "Resgate", nome: "Prazo de resgate", tipo: "txt", g, crescente: true,
+      html: (v, l) => (l._naXP ? `<span class="xp-resg" title="${esc(`Cotização: ${l["Cotização"] || "–"}\nLiquidação: ${l["Liquidação"] || "–"}`)}">${esc(l.Resgate || "")}</span>` : ""),
+      valor: (l) => { const a = prazoDias(l["Cotização"]), b = prazoDias(l["Liquidação"]); return a == null && b == null ? null : (a || 0) + (b || 0); } },
     { chave: "Classificação XP", nome: "Classificação XP", tipo: "txt", g, html: (v) => textoCurto(v, 30) },
     { chave: "Taxa adm.", nome: "Taxa de adm.", tipo: "num2", g, html: (v) => pctXP(v) },
     { chave: "Taxa perf.", nome: "Taxa de perf.", tipo: "num2", g, html: (v) => pctXP(v, 0) },
@@ -2956,7 +2967,7 @@ function renderEnviar() {
   const cols = [["sel", 30, ""], ...(rk ? [["pos", 42, "Pos.", "Posição no ranking"]] : []), ["nome", null, "Fundo"], ["classif", 96, "Classificação", "Classificação CVM"],
     ["rent", 68, "Rent. a.a.", "Rentabilidade ao ano"], ["vol", 60, "Volat.", "Volatilidade ao ano"],
     ...(rk ? [["tot", 52, "Pont.", "Pontuação no ranking (0 a 100)"], ["perf", 48, "Perf.", "Pontos de Performance"], ["cons", 52, "Cons.", "Pontos de Consistência"], ["risco", 48, "Risco", "Pontos de Risco"]] : []),
-    ...(xp ? [["inv", 54, "Invest.", "Tipo de investidor"], ["cap", 42, "Capt.", "Captação: aberto ou fechado para aplicação"], ["resg", 96, "Resgate", "Prazo de resgate: cotização / liquidação"],
+    ...(xp ? [["inv", 54, "Invest.", "Tipo de investidor"], ["cap", 42, "Capt.", "Captação: aberto ou fechado para aplicação"], ["resg", 96, "Resgate", "Prazo de resgate: cotização + liquidação (C = dias corridos, U = dias úteis)"],
       ["roa", 52, "ROA", "ROA"], ["rxp", 50, "Risco XP", "Risco XP"]] : [])];
   const minimo = cols.reduce((s2, [, w]) => s2 + (w || 150), 0);     // abaixo disso (tela muito estreita) a lista rola para o lado
   const n1 = (v) => (typeof v === "number" ? br(v, 1) : "");
@@ -2972,7 +2983,7 @@ function renderEnviar() {
       vol: `<td>${typeof x.vol === "number" ? brPct(x.vol) : ""}</td>`,
       tot: `<td><b>${n1(x.rk?.total)}</b></td>`, perf: `<td>${n1(x.rk?.perf)}</td>`, cons: `<td>${n1(x.rk?.cons)}</td>`, risco: `<td>${n1(x.rk?.risco)}</td>`,
       inv: `<td>${q?._naXP ? badgeInv(q.Investidor) : ""}</td>`, cap: `<td>${q?._naXP ? cadeado(q["Captação"]) : ""}</td>`,
-      resg: `<td title="${q?._naXP ? esc(`Cotização: ${q["Cotização"] || "–"} · Liquidação: ${q["Liquidação"] || "–"}`) : ""}">${q?._naXP ? `${prazoCurto(q["Cotização"])} / ${prazoCurto(q["Liquidação"])}` : ""}</td>`,
+      resg: `<td title="${q?._naXP ? esc(`Cotização: ${q["Cotização"] || "–"}\nLiquidação: ${q["Liquidação"] || "–"}`) : ""}">${q?._naXP ? esc(q.Resgate || "") : ""}</td>`,
       roa: `<td>${q?._naXP && q.ROA != null ? pctXP(q.ROA) : ""}</td>`,
       rxp: `<td>${q?._naXP && q.Risco != null ? `<span class="xp-risco ${faixaRisco(q._riscoDesc)}" title="Risco ${esc(q._riscoDesc || "")}">${br(q.Risco, 0)}</span>` : ""}</td>`,
     };
@@ -3041,6 +3052,17 @@ function semColunasSoExcel(partes) {
     return { ...b, colunas: manter.map((j) => b.colunas[j]), linhas: b.linhas.map((l) => manter.map((j) => l[j])) };
   }) }));
 }
+
+// classificação única: a da XP primeiro, senão a ANBIMA, senão a CVM; ao passar o mouse, as três
+// (lê dos campos "Classificação XP" + "Classificação ANBIMA"/"Classificação CVM" ou anbima/cvm, conforme a tabela)
+function colunaClassif(g) {
+  return { chave: "_classif", nome: "Classificação", tipo: "txt", g,
+    html: (v, l) => { const an = l["Classificação ANBIMA"] ?? l.anbima, cv = l["Classificação CVM"] ?? l.cvm;
+      return `<span class="xp-classif" title="${esc(`XP: ${l["Classificação XP"] || "–"}\nANBIMA: ${an || "–"}\nCVM: ${cv || "–"}`)}">${esc(v || "")}</span>`; } };
+}
+// captação (aberto/fechado) como coluna fixa sem título visível, entre o Link Hub e o fundo
+const colunaCadeado = () => ({ chave: "Captação", nome: "", nomeOculto: "Captação: aberto ou fechado para aplicação", tipo: "txt", ord: false, g: "XP",
+  titulo: () => "", html: (v) => cadeado(v) });
 // ============================== rankings ==============================
 // Um ranking = nome + tipo de cálculo (pesos) + lista de fundos. Ficam guardados neste navegador, como os grupos.
 const lerRankings = () => pref("rankings", {});
@@ -3224,12 +3246,13 @@ function linhaRk(R, x) {
     pl: cad.VL_PATRIM_LIQ ?? null, rentAA: r["% Anualizado"], capt: r["Captação Líquida no Período"], pctCDI: r["%CDI"], cdiMais: r["CDI +"],
     obj: x.l.obj, objIdx: x.l.kObj, dias: usaIbov(R) ? r["% de dias acima do IBOV"] : r["% de dias acima do CDI"], beta: r.Beta, vol: r.Volatilidade,
     sharpe: r["Sharpe Anualizado"], mdd: r.Queda, recup: r["Duração da Recuperação"], total: x.total, perf: x.grupos.Performance, cons: x.grupos["Consistência"],
-    risco: x.grupos.Risco, curto: x.l.curto, ini: r["Data Inicial"], ...(st.xp ? camposXP(x.id) : {}) };
+    risco: x.grupos.Risco, curto: x.l.curto, ini: r["Data Inicial"], ...(st.xp ? (() => { const q = camposXP(x.id);
+      return { ...q, _classif: q["Classificação XP"] || cad.CLASSIFICACAO_ANBIMA || cad.CLASSIFICACAO_CVM || "" }; })() : {}) };
 }
 const varHTML = (v) => (v == null ? `<span class="rk-novo" title="Não estava no ranking do mês anterior">novo</span>` : v > 0 ? `<span class="rk-sobe">▲ ${v}</span>`
   : v < 0 ? `<span class="rk-desce">▼ ${-v}</span>` : `<span class="rk-igual">▬ 0</span>`);
 const posHTML = (v) => (v <= 3 ? `<span class="rk-pos rk-pos${v}" title="${medalha(v).nome}">${v}</span>` : `<span class="rk-pos">${v}</span>`);
-function colunasRk(R) {
+function colunasRk(R, tela = false) {
   const mi = (v) => (typeof v === "number" ? br(v / 1e6, 1) : "");
   return [
     { chave: "pos", nome: "Pos.", tipo: "int", g: "Ranking", html: posHTML }, { chave: "var", nome: `Var. ${R.rotVar || "mês"}`, tipo: "int", g: "Ranking", html: (v) => varHTML(v) },
@@ -3237,7 +3260,7 @@ function colunasRk(R) {
     { chave: "total", nome: "Pontuação", tipo: "num2", g: "Ranking", html: (v) => `<b>${br(v, 1)}</b>` },
     { chave: "perf", nome: "Performance", tipo: "num2", g: "Pontos por grupo", html: (v) => br(v, 1) }, { chave: "cons", nome: "Consistência", tipo: "num2", g: "Pontos por grupo", html: (v) => br(v, 1) },
     { chave: "risco", nome: "Risco", tipo: "num2", g: "Pontos por grupo", html: (v) => br(v, 1) },
-    { chave: "cvm", nome: "Classificação CVM", tipo: "txt", g: "Cadastro" }, { chave: "anbima", nome: "Classificação ANBIMA", tipo: "txt", g: "Cadastro" },
+    ...(tela && st.xp ? [colunaClassif("Cadastro")] : [{ chave: "cvm", nome: "Classificação CVM", tipo: "txt", g: "Cadastro" }, { chave: "anbima", nome: "Classificação ANBIMA", tipo: "txt", g: "Cadastro" }]),
     { chave: "pl", nome: "PL (R$ mi)", tipo: "valor", g: "Patrimônio", html: mi },
     { chave: "capt", nome: "Captação líquida (R$ mi)", tipo: "valor", g: "Patrimônio", html: (v) => `<span style="${corSinal(v)}">${mi(v)}</span>` },
     { chave: "rentAA", nome: "Rent. anualizada", tipo: "pct", cor: true, g: "Performance" },
@@ -3248,12 +3271,12 @@ function colunasRk(R) {
     ...(usaIbov(R) ? [{ chave: "beta", nome: "Beta", tipo: "num2", g: "Risco" }] : []),
     { chave: "vol", nome: "Volatilidade", tipo: "pct", g: "Risco" }, { chave: "sharpe", nome: "Sharpe", tipo: "num2", cor: true, g: "Risco" },
     { chave: "mdd", nome: "MDD", tipo: "pct", cor: true, g: "Risco" }, { chave: "recup", nome: "Dias para recuperação do MDD", tipo: "int", g: "Risco" },
-    ...(st.xp ? colunasXP() : []),
+    ...(st.xp ? colunasXP().filter((c) => !(tela && c.chave === "Classificação XP")) : []),
   ];
 }
 function renderRkTabela() {
   const R = rkAtivo(); if (!R) return;
-  const todos = !!st.rkTodos, colunas = colunasRk(R);
+  const todos = !!st.rkTodos, colunas = colunasRk(R, true);
   const linhas = ordenar(fundosVisiveis(R).map((x) => linhaRk(R, x)), "rk", colunas);
   $("#rkInfo").innerHTML = !R.fim ? "Nenhum fundo com cotas." : `<b>${esc(R.M.nome)}</b> · métricas dos últimos ${esc(R.M.periodo.toLowerCase())} até ${fmtData(R.fim)} · janela móvel de ${R.M.jmMeses} meses ` +
     `contra o ${esc(nomeIndice(R.M.bench))} (aplicações desde ${fmtData(R.iniJM)}) · <b>${R.ordem.length}</b> fundo(s) analisado(s)` +
@@ -3365,7 +3388,7 @@ function graficoPesosRk(M) {
 // ---------- partes do relatório (PDF, PNG e Excel)
 // enxuto (top 10 em PDF/PNG): com os dados da XP, segue o relatório de referência — classificação XP no lugar da CVM/ANBIMA,
 // público, captação, prazo de liquidação e aplicação mínima; o resto da XP fica na tela e no Excel completo
-const FORA_ENXUTO_XP = new Set(["cvm", "anbima", "XP Nome", "Cotização", "Taxa adm.", "Taxa perf.", "Risco"]);
+const FORA_ENXUTO_XP = new Set(["cvm", "anbima", "XP Nome", "Taxa adm.", "Taxa perf.", "Risco"]);
 function linhasRelRk(R, lista, enxuto = false) {
   const cols = colunasRk(R).filter((c) => !["perf", "cons", "risco"].includes(c.chave)       // com login, tudo vai junto (inclusive o ROA)
     && !(enxuto && st.xp && FORA_ENXUTO_XP.has(c.chave)));
@@ -3380,7 +3403,7 @@ function blocosRanking(k) {
   const L = st.rk.lista, B = [];
   const cab = (R) => `${R.nome} · ${R.M.nome} · ${R.ordem.length} fundos analisados · métricas de ${R.M.periodo.toLowerCase()} até ${fmtData(R.fim)}`;
   if (k === "rkTop") {
-    const LARG = { pos: 7, var: 10, Fundo: 52, total: 13, cvm: 17, anbima: 30, "Classificação XP": 24, Investidor: 11, "Captação": 13, "Isento": 10, "Liquidação": 17, "ROA": 11, "Aplicação mín.": 14 };
+    const LARG = { pos: 7, var: 10, Fundo: 52, total: 13, cvm: 17, anbima: 30, "Classificação XP": 24, Investidor: 11, "Captação": 13, "Isento": 10, "Resgate": 22, "ROA": 11, "Aplicação mín.": 14 };
     for (const R of L) { const { chaves, ...t } = linhasRelRk(R, topRk(R), true);
       const larguras = Object.fromEntries(chaves.map((k, i) => [i, LARG[k]]).filter(([, w]) => w));
       B.push({ tipo: "tabela", nome: cab(R), aba: `${R.nome} - top ${TOP_RANK}`, pdfCompacto: larguras,
