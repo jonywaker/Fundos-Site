@@ -14,17 +14,18 @@
 <body>
 <a class="pular" href="#principal">Pular para o conteúdo</a>
 <div id="app" class="carregando">
-  <header class="topo">
-    <h1>Análise de Fundos</h1>
-    <div class="topo-dir">
-      <button id="abrirFontes" class="link-claro" type="button">Fontes e metodologia</button>
-      <div id="status" class="hora" aria-live="polite">carregando…</div>
-    </div>
-  </header>
-
   <div class="corpo">
     <!-- ======================= barra lateral ======================= -->
     <aside class="lateral">
+      <div class="lat-topo">
+        <div class="marca"><span class="marca-nome">Análise de Fundos</span><span class="marca-sub">Dados públicos da CVM</span></div>
+        <nav class="abas" role="tablist" aria-label="Ferramentas" aria-orientation="vertical">
+          <button id="abaAnalise" role="tab" type="button" data-aba="analise" aria-controls="pgAnalise" aria-selected="true">📊 Análise de fundos</button>
+          <button id="abaRankings" role="tab" type="button" data-aba="rankings" aria-controls="pgRankings" aria-selected="false" tabindex="-1">🏆 Rankings</button>
+          <button id="abaCarteira" role="tab" type="button" data-aba="carteira" aria-controls="pgCarteira" aria-selected="false" tabindex="-1">🧮 Montagem de carteira</button>
+        </nav>
+      </div>
+      <div class="lat-meio">
       <section class="bloco" data-pg="analise">
         <h2 class="h-lat">Adicionar fundos</h2>
         <input id="busca" type="search" placeholder="Nome, gestor ou CNPJ (mín. 3 letras)…" aria-label="Buscar fundo por nome, gestor ou CNPJ" autocomplete="off" spellcheck="false">
@@ -81,23 +82,31 @@
         <p class="nota">Para levar tudo para outro computador, navegador ou endereço do site.</p>
       </section>
 
-      <section class="bloco acao" data-pg="analise">
+      <div id="log" class="nota"></div>
+      </div>
+      <div class="lat-pe" data-pg="analise">
         <button id="calcular" class="prim" disabled>Calcular</button>
         <div id="progresso" class="progresso" hidden><div></div></div>
         <div id="progTxt" class="nota"></div>
         <div id="avisoMudou" class="aviso" hidden>Você mudou a seleção — clique em Calcular para atualizar.</div>
-      </section>
-      <div id="log" class="nota"></div>
+              <button id="limparTela" class="sec mini-btn" type="button" title="Tira os resultados da tela e volta ao início (a seleção de fundos continua)" disabled>Limpar tela</button>
+      </div>
     </aside>
 
     <!-- ======================= resultado ======================= -->
+    <div class="coluna">
+    <header class="topo">
+      <div class="topo-tit">
+        <span class="topo-sup">Análise de Fundos · CVM</span>
+        <h1 id="tituloPagina">Análise de fundos</h1>
+        <p id="subtituloPagina">Métricas, gráficos, correlação e janela móvel dos fundos selecionados</p>
+      </div>
+    <div class="topo-dir">
+      <button id="abrirFontes" class="link-claro" type="button">Fontes e metodologia</button>
+      <div id="status" class="hora" aria-live="polite">carregando…</div>
+    </div>
+    </header>
     <main class="principal" id="principal" tabindex="-1">
-      <nav class="abas" role="tablist" aria-label="Ferramentas">
-        <button id="abaAnalise" role="tab" type="button" data-aba="analise" aria-controls="pgAnalise" aria-selected="true">📊 Análise de fundos</button>
-        <button id="abaRankings" role="tab" type="button" data-aba="rankings" aria-controls="pgRankings" aria-selected="false" tabindex="-1">🏆 Rankings</button>
-        <button id="abaCarteira" role="tab" type="button" data-aba="carteira" aria-controls="pgCarteira" aria-selected="false" tabindex="-1">🧮 Montagem de carteira</button>
-      </nav>
-
       <div id="pgAnalise" class="pagina" role="tabpanel" aria-labelledby="abaAnalise" data-pagina="analise">
       <div class="barra">
         <div id="barraPer" class="pilulas"></div>
@@ -318,6 +327,7 @@
       </section>
       </div>
     </main>
+    </div>
   </div>
 </div>
 
