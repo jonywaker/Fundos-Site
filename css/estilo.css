@@ -685,3 +685,18 @@ dialog, .dlg-tab, .tb-wrap, .mx-vp, .pc-lista, .combo-lista, .resbusca, #rkLista
   .lat-pe { position: sticky; bottom: 0; z-index: 25; }
   .coluna > .topo { padding: 14px 16px; }
 }
+
+/* ============ área da equipe ============ */
+.equipe-box { display: flex; align-items: center; }
+.equipe-btn { border: 1px solid rgba(228,201,107,.75); background: rgba(10,14,50,.28); color: #fff; border-radius: 8px; padding: 6px 12px; font: 700 13px Manrope, sans-serif; cursor: pointer; }
+.equipe-btn:hover { background: rgba(255,255,255,.12); }
+.equipe-logado { display: grid; grid-template-columns: auto auto; gap: 0 10px; align-items: center; color: #fff; font-weight: 700; font-size: 13px; }
+.equipe-logado small { grid-column: 1; font-weight: 500; color: #f3e2a6; font-size: 11px; }
+.equipe-logado #equipeSair { grid-row: 1 / span 2; grid-column: 2; }
+#dlgLogin .campo { display: grid; gap: 4px; margin: 6px 0 12px; font-weight: 600; font-size: 13px; }
+#dlgLogin input { width: 100%; }
+#loginCodigo { font-size: 22px; letter-spacing: .35em; text-align: center; font-variant-numeric: tabular-nums; }
+#loginErro:empty { display: none; }
+#loginErro { margin: 8px 0 0; font-weight: 600; }
+.filtros-xp { display: inline-flex; flex-wrap: wrap; gap: 6px 14px; padding: 3px 10px; border: 1px dashed var(--ouro); border-radius: 8px; }
+.filtros-xp[hidden] { display: none; }
