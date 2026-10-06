@@ -700,3 +700,13 @@ dialog, .dlg-tab, .tb-wrap, .mx-vp, .pc-lista, .combo-lista, .resbusca, #rkLista
 #loginErro { margin: 8px 0 0; font-weight: 600; }
 .filtros-xp { display: inline-flex; flex-wrap: wrap; gap: 6px 14px; padding: 3px 10px; border: 1px dashed var(--ouro); border-radius: 8px; }
 .filtros-xp[hidden] { display: none; }
+
+/* dados da XP */
+.xp-inv { display: inline-block; min-width: 26px; padding: 1px 6px; border-radius: 6px; color: #fff; font-weight: 800; font-size: 11.5px; text-align: center; letter-spacing: .04em; }
+.xp-ig { background: #087040; } .xp-iq { background: #1f5aa6; } .xp-ip { background: #7a3db8; }
+.xp-cap { display: inline-block; padding: 1px 8px; border-radius: 99px; font-size: 11.5px; font-weight: 800; border: 1.5px solid; }
+.xp-cap.ab { color: var(--pos); border-color: var(--pos); } .xp-cap.fe { color: var(--neg); border-color: var(--neg); }
+.xp-risco { display: inline-grid; place-items: center; min-width: 26px; height: 22px; padding: 0 5px; border-radius: 6px; border: 2px solid var(--c); font-weight: 800; }
+.xp-cota { display: inline-block; padding: 0 5px; border-radius: 5px; background: var(--ouro); color: #2a2200; font-size: 10px; font-weight: 800; vertical-align: 1px; }
+sup.gu { font-size: 9px; font-weight: 800; color: var(--link); margin-left: 2px; }
+#guBox[hidden] { display: none; }
