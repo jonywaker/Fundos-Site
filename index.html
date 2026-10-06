@@ -102,6 +102,11 @@
         <p id="subtituloPagina">Métricas, gráficos, correlação e janela móvel dos fundos selecionados</p>
       </div>
     <div class="topo-dir">
+      <div id="equipeBox" class="equipe-box" hidden>
+        <button id="equipeEntrar" class="equipe-btn" type="button" title="Entrar com o e-mail da equipe para ver as informações confidenciais">🔒 Área da equipe</button>
+        <span id="equipeLogado" class="equipe-logado" hidden><span id="equipeNome"></span><small id="equipeInfo"></small>
+          <button id="equipeSair" class="link-claro" type="button">Sair</button></span>
+      </div>
       <button id="abrirFontes" class="link-claro" type="button">Fontes e metodologia</button>
       <div id="status" class="hora" aria-live="polite">carregando…</div>
     </div>
@@ -336,6 +341,10 @@
     <h2 id="selTit">Lista de fundos</h2>
     <input id="dlgBusca" type="search" placeholder="Nome, gestor ou CNPJ…" aria-label="Buscar na lista de fundos" autocomplete="off" spellcheck="false">
     <label class="tog"><input id="dlgAtivos" type="checkbox" checked> Só fundos ativos (cota nos últimos 30 dias)</label>
+    <span id="dlgFiltrosXP" class="filtros-xp" hidden>
+      <label class="tog"><input id="dlgXP" type="checkbox"> Só fundos na XP</label>
+      <label class="tog"><input id="dlgXPAberto" type="checkbox"> Só abertos para aplicação na XP</label>
+    </span>
     <button id="dlgLimparFiltros" class="sec mini-btn" type="button">Limpar filtros</button>
   </div>
   <p id="dlgInfo" class="nota"></p>
@@ -482,6 +491,21 @@
     <div class="dlg-pe"><span></span><div class="botoes"><button id="rkEdCancelar" class="sec" type="button">Cancelar</button>
       <button id="rkEdSalvar" class="prim" type="button">Salvar ranking</button></div></div>
   </div>
+</dialog>
+
+<dialog id="dlgLogin" class="dlg-pergunta" aria-labelledby="loginTit">
+  <h3 id="loginTit">Área da equipe</h3>
+  <div id="loginPasso1">
+    <p>Digite o seu e-mail da equipe. Se ele estiver autorizado, você recebe um código de 6 números.</p>
+    <label class="campo">E-mail <input id="loginEmail" type="email" autocomplete="email" inputmode="email" spellcheck="false" placeholder="nome@empresa.com.br…"></label>
+    <div class="botoes"><button class="sec" type="button" data-fechar-dlg>Cancelar</button><button id="loginEnviar" class="prim" type="button">Enviar código</button></div>
+  </div>
+  <div id="loginPasso2" hidden>
+    <p id="loginMsg"></p>
+    <label class="campo">Código <input id="loginCodigo" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="6" spellcheck="false" placeholder="000000"></label>
+    <div class="botoes"><button id="loginVoltar" class="sec" type="button">Trocar e-mail</button><button id="loginEntrar" class="prim" type="button">Entrar</button></div>
+  </div>
+  <p id="loginErro" class="neg" role="alert"></p>
 </dialog>
 
 <dialog id="dlgPergunta" class="dlg-pergunta" aria-labelledby="pergTit">
