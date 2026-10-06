@@ -733,7 +733,7 @@ function tabelaHTML({ colunas, linhas, fixas = 0, larguras = [260, 150], grupos 
       if (j === 0 && l._g) txt = `<span class="guia" data-guia="${esc(l._g)}" title="Recolher este grupo"></span>` + txt;
       const estilo = c.cor ? corSinal(v) : "";
       const alinh = c.tipo === "txt" || c.tipo === "data" || c.html ? " t" : "";
-      if (j < fixas) h += `<td class="fx t" style="left:${esq[j]}px;min-width:${larguras[j]}px;max-width:${larguras[j]}px;${estilo}" title="${esc(typeof v === "number" ? "" : v)}">${txt}</td>`;
+      if (j < fixas) h += `<td class="fx t" style="left:${esq[j]}px;min-width:${larguras[j]}px;max-width:${larguras[j]}px;${estilo}" title="${esc(c.titulo ? c.titulo(l) : typeof v === "number" ? "" : v)}">${txt}</td>`;
       else {                                   // texto longo (ex.: "Índice de Preços ao Consumidor Amplo"): largura máxima e "…", texto inteiro ao passar o mouse
         const longo = c.tipo === "txt" && typeof v === "string" && v.length > 30;
         h += `<td class="${(alinh + (longo ? " longo" : "")).trim()}" style="${estilo}"${longo ? ` title="${esc(v)}"` : ""}>${txt}</td>`;
@@ -754,7 +754,7 @@ const COLS_GU = new Set(["% Acumulado", "% Anualizado", "%CDI", "CDI +"]);
 function tabelaMetricas(dados) {
   let colunas = COLUNAS.map(([g, n, t]) => {
     const c = { chave: n, nome: n, tipo: t, cor: t === "pct", g };
-    if (n === "Fundo") c.html = nomeFundoHTML;
+    if (n === "Fundo") { c.html = nomeFundoHTML; c.titulo = (l) => (l._nomeCVM ? `XP: ${l.Fundo}\nCVM: ${l._nomeCVM}` : l.Fundo); }
     if (n === "Data Final") c.html = (v, l) => {
       const xp = st.res?.fundos.get(l._c)?.cotaExtra, comXP = xp && xp.d === v;
       const txt = l._parado ? `<span class="parado-dt" title="${esc(l._parado.txt)}">${esc(FMT.data(v))}</span>` : esc(FMT.data(v));
@@ -765,7 +765,7 @@ function tabelaMetricas(dados) {
     return c;
   });
   // com login: grupo de colunas da XP logo depois do cadastro
-  if (st.xp) { const fimCad = colunas.map((c) => c.g).lastIndexOf("Cadastro") + 1 || 2; colunas = [colunaHub(), ...colunas.slice(0, fimCad), ...colunasXP(), ...colunas.slice(fimCad)]; }
+  if (st.xp) { const fimCad = colunas.map((c) => c.g).lastIndexOf("Cadastro") + 1 || 2; colunas = [colunaHub(), ...colunas.slice(0, fimCad), ...colunasXP().filter((c) => c.chave !== "XP Nome"), ...colunas.slice(fimCad)]; }
   const grupos = colunas.map((c) => c.g);
   // selos de maior e menor retorno no período (com 3 fundos ou mais)
   const comRet = dados.linhas.filter((l) => typeof l["% Acumulado"] === "number");
@@ -775,7 +775,11 @@ function tabelaMetricas(dados) {
     mx._selo = `<span class="selo up" title="Maior retorno no período">▲</span>`;
     mn._selo = `<span class="selo down" title="Menor retorno no período">▼</span>`;
   }
-  let linhas = st.xp ? dados.linhas.map((l) => aplicarGrossUp({ ...l, ...camposXP(l._c) })) : dados.linhas;
+  let linhas = st.xp ? dados.linhas.map((l) => {
+    const x = { ...l, ...camposXP(l._c) };
+    if (x["XP Nome"]) { x._nomeCVM = l.Fundo; x.Fundo = String(x["XP Nome"]).toLocaleUpperCase("pt-BR"); }   // nome da XP primeiro; o da CVM na dica
+    return aplicarGrossUp(x);
+  }) : dados.linhas;
   linhas = ordenar(linhas, "met", colunas);
   if (st.agrupar && CAMPOS_GRUPO[st.agrupar]) {
     linhas = agruparLinhas(linhas, "met", CAMPOS_GRUPO[st.agrupar], (m) => {
@@ -783,7 +787,7 @@ function tabelaMetricas(dados) {
       return v.length ? `média ${brPct(v.reduce((s, x) => s + x, 0) / v.length)} no período` : "";
     });
   }
-  const dest = linhas.map((l) => !l._cab && casa(st.destaque, l.Fundo, l.CNPJ));
+  const dest = linhas.map((l) => !l._cab && casa(st.destaque, l.Fundo, l.CNPJ, l._nomeCVM));
   const classes = linhas.map((l) => (l._selo ? (l._selo.includes("up") ? "top-up" : "top-down") : ""));
   const parados = dados.linhas.filter((l) => l._parado);
   const notaGU = st.grossUp ? `<p class="nota">Gross up ligado: nos fundos isentos de IR para pessoa física (marcados com <sup class="gu">GU</sup>), a rentabilidade
@@ -2968,7 +2972,9 @@ function renderEnviar() {
       roa: `<td>${q?._naXP && q.ROA != null ? pctXP(q.ROA) : ""}</td>`,
       rxp: `<td>${q?._naXP && q.Risco != null ? `<span class="xp-risco ${faixaRisco(q._riscoDesc)}" title="Risco ${esc(q._riscoDesc || "")}">${br(q.Risco, 0)}</span>` : ""}</td>`,
     };
-    return `<tr class="linha-f${on ? " marcado" : ""}${ja ? " env-bloq" : ""}" data-env="${x.c}" ${ja ? "" : 'tabindex="0"'}>${cols.map(([k]) => cel[k]).join("")}</tr>`; }).join("")}</tbody></table>`;
+    const XPK = new Set(["inv", "cap", "resg", "roa", "rxp"]), foraXP = xp && !q?._naXP;
+    const tds = cols.filter(([k]) => !(foraXP && XPK.has(k))).map(([k]) => cel[k]).join("") + (foraXP ? `<td colspan="5" class="env-fora">não está na XP</td>` : "");
+    return `<tr class="linha-f${on ? " marcado" : ""}${ja ? " env-bloq" : ""}" data-env="${x.c}" ${ja ? "" : 'tabindex="0"'}>${tds}</tr>`; }).join("")}</tbody></table>`;
   $("#envOk").textContent = `Enviar ${novos} fundo${novos === 1 ? "" : "s"}`; $("#envOk").disabled = !novos;
 }
 function enviarParaCarteira() {
@@ -3642,7 +3648,9 @@ function mostrarMini(el, x, y) {
   const pts = q.map((v, i) => [p + i * (W - 2 * p) / (q.length - 1), H - p - (v - mn) / amp * (H - 2 * p)]);
   const var12 = q[q.length - 1] / q[0] - 1, cor = var12 >= 0 ? VERDE : VERMELHO;
   const linha = pts.map((t) => t[0].toFixed(1) + "," + t[1].toFixed(1)).join(" ");
-  box.innerHTML = `<div class="mini-tit">${esc(st.res?.apelidos[c] || curto(st.porCnpj.get(c)?.NOME || c))}</div>
+  const oXP = st.xp && ofertaXP(c), nomeCVM = st.porCnpj.get(c)?.NOME;
+  box.innerHTML = `<div class="mini-tit">${esc(oXP ? String(oXP.NAME).toLocaleUpperCase("pt-BR") : st.res?.apelidos[c] || curto(nomeCVM || c))}</div>` +
+    (oXP ? `<div class="mini-nomes"><b>XP:</b> ${esc(String(oXP.NAME).toLocaleUpperCase("pt-BR"))}<br><b>CVM:</b> ${esc(nomeCVM || "–")}</div>` : "") + `
     <svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" aria-hidden="true"><path d="M${pts[0][0]},${H - p} L${linha.replace(/ /g, " L")} L${pts[pts.length - 1][0]},${H - p} Z" fill="${cor}" opacity=".13"/>
     <polyline points="${linha}" fill="none" stroke="${cor}" stroke-width="1.8" stroke-linejoin="round"/></svg>
     <div class="mini-rod">12 meses até ${fmtData(ult)}: <b style="${corSinal(var12)}">${brPct(var12)}</b></div>`;
