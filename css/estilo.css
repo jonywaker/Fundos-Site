@@ -776,3 +776,32 @@ sup.gu { font-size: 9px; font-weight: 800; color: var(--link); margin-left: 2px;
 @media (prefers-color-scheme: dark) { .xp-dn { color: var(--pos); } }
 .xp-capcel { white-space: nowrap; }
 .rk-tot { cursor: help; }
+
+/* tabela de métricas resumida: títulos de no máximo 2 linhas e linha clicável */
+.tb thead th .th-txt.th-fixo { max-width: none; }
+.tb thead th .th-l { white-space: nowrap; }
+#tabMetricas tr[data-fundo] { cursor: pointer; }
+#tabMetricas tr[data-fundo]:hover td { background: color-mix(in srgb, var(--azul) 7%, var(--card)); }
+/* painel do fundo */
+.dlg-fundo { width: min(1180px, 96vw); max-height: 92vh; padding: 0; border: 1px solid var(--borda); border-radius: 16px; background: var(--card); color: var(--txt); overscroll-behavior: contain; }
+.dlg-fundo::backdrop { background: rgba(8, 10, 40, .55); }
+.pf-corpo { padding: 16px 20px 20px; max-height: 92vh; overflow-y: auto; box-sizing: border-box; }
+.pf-cab { align-items: flex-start; gap: 12px; }
+.pf-titulos h2 { margin: 0 0 2px; font-size: 19px; }
+.pf-titulos p { margin: 0; }
+.pf-acoes { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+.pf-kpis { margin: 12px 0; }
+.pf-grafs { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 12px; margin-bottom: 12px; }
+.pf-graf { margin: 0; border: 1px solid var(--borda); border-radius: 12px; padding: 8px 10px 4px; }
+.pf-graf figcaption { font-weight: 800; font-size: 13px; display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.pf-leg { font-weight: 600; color: var(--sub); font-size: 12px; } .pf-leg i { display: inline-block; width: 14px; height: 3px; margin: 0 4px 3px 8px; vertical-align: middle; }
+.pf-graf svg { width: 100%; height: auto; display: block; } .pf-graf text { font-size: 10.5px; fill: var(--sub); }
+.pf-zero { stroke: var(--borda); stroke-width: 1; }
+.pf-grade { display: grid; grid-template-columns: repeat(auto-fit, minmax(330px, 1fr)); gap: 12px; }
+.pf-sec { border: 1px solid var(--borda); border-radius: 12px; padding: 10px 14px; }
+.pf-sec h3 { margin: 0 0 8px; font-size: 14px; color: var(--anil); border-bottom: 2px solid var(--ouro); padding-bottom: 4px; }
+@media (prefers-color-scheme: dark) { .pf-sec h3 { color: var(--ouro); } }
+.pf-sec.pf-xp { border-color: #b7791f; }
+.pf-sec dl { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 3px 12px; margin: 0; font-size: 13px; }
+.pf-sec dt { color: var(--sub); } .pf-sec dd { margin: 0; text-align: right; font-weight: 700; font-variant-numeric: tabular-nums; }
+.nowrap { white-space: nowrap; }

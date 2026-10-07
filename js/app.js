@@ -737,7 +737,8 @@ function tituloQuebrado(nome) {
   }
   return out.map((x) => esc(x)).join("<br>");
 }
-function tabelaHTML({ colunas, linhas, fixas = 0, larguras = [260, 150], grupos = null, destacar = [], separadores = new Set(),
+const tituloHTML = (c) => (c.linhas ? c.linhas.map((x) => `<span class="th-l">${esc(x)}</span>`).join("<br>") : tituloQuebrado(c.nome));
+function tabelaHTML({ colunas, linhas, fixas = 0, larguras = [260, 150], grupos = null, destacar = [], separadores = new Set(), atrLinha = null,
   altura = 460, ordenavel = null, classes = [] }) {
   const esq = larguras.map((_, j) => larguras.slice(0, j).reduce((s, x) => s + x, 0));
   const fx = (j, extra = "") => (j < fixas ? ` class="fx${extra}" style="left:${esq[j]}px;min-width:${larguras[j]}px;max-width:${larguras[j]}px"` : extra ? ` class="${extra.trim()}"` : "");
@@ -753,10 +754,10 @@ function tabelaHTML({ colunas, linhas, fixas = 0, larguras = [260, 150], grupos 
     h += `</tr><tr class="h2">`;
   } else h += "<tr>";
   colunas.forEach((c, j) => {
-    if (!ordenavel || c.ord === false || c.nomeOculto) { h += `<th${fx(j)}${c.nomeOculto || c.dica ? ` title="${esc(c.nomeOculto || c.dica)}"` : ""}>${c.nomeOculto ? `<span class="sr-only">${esc(c.nomeOculto)}</span>` : `<span class="th-txt">${tituloQuebrado(c.nome)}</span>`}</th>`; return; }
+    if (!ordenavel || c.ord === false || c.nomeOculto) { h += `<th${fx(j)}${c.nomeOculto || c.dica ? ` title="${esc(c.nomeOculto || c.dica)}"` : ""}>${c.nomeOculto ? `<span class="sr-only">${esc(c.nomeOculto)}</span>` : `<span class="th-txt${c.linhas ? " th-fixo" : ""}">${tituloHTML(c)}</span>`}</th>`; return; }
     const at = o && o.col === c.chave, texto = (c.tipo === "txt" && !c.valor) || c.crescente;   // texto e prazos: 1º clique do menor para o maior
     h += `<th${fx(j)}${at ? ` aria-sort="${o.dir > 0 ? "ascending" : "descending"}"` : ""}><button class="ord" data-ord="${esc(ordenavel)}" data-col="${esc(c.chave)}"
-      data-txt="${texto ? 1 : 0}" title="${c.dica ? esc(c.dica) + " · clique para ordenar" : "Ordenar"}"><span class="th-txt">${tituloQuebrado(c.nome)}${at ? (o.dir > 0 ? " ▲" : " ▼") : ""}</span></button></th>`;
+      data-txt="${texto ? 1 : 0}" title="${c.dica ? esc(c.dica) + " · clique para ordenar" : "Ordenar"}"><span class="th-txt${c.linhas ? " th-fixo" : ""}">${tituloHTML(c)}${at ? (o.dir > 0 ? " ▲" : " ▼") : ""}</span></button></th>`;
   });
   h += "</tr></thead><tbody>";
   linhas.forEach((l, i) => {
@@ -769,7 +770,7 @@ function tabelaHTML({ colunas, linhas, fixas = 0, larguras = [260, 150], grupos 
     }
     const oculta = l._g && st.fechados.has(l._g);
     const cls = [destacar[i] ? "dest" : "", separadores.has(i) ? "sep" : "", l._g ? "em-grupo" : "", oculta ? "oculta" : "", classes[i] || ""].join(" ").trim();
-    h += `<tr${cls ? ` class="${cls}"` : ""}${l._g ? ` data-gm="${esc(l._g)}"` : ""}>`;
+    h += `<tr${cls ? ` class="${cls}"` : ""}${l._g ? ` data-gm="${esc(l._g)}"` : ""}${atrLinha ? atrLinha(l) : ""}>`;
     colunas.forEach((c, j) => {
       const v = c.valor ? c.valor(l) : l[c.chave];
       if (separadores.has(i)) { h += c.chave === "Fundo" ? `<td class="t">${esc(v)}</td>` : "<td></td>"; return; }
@@ -795,27 +796,46 @@ const CAMPOS_GRUPO = {
 };
 const nomeFundoHTML = (v, l) => `${marcaParado(l)}${l._selo || ""}<span data-mini="${esc(l._c)}">${esc(v ?? "")}</span>`;
 const COLS_GU = new Set(["% Acumulado", "% Anualizado", "%CDI", "CDI +"]);
-function tabelaMetricas(dados) {
-  let colunas = COLUNAS.map(([g, n, t]) => {
-    const c = { chave: n, nome: n, tipo: t, cor: t === "pct", g };
-    if (n === "Fundo") { c.html = nomeFundoHTML; c.titulo = () => ""; }      // o nome (XP e CVM) aparece no minigráfico ao passar o mouse
-    if (n === "Data Final") c.html = (v, l) => {
-      const xp = st.res?.fundos.get(l._c)?.cotaExtra, comXP = xp && xp.d === v;
-      const txt = l._parado ? `<span class="parado-dt" title="${esc(l._parado.txt)}">${esc(FMT.data(v))}</span>` : esc(FMT.data(v));
-      return txt + (comXP ? ` <span class="xp-cota" title="Cota de ${esc(FMT.data(v))} informada pela XP, mais recente que a da CVM">XP</span>` : "");
-    };
-    if (n === "Objetivo de retorno") { c.html = (v) => (v && v !== "N/D" ? esc(v) : ""); c.valor = (l) => (l[n] && l[n] !== "N/D" ? l[n] : null); }
-    if (st.grossUp && COLS_GU.has(n)) c.html = (v, l) => `<span style="${corSinal(v)}">${esc(FMT[t] ? FMT[t](v) : v)}</span>` +
-      (l._gu ? `<sup class="gu" title="Com gross up: fundo isento de IR para pessoa física (equivalente com IR de 15%)">GU</sup>` : "");
-    return c;
-  });
-  // com login: grupo de colunas da XP logo depois do cadastro
+// tabela resumida: só as colunas principais; todas as outras métricas ficam no painel do fundo (clique na linha)
+const n2 = (v, d = 2) => (typeof v === "number" && Number.isFinite(v) ? br(v * 100, d) : "");
+const miR = (v) => (typeof v === "number" ? br(v / 1e6, 1) : "");
+function colunasResumoMetricas() {
+  const gu = (l) => (l._gu ? `<sup class="gu" title="Com gross up: fundo isento de IR para pessoa física (equivalente com IR de 15%)">GU</sup>` : "");
+  const pct = (chave, linhas, g, dica, { cor = true, guOk = false } = {}) => ({ chave, nome: linhas.join(" "), linhas, tipo: "pct", g, dica,
+    html: (v, l) => `<span style="${cor ? corSinal(v) : ""}">${n2(v)}</span>${guOk ? gu(l) : ""}` });
+  const cols = [
+    ...(st.xp ? [colunaHub(), colunaCadeado()] : []),
+    { chave: "Fundo", nome: "Fundo", tipo: "txt", g: "Fundo", html: nomeFundoHTML, titulo: () => "" },
+    { chave: "CNPJ", nome: "CNPJ", tipo: "txt", g: "Fundo" },
+    colunaClassif("Fundo"),
+    { chave: "_pl", nome: "PL (R$ mi)", linhas: ["PL", "(R$ mi)"], tipo: "valor", g: "Fundo",
+      dica: "Patrimônio líquido mais recente, em R$ milhões; entre parênteses, a captação líquida no período (verde entrada, vermelho saída)",
+      html: (v, l) => `${miR(v)}${typeof l._capt === "number" ? ` (<span style="${corSinal(l._capt)}">${miR(l._capt)}</span>)` : ""}` },
+  ];
   if (st.xp) {
-    colunas = colunas.filter((c) => c.chave !== "Classificação ANBIMA").map((c) => (c.chave === "Classificação CVM" ? colunaClassif("Cadastro") : c));
-    const fimCad = colunas.map((c) => c.g).lastIndexOf("Cadastro") + 1 || 2;
-    colunas = [colunaHub(), colunaCadeado(), ...colunas.slice(0, fimCad),
-      ...colunasXP("XP · confidencial", false, true).filter((c) => !["XP Nome", "Classificação XP", "Captação"].includes(c.chave)), ...colunas.slice(fimCad)];
+    const x = Object.fromEntries(colunasXP("XP · confidencial", false, true).map((c) => [c.chave, c])), g = "XP · confidencial";
+    cols.push(x.Investidor, x.Isento, { ...x.Resgate, linhas: ["Resgate", "(Dias)"] },
+      { chave: "_taxas", nome: "Taxas (%)", linhas: ["Taxas", "(%)"], tipo: "txt", g, valor: (l) => l["Taxa adm."] ?? null, crescente: true,
+        dica: "Taxa de administração + taxa de performance (% ao ano)",
+        html: (v, l) => (l._naXP ? `<span class="xp-resg" title="${esc(`Taxa de administração: ${l["Taxa adm."] != null ? br(l["Taxa adm."], 2) + "% a.a." : "–"}\nTaxa de performance: ${l["Taxa perf."] != null ? br(l["Taxa perf."], 2) + "%" : "–"}`)}">${l["Taxa adm."] != null ? br(l["Taxa adm."], 2) : "–"}+${l["Taxa perf."] != null ? br(l["Taxa perf."], 2) : "–"}</span>` : "") },
+      { chave: "ROA", nome: "ROA (%)", linhas: ["ROA", "(%)"], tipo: "num2", g, dica: "ROA (% ao ano)", html: (v) => (v == null ? "" : br(v, 2)) },
+      { ...x.Risco, linhas: ["Risco", "XP"] },
+      { chave: "Aplicação mín.", nome: "Mínimo (R$)", linhas: ["Mínimo", "(R$)"], tipo: "valor", g, dica: "Aplicação mínima na XP (R$)", html: (v) => (v == null ? "" : br(v, v % 1 ? 2 : 0)) });
   }
+  cols.push(
+    pct("% Acumulado", ["Acumulado", "(%)"], "Rentabilidade", "Rentabilidade acumulada no período (%)", { guOk: true }),
+    pct("%CDI", ["% CDI", "(%)"], "Rentabilidade", "Rentabilidade em % do CDI no período", { guOk: true }),
+    pct("Volatilidade", ["Vol.", "(%)"], "Risco", "Volatilidade anualizada (%)", { cor: false }),
+    { chave: "Sharpe Anualizado", nome: "Sharpe", tipo: "num", g: "Risco", dica: "Índice de Sharpe anualizado", html: (v) => (typeof v === "number" ? br(v, 4) : "") },
+    pct("Índice de Dor", ["Índice de", "Dor (%)"], "Risco", "Índice de Dor (%): média das quedas em relação ao pico anterior", { cor: false }),
+    pct("% de dias acima do CDI", ["Dias melhores", "que CDI (%)"], "Consistência", "% dos dias do período em que o fundo rendeu mais que o CDI", { cor: false }),
+    pct("Queda", ["Maior", "Queda (%)"], "Drawdown", "Maior queda do período (MDD), em %"),
+    { chave: "Maior Período em Dias Underwater", nome: "Máx. Dias Underwater", linhas: ["Máx. Dias", "Underwater"], tipo: "int", g: "Drawdown",
+      dica: "Maior período, em dias, abaixo do pico anterior (underwater)", html: (v) => (typeof v === "number" ? br(v, 0) : "") });
+  return cols;
+}
+function tabelaMetricas(dados) {
+  const colunas = colunasResumoMetricas();
   const grupos = colunas.map((c) => c.g);
   // selos de maior e menor retorno no período (com 3 fundos ou mais)
   const comRet = dados.linhas.filter((l) => typeof l["% Acumulado"] === "number");
@@ -825,12 +845,13 @@ function tabelaMetricas(dados) {
     mx._selo = `<span class="selo up" title="Maior retorno no período">▲</span>`;
     mn._selo = `<span class="selo down" title="Menor retorno no período">▼</span>`;
   }
-  let linhas = st.xp ? dados.linhas.map((l) => {
-    const x = { ...l, ...camposXP(l._c) };
+  let linhas = dados.linhas.map((l) => {
+    const x = st.xp ? { ...l, ...camposXP(l._c) } : { ...l };
     x._classif = x["Classificação XP"] || l["Classificação ANBIMA"] || l["Classificação CVM"] || "";
+    x._pl = st.porCnpj.get(l._c)?.VL_PATRIM_LIQ ?? null; x._capt = l["Captação Líquida no Período"];
     if (x["XP Nome"]) { x._nomeCVM = l.Fundo; x.Fundo = String(x["XP Nome"]).toLocaleUpperCase("pt-BR"); }   // nome da XP primeiro; o da CVM na dica
-    return aplicarGrossUp(x);
-  }) : dados.linhas;
+    return st.xp ? aplicarGrossUp(x) : x;
+  });
   linhas = ordenar(linhas, "met", colunas);
   if (st.agrupar && CAMPOS_GRUPO[st.agrupar]) {
     linhas = agruparLinhas(linhas, "met", CAMPOS_GRUPO[st.agrupar], (m) => {
@@ -846,7 +867,9 @@ function tabelaMetricas(dados) {
   const nota = notaGU + (parados.length ? `<p class="nota-parado"><span class="parado">⊘</span> ${parados.length} fundo(s) sem cotas até o fim do período
     (cancelado, em liquidação ou sem envio recente). O cálculo usa o mesmo início dos demais e vai até a última cota de cada um.
     Passe o mouse sobre o símbolo para ver a data.</p>` : "");
-  return tabelaHTML({ colunas, linhas, fixas: st.xp ? 4 : 2, ...(st.xp ? { larguras: [64, 58, 260, 150] } : {}), grupos, destacar: dest, classes, altura: 520, ordenavel: "met" }) + nota;
+  const dicaClique = `<p class="nota">Clique na linha de um fundo para ver o painel com todas as métricas, o cadastro${st.xp ? ", os dados da XP" : ""} e os gráficos.</p>`;
+  return tabelaHTML({ colunas, linhas, fixas: st.xp ? 4 : 2, larguras: st.xp ? [64, 58, 260, 136] : [260, 136], grupos, destacar: dest, classes, altura: 520, ordenavel: "met",
+    atrLinha: (l) => (l._c && !l._cab ? ` data-fundo="${esc(l._c)}" tabindex="0" title="Ver o painel do fundo"` : "") }) + nota + dicaClique;
 }
 
 // ---------- tabela-legenda: cor, posição, fundo e valores, do maior para o menor; 5 maiores + 5 menores (+ destacados)
@@ -3147,11 +3170,95 @@ function semColunasSoExcel(partes) {
 function colunaClassif(g) {
   return { chave: "_classif", nome: "Classificação", tipo: "txt", g,
     html: (v, l) => { const an = l["Classificação ANBIMA"] ?? l.anbima, cv = l["Classificação CVM"] ?? l.cvm;
-      return `<span class="xp-classif" title="${esc(`XP: ${l["Classificação XP"] || "–"}\nANBIMA: ${an || "–"}\nCVM: ${cv || "–"}`)}">${esc(v || "")}</span>`; } };
+      return `<span class="xp-classif" title="${esc(`${st.xp ? `XP: ${l["Classificação XP"] || "–"}\n` : ""}ANBIMA: ${an || "–"}\nCVM: ${cv || "–"}`)}">${esc(v || "")}</span>`; } };
 }
 // captação (aberto/fechado) como coluna fixa sem título visível, entre o Link Hub e o fundo
 const colunaCadeado = () => ({ chave: "Captação", nome: "Capt.", dica: "Captação: aberto ou fechado para aplicação (e dinheiro novo)", tipo: "txt", g: "XP",
   titulo: () => "", html: (v, l) => cadeado(v) + dinheiroNovo(l._dinheiroNovo) });
+
+// ---------- painel do fundo: clique numa linha da tabela de métricas
+// todas as métricas do período ativo, separadas por tipo, com o cadastro, os dados da XP (com login) e dois minigráficos
+const PF_SECOES = [
+  ["Cadastro", (g, n) => ["Fundo", "Cadastro", "Data", "Cotas", "Captação", "Objetivo"].includes(g) && n !== "Fundo"],
+  ["Performance", (g, n) => (g === "Rentabilidade" && n !== "% de dias acima do CDI") || n === "IBOV +"],
+  ["Risco", (g, n) => ["VaR", "Risco", "MDD", "Outras"].includes(g) || n === "Beta"],
+  ["Consistência", (g, n) => g === "Underwater" || n === "% de dias acima do CDI" || n === "% de dias acima do IBOV"],
+];
+// métricas que não são ganho nem perda ficam sem cor (verde/vermelho só para retorno, quedas e VaR)
+const PF_SEM_COR = new Set(["Volatilidade", "% de dias acima do CDI", "% de dias acima do IBOV", "Índice de Dor", "% recuperado até hoje"]);
+function valorPF(t, v, nome = "") {
+  if (v == null || v === "" || (typeof v === "number" && !Number.isFinite(v))) return "–";
+  if (t === "valor") return `R$ ${br(v / 1e6, 1)} mi`;
+  if (t === "pct") return `<span style="${PF_SEM_COR.has(nome) ? "" : corSinal(v)}">${esc(brPct(v))}</span>`;
+  if (nome === "CNPJ") return `<span class="nowrap">${esc(v)}</span>`;
+  return esc(FMT[t] ? FMT[t](v) : v);
+}
+// minigráfico em SVG: séries [{ nome, cor, d, v, area, tracejado }] com valores em fração (0,05 = 5%)
+function grafPF(series, { titulo, h = 170 } = {}) {
+  // as séries de cotas vêm em arrays tipados (Float64Array/Int32Array): .map() deles só devolve números e flatMap não os abre
+  series = series.map((x) => ({ ...x, d: Array.from(x.d), v: Array.from(x.v) })).filter((x) => x.d.length > 1);
+  if (!series.length) return "";
+  const W = 560, H = h, m = { l: 46, r: 10, t: 10, b: 22 };
+  const todos = series.flatMap((s) => s.v.filter(Number.isFinite)); if (!todos.length) return "";
+  let lo = Math.min(0, ...todos), hi = Math.max(0, ...todos); if (hi - lo < 1e-9) hi = lo + 0.01;
+  const d0 = Math.min(...series.map((s) => s.d[0])), d1 = Math.max(...series.map((s) => s.d[s.d.length - 1]));
+  const X = (d) => m.l + ((d - d0) / Math.max(1, d1 - d0)) * (W - m.l - m.r), Y = (v) => m.t + (1 - (v - lo) / (hi - lo)) * (H - m.t - m.b);
+  const linha = (s) => { const pts = s.d.map((d, i) => (Number.isFinite(s.v[i]) ? `${X(d).toFixed(1)},${Y(s.v[i]).toFixed(1)}` : null)).filter(Boolean);
+    return (s.area ? `<polygon points="${X(s.d[0]).toFixed(1)},${Y(0).toFixed(1)} ${pts.join(" ")} ${X(s.d[s.d.length - 1]).toFixed(1)},${Y(0).toFixed(1)}" fill="${s.cor}" opacity=".15"/>` : "") +
+      `<polyline points="${pts.join(" ")}" fill="none" stroke="${s.cor}" stroke-width="${s.tracejado ? 1.6 : 2}"${s.tracejado ? ' stroke-dasharray="5 4"' : ""} stroke-linejoin="round"/>`; };
+  const marcas = [hi, (hi + lo) / 2, lo].map((v) => `<text x="${m.l - 6}" y="${(Y(v) + 4).toFixed(1)}" text-anchor="end">${esc(brPct(v, 1))}</text>`).join("");
+  return `<figure class="pf-graf"><figcaption>${esc(titulo)}${series.length > 1 ? `<span class="pf-leg">${series.map((s) => `<i style="background:${s.cor}"></i>${esc(s.nome)}`).join(" ")}</span>` : ""}</figcaption>
+    <svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(titulo)}"><line x1="${m.l}" x2="${W - m.r}" y1="${Y(0).toFixed(1)}" y2="${Y(0).toFixed(1)}" class="pf-zero"/>${marcas}
+    <text x="${m.l}" y="${H - 5}">${esc(fmtData(d0))}</text><text x="${W - m.r}" y="${H - 5}" text-anchor="end">${esc(fmtData(d1))}</text>${series.map(linha).join("")}</svg></figure>`;
+}
+function abrirPainelFundo(c) {
+  const l = st.ctx?.dados.linhas.find((x) => x._c === c); if (!l) return;
+  const cad = st.porCnpj.get(c) || {}, q = st.xp ? camposXP(c) : {}, f = st.res?.fundos.get(c);
+  const nomeXP = q["XP Nome"] ? String(q["XP Nome"]).toLocaleUpperCase("pt-BR") : null;
+  $("#pfTit").textContent = nomeXP || l.Fundo;
+  $("#pfSub").innerHTML = `${nomeXP ? `CVM: ${esc(l.Fundo)} · ` : ""}CNPJ ${esc(l.CNPJ)} · período ${esc(st.perAtivo || "")} (${esc(fmtData(st.ctx.dIni))} a ${esc(fmtData(st.ctx.dFim))})`;
+  $("#pfSelos").innerHTML = q._naXP ? `${cadeado(q["Captação"])}${dinheiroNovo(q._dinheiroNovo)} ${badgeInv(q.Investidor)}${q._hubId ? ` <a class="hub-link" href="${URL_HUB(q._hubId)}" target="_blank" rel="noopener noreferrer">↗ Hub</a>` : ""}` : "";
+  const kpi = (rot, v, t = "pct", nome = "") => `<div class="kpi"><div class="l">${rot}</div><div class="v">${valorPF(t, v, nome)}</div></div>`;
+  const kpis = `<div class="kpis pf-kpis">${kpi("Acumulado", l["% Acumulado"])}${kpi("Ao ano", l["% Anualizado"])}${kpi("% do CDI", l["%CDI"])}${kpi("Volatilidade", l.Volatilidade, "pct", "Volatilidade")}${kpi("Sharpe", l["Sharpe Anualizado"], "num2")}${kpi("Maior queda", l.Queda)}</div>`;
+  // minigráficos: rentabilidade x CDI e drawdown no período ativo
+  let grafs = "";
+  if (f?.d.length) {
+    const i0 = lowerBound(f.d, st.ctx.dIni), i1 = upperBound(f.d, st.ctx.dFim);
+    const d = f.d.slice(i0, i1), qq = f.q.slice(i0, i1);
+    if (d.length > 1) {
+      const acum = qq.map((x) => x / qq[0] - 1); let pico = -Infinity; const dd = qq.map((x) => { pico = Math.max(pico, x); return x / pico - 1; });
+      const cdi = st.idx.niveis.CDI, s = [{ nome: "Fundo", cor: "#1f5aa6", d, v: acum }];
+      if (cdi?.d.length) { const j0 = lowerBound(cdi.d, d[0]), j1 = upperBound(cdi.d, d[d.length - 1]); const cd = cdi.d.slice(j0, j1), cl = cdi.L.slice(j0, j1);
+        if (cd.length > 1) s.push({ nome: "CDI", cor: "#c9a23a", d: cd, v: cl.map((x) => x / cl[0] - 1), tracejado: true }); }
+      grafs = `<div class="pf-grafs">${grafPF(s, { titulo: "Rentabilidade acumulada" })}${grafPF([{ nome: "Drawdown", cor: "#d0262c", d, v: dd, area: true }], { titulo: "Drawdown (queda desde o pico)" })}</div>`;
+    }
+  }
+  const tipos = Object.fromEntries(COLUNAS.map(([g, n, t]) => [n, [g, t]]));
+  const itens = (filtro) => COLUNAS.filter(([g, n]) => filtro(g, n)).map(([, n, t]) => [n, valorPF(t, n === "Objetivo de retorno" && l[n] === "N/D" ? null : l[n], n)]);
+  const bloco = (titulo, pares, classe = "") => `<section class="pf-sec ${classe}"><h3>${esc(titulo)}</h3><dl>${pares.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${v}</dd>`).join("")}</dl></section>`;
+  const cadExtra = [["Gestor", esc(cad.GESTOR || "–")], ["Administrador", esc(cad.ADMINISTRADOR || "–")], ["Situação na CVM", esc(cad.SITUACAO || "–")],
+    ["Público-alvo (CVM)", esc(cad.PUBLICO_ALVO || "–")], ["PL mais recente", cad.VL_PATRIM_LIQ != null ? `R$ ${br(cad.VL_PATRIM_LIQ / 1e6, 1)} mi` : "–"]];
+  const secoes = [bloco("Cadastro", [...itens(PF_SECOES[0][1]), ...cadExtra], "pf-cad")];
+  if (q._naXP) secoes.push(bloco("XP · confidencial", [["Nome comercial", esc(q["XP Nome"] || "–")], ["Classificação XP", esc(q["Classificação XP"] || "–")],
+    ["Investidor", badgeInv(q.Investidor) || "–"], ["Captação", `${cadeado(q["Captação"])} ${esc(q["Captação"] || "")}`],
+    ["Dinheiro novo", q._dinheiroNovo == null ? "–" : `${dinheiroNovo(q._dinheiroNovo)} ${esc(q._dinheiroNovo || "sim")}`], ["Isento de IR (PF)", q.Isento ? "Sim" : "Não"],
+    ["Cotização do resgate", esc(q["Cotização"] || "–")], ["Liquidação do resgate", esc(q["Liquidação"] || "–")],
+    ["Taxa de administração", q["Taxa adm."] != null ? `${br(q["Taxa adm."], 2)}% a.a.` : "–"], ["Taxa de performance", q["Taxa perf."] != null ? `${br(q["Taxa perf."], 2)}%` : "–"],
+    ["ROA", q.ROA != null ? `${br(q.ROA, 2)}%` : "–"], ["Risco XP", q.Risco != null ? `<span class="xp-risco ${faixaRisco(q._riscoDesc)}">${br(q.Risco, 0)}</span> ${esc(q._riscoDesc || "")}` : "–"],
+    ["Aplicação mínima", q["Aplicação mín."] != null ? `R$ ${br(q["Aplicação mín."], 0)}` : "–"]], "pf-xp"));
+  else if (st.xp) secoes.push(bloco("XP · confidencial", [["Situação", '<span class="fora-xp">não está na XP</span>']], "pf-xp"));
+  for (const [nome, filtro] of PF_SECOES.slice(1)) secoes.push(bloco(nome, itens(filtro)));
+  $("#pfConteudo").innerHTML = kpis + grafs + `<div class="pf-grade">${secoes.join("")}</div>`;
+  $("#mini").hidden = true;
+  $("#dlgFundo").showModal(); $("#dlgFundo .pf-corpo").scrollTop = 0;
+}
+document.addEventListener("click", (e) => {
+  const dlg = $("#dlgFundo");
+  if (e.target === dlg) { dlg.close(); return; }                      // clique fora da janela fecha
+  const tr = e.target.closest?.("#tabMetricas tr[data-fundo]");
+  if (tr && !e.target.closest("a, button, input, select, label")) abrirPainelFundo(tr.dataset.fundo);
+});
+document.addEventListener("keydown", (e) => { if (e.key === "Enter" && e.target.matches?.("#tabMetricas tr[data-fundo]")) { e.preventDefault(); abrirPainelFundo(e.target.dataset.fundo); } });
 // ============================== rankings ==============================
 // Um ranking = nome + tipo de cálculo (pesos) + lista de fundos. Ficam guardados neste navegador, como os grupos.
 const lerRankings = () => pref("rankings", {});
