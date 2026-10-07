@@ -120,9 +120,9 @@ button.add small { display: block; color: var(--sub); font-size: 11px; }
 /* tabelas */
 .tb-wrap { overflow: auto; border: 1px solid var(--borda); border-radius: 9px; }
 .tb { border-collapse: separate; border-spacing: 0; font-size: 12.5px; width: max-content; min-width: 100%; }
-.tb th, .tb td { padding: 5px 9px; white-space: nowrap; text-align: right; border-bottom: 1px solid var(--borda); }
+.tb th, .tb td { padding: 5px 9px; white-space: nowrap; text-align: center; border-bottom: 1px solid var(--borda); }
 .tb td, .kpi .v, .leg td { font-variant-numeric: tabular-nums; }
-.tb td.t, .tb th.t, .tb th.fx { text-align: left; }
+.tb td.t, .tb th.t { text-align: left; }   /* só texto longo à esquerda; o resto centralizado */
 .tb thead th { position: sticky; top: 0; z-index: 2; background: var(--cab); color: var(--cabtxt); font-weight: 600; }
 .tb thead tr.h2 th { top: 27px; }
 .tb thead th.g { background: var(--anil); color: #fff; text-align: center; font-family: Cinzel, serif; font-size: 11.5px; letter-spacing: .4px;
@@ -784,7 +784,7 @@ sup.gu { font-size: 9px; font-weight: 800; color: var(--link); margin-left: 2px;
 #tabMetricas tr[data-fundo] { cursor: pointer; }
 #tabMetricas tr[data-fundo]:hover td { background: color-mix(in srgb, var(--azul) 7%, var(--card)); }
 /* painel do fundo */
-.dlg-fundo { width: min(1180px, 96vw); max-height: 92vh; padding: 0; border: 1px solid var(--borda); border-radius: 16px; background: var(--card); color: var(--txt); overscroll-behavior: contain; }
+.dlg-fundo { width: min(1180px, 96vw); max-height: 92vh; padding: 0; overflow: hidden; border: 1px solid var(--borda); border-radius: 16px; background: var(--card); color: var(--txt); overscroll-behavior: contain; }
 .dlg-fundo::backdrop { background: rgba(8, 10, 40, .55); }
 .pf-corpo { padding: 16px 20px 20px; max-height: 92vh; overflow-y: auto; box-sizing: border-box; }
 .pf-cab { align-items: flex-start; gap: 12px; }
@@ -817,3 +817,11 @@ sup.gu { font-size: 9px; font-weight: 800; color: var(--link); margin-left: 2px;
 /* tabelas com valores centralizados (ex.: valores e pontos do ranking); a coluna do nome fica à esquerda */
 .tb.tb-centro td, .tb.tb-centro td.t, .tb.tb-centro thead tr.h2 th, .tb.tb-centro thead tr.h2 th.t { text-align: center; }
 .tb.tb-centro tbody td.fx:nth-child(2), .tb.tb-centro thead tr.h2 th.fx:nth-child(2) { text-align: left; }
+
+/* lupa: escolher a área do zoom (também no celular) */
+.zoom-bar button.zoom-lupa { display: inline-grid; place-items: center; padding: 2px 6px; }
+.zoom-bar button.zoom-lupa[aria-pressed=true] { background: var(--azul); color: #fff; border-color: var(--azul); }
+.graf.lupa-ativa canvas { cursor: crosshair; touch-action: none; }
+.graf.lupa-ativa .zoom-dica { opacity: 1 !important; }
+/* gráficos do painel do fundo */
+.pf-graf .graf { height: 210px; position: relative; }

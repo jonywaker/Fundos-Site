@@ -242,7 +242,7 @@ function cabFundos(tab, comFiltros, extraIni = "", extraFim = "") {
   const o = st.ord[tab];
   let h = `<thead><tr>${extraIni ? `<th><span class="sr-only">Ação</span></th>` : ""}${colsFundo().map((c) => {
     const at = o && o.col === c.k;
-    return `<th class="${c.tipo === "txt" ? "t" : ""}"${at ? ` aria-sort="${o.dir > 0 ? "ascending" : "descending"}"` : ""}><button class="ord-f" data-tab="${tab}" data-col="${c.k}"
+    return `<th class="${c.tipo === "txt" || c.tipo === "xpclassif" ? "t" : ""}"${at ? ` aria-sort="${o.dir > 0 ? "ascending" : "descending"}"` : ""}><button class="ord-f" data-tab="${tab}" data-col="${c.k}"
       data-txt="${c.tipo === "txt" || c.tipo === "cnpj" || c.tipo === "xpclassif" || c.tipo === "xpresg" ? 1 : 0}" title="${c.dica ? esc(c.dica) + " · clique para ordenar" : "Ordenar"}">${tituloQuebrado(c.nome)}${at ? (o.dir > 0 ? " ▲" : " ▼") : ""}</button></th>`; }).join("")}${extraFim ? `<th><span class="sr-only">Remover</span></th>` : ""}</tr>`;
   if (comFiltros) {
     const f = dlg.f;
@@ -737,6 +737,8 @@ function tituloQuebrado(nome) {
   }
   return out.map((x) => esc(x)).join("<br>");
 }
+// texto longo (nome, classificação, gestor…) à esquerda; o resto (números, datas, CNPJ, selos e símbolos) centralizado
+const aEsquerda = (c) => c.esquerda ?? (c.tipo === "txt" && !c.centro);
 const tituloHTML = (c) => (c.linhas ? c.linhas.map((x) => `<span class="th-l">${esc(x)}</span>`).join("<br>") : tituloQuebrado(c.nome));
 function tabelaHTML({ colunas, linhas, fixas = 0, larguras = [260, 150], grupos = null, destacar = [], separadores = new Set(), atrLinha = null, centralizar = false,
   altura = 460, ordenavel = null, classes = [] }) {
@@ -754,9 +756,9 @@ function tabelaHTML({ colunas, linhas, fixas = 0, larguras = [260, 150], grupos 
     h += `</tr><tr class="h2">`;
   } else h += "<tr>";
   colunas.forEach((c, j) => {
-    if (!ordenavel || c.ord === false || c.nomeOculto) { h += `<th${fx(j)}${c.nomeOculto || c.dica ? ` title="${esc(c.nomeOculto || c.dica)}"` : ""}>${c.nomeOculto ? `<span class="sr-only">${esc(c.nomeOculto)}</span>` : `<span class="th-txt${c.linhas ? " th-fixo" : ""}">${tituloHTML(c)}</span>`}</th>`; return; }
+    if (!ordenavel || c.ord === false || c.nomeOculto) { h += `<th${fx(j, aEsquerda(c) ? " t" : "")}${c.nomeOculto || c.dica ? ` title="${esc(c.nomeOculto || c.dica)}"` : ""}>${c.nomeOculto ? `<span class="sr-only">${esc(c.nomeOculto)}</span>` : `<span class="th-txt${c.linhas ? " th-fixo" : ""}">${tituloHTML(c)}</span>`}</th>`; return; }
     const at = o && o.col === c.chave, texto = (c.tipo === "txt" && !c.valor) || c.crescente;   // texto e prazos: 1º clique do menor para o maior
-    h += `<th${fx(j)}${at ? ` aria-sort="${o.dir > 0 ? "ascending" : "descending"}"` : ""}><button class="ord" data-ord="${esc(ordenavel)}" data-col="${esc(c.chave)}"
+    h += `<th${fx(j, aEsquerda(c) ? " t" : "")}${at ? ` aria-sort="${o.dir > 0 ? "ascending" : "descending"}"` : ""}><button class="ord" data-ord="${esc(ordenavel)}" data-col="${esc(c.chave)}"
       data-txt="${texto ? 1 : 0}" title="${c.dica ? esc(c.dica) + " · clique para ordenar" : "Ordenar"}"><span class="th-txt${c.linhas ? " th-fixo" : ""}">${tituloHTML(c)}${at ? (o.dir > 0 ? " ▲" : " ▼") : ""}</span></button></th>`;
   });
   h += "</tr></thead><tbody>";
@@ -777,8 +779,8 @@ function tabelaHTML({ colunas, linhas, fixas = 0, larguras = [260, 150], grupos 
       let txt = c.html ? c.html(v, l) : esc((FMT[c.tipo] || FMT.txt)(v));
       if (j === 0 && l._g) txt = `<span class="guia" data-guia="${esc(l._g)}" title="Recolher este grupo"></span>` + txt;
       const estilo = c.cor ? corSinal(v) : "";
-      const alinh = c.tipo === "txt" || c.tipo === "data" || c.html ? " t" : "";
-      if (j < fixas) h += `<td class="fx t" style="left:${esq[j]}px;min-width:${larguras[j]}px;max-width:${larguras[j]}px;${estilo}" title="${esc(c.titulo ? c.titulo(l) : typeof v === "number" ? "" : v)}">${txt}</td>`;
+      const alinh = aEsquerda(c) ? " t" : "";
+      if (j < fixas) h += `<td class="fx${aEsquerda(c) ? " t" : ""}" style="left:${esq[j]}px;min-width:${larguras[j]}px;max-width:${larguras[j]}px;${estilo}" title="${esc(c.titulo ? c.titulo(l) : typeof v === "number" ? "" : v)}">${txt}</td>`;
       else {                                   // texto longo (ex.: "Índice de Preços ao Consumidor Amplo"): largura máxima e "…", texto inteiro ao passar o mouse
         const longo = c.tipo === "txt" && typeof v === "string" && v.length > 30;
         h += `<td class="${(alinh + (longo ? " longo" : "")).trim()}" style="${estilo}"${longo ? ` title="${esc(v)}"` : ""}>${txt}</td>`;
@@ -806,7 +808,7 @@ function colunasResumoMetricas() {
   const cols = [
     ...(st.xp ? [colunaHub(), colunaCadeado()] : []),
     { chave: "Fundo", nome: "Fundo", tipo: "txt", g: "Fundo", html: nomeFundoHTML, titulo: () => "" },
-    { chave: "CNPJ", nome: "CNPJ", tipo: "txt", g: "Fundo" },
+    { chave: "CNPJ", nome: "CNPJ", tipo: "txt", g: "Fundo", centro: true },
     colunaClassif("Fundo"),
     { chave: "_pl", nome: "PL (R$ mi)", linhas: ["PL", "(R$ mi)"], tipo: "valor", g: "Fundo",
       dica: "Patrimônio líquido mais recente, em R$ milhões; entre parênteses, a captação líquida no período (verde entrada, vermelho saída)",
@@ -815,7 +817,7 @@ function colunasResumoMetricas() {
   if (st.xp) {
     const x = Object.fromEntries(colunasXP("XP · confidencial", false, true).map((c) => [c.chave, c])), g = "XP · confidencial";
     cols.push(x.Investidor, x.Isento, { ...x.Resgate, linhas: ["Resgate", "(Dias)"] },
-      { chave: "_taxas", nome: "Taxas (%)", linhas: ["Taxas", "(%)"], tipo: "txt", g, valor: (l) => l["Taxa adm."] ?? null, crescente: true,
+      { chave: "_taxas", nome: "Taxas (%)", linhas: ["Taxas", "(%)"], tipo: "txt", g, centro: true, valor: (l) => l["Taxa adm."] ?? null, crescente: true,
         dica: "Taxa de administração + taxa de performance (% ao ano)",
         html: (v, l) => (l._naXP ? `<span class="xp-resg" title="${esc(`Taxa de administração: ${l["Taxa adm."] != null ? br(l["Taxa adm."], 2) + "% a.a." : "–"}\nTaxa de performance: ${l["Taxa perf."] != null ? br(l["Taxa perf."], 2) + "%" : "–"}`)}">${l["Taxa adm."] != null ? br(l["Taxa adm."], 2) : "–"}+${l["Taxa perf."] != null ? br(l["Taxa perf."], 2) : "–"}</span>` : "") },
       { chave: "ROA", nome: "ROA (%)", linhas: ["ROA", "(%)"], tipo: "num2", g, dica: "ROA (% ao ano)", html: (v) => (v == null ? "" : br(v, 2)) },
@@ -2601,6 +2603,7 @@ function barraZoom(id) {
   let barra = $(".zoom-bar", caixa);
   if (!barra) {
     caixa.insertAdjacentHTML("beforeend", `<div class="zoom-bar" data-zoom-de="${id}"><span class="zoom-dica">arraste para dar zoom · clique duplo volta</span>
+      <button type="button" class="zoom-lupa" aria-pressed="false" title="Lupa: clique e depois arraste no gráfico para escolher a área do zoom" aria-label="Lupa: escolher a área do zoom"><svg viewBox="0 0 24 24" width="13" height="13" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5 21 21"/><path d="M10.5 7.5v6M7.5 10.5h6"/></svg></button>
       <button type="button" class="zoom-voltar" title="Desfaz o último zoom">↶ Voltar</button><button type="button" class="zoom-tudo" title="Volta ao gráfico inteiro (ou clique duplo no gráfico)">⤢ Ver tudo</button></div>`);
     barra = $(".zoom-bar", caixa);
   }
@@ -2642,7 +2645,8 @@ function ativarZoom(id) {
   const off = () => ({ x: cv.offsetLeft, y: cv.offsetTop });
   const areaCaixa = (ch) => { const o = off(), a = ch.chartArea; return { left: a.left + o.x, top: a.top + o.y, right: a.right + o.x, bottom: a.bottom + o.y }; };
   cv.addEventListener("pointerdown", (e) => {
-    if (e.pointerType !== "mouse" || e.button !== 0) return;          // no celular, arrastar continua rolando a página
+    const lupa = cv.dataset.lupa === "1";                              // com a lupa ligada, toque/caneta também selecionam a área
+    if ((e.pointerType !== "mouse" && !lupa) || (e.pointerType === "mouse" && e.button !== 0)) return;   // sem lupa, no celular arrastar rola a página
     const ch = st.graficos[id]; if (!ch) return;
     const b = cv.getBoundingClientRect(), x = e.clientX - b.left, y = e.clientY - b.top, a = ch.chartArea;
     if (x < a.left || x > a.right || y < a.top || y > a.bottom) return;
@@ -2679,13 +2683,22 @@ function ativarZoom(id) {
     };
     (st.zoomG[id] ||= []).push(novo);
     aplicarZoomG(ch, id); ch.update("none");
+    ligarLupa(id, false);                                                 // a lupa vale para uma seleção
   };
   cv.addEventListener("pointerup", terminar);
   cv.addEventListener("pointercancel", () => { ini = null; desenharSelecao(caixa, null, null); const ch = st.graficos[id]; if (ch) ch.options.plugins.tooltip.enabled = ch.$tt ?? true; });
   cv.addEventListener("dblclick", () => voltarZoom(id, true));
   cv.title = "Arraste para dar zoom (na diagonal, na horizontal ou na vertical). Clique duplo volta ao gráfico inteiro.";
 }
+function ligarLupa(id, on) {
+  const cv = $("#" + id); if (!cv) return;
+  cv.dataset.lupa = on ? "1" : ""; cv.parentElement.classList.toggle("lupa-ativa", on);
+  const b = $(".zoom-lupa", cv.parentElement); if (b) b.setAttribute("aria-pressed", String(on));
+  const d = $(".zoom-dica", cv.parentElement); if (d) d.textContent = on ? "arraste no gráfico para escolher a área" : "arraste para dar zoom · clique duplo volta";
+}
 document.addEventListener("click", (e) => {
+  const lu = e.target.closest?.(".zoom-lupa");
+  if (lu) { const id = lu.closest(".zoom-bar").dataset.zoomDe; ligarLupa(id, $("#" + id)?.dataset.lupa !== "1"); return; }
   const b = e.target.closest?.(".zoom-bar button"); if (!b) return;
   voltarZoom(b.closest(".zoom-bar").dataset.zoomDe, b.classList.contains("zoom-tudo"));
 });
@@ -2970,10 +2983,10 @@ const textoCurto = (v, n = 26) => (v == null ? "" : String(v).length > n ? `<spa
 function colunasXP(g = "XP · confidencial", semInternas = false, foraNoResgate = false) {
   const cols = [
     { chave: "XP Nome", nome: "Nome comercial", tipo: "txt", g, html: (v, l) => (l._naXP ? textoCurto(v, 34) + (l._xpOfertas > 1 ? ` <small class="nota" title="${l._xpOfertas} ofertas deste CNPJ na XP">(${l._xpOfertas})</small>` : "") : `<span class="nota">não está na XP</span>`) },
-    { chave: "Investidor", nome: "Inv.", dica: "Tipo de investidor", tipo: "txt", g, html: badgeInv },
-    { chave: "Captação", nome: "Capt.", dica: "Captação: aberto ou fechado para aplicação (e dinheiro novo)", tipo: "txt", g, html: (v, l) => cadeado(v) + dinheiroNovo(l._dinheiroNovo) },
-    { chave: "Isento", nome: "Isento", dica: "Isento de IR para pessoa física", tipo: "txt", g, html: (v) => (v ? `<span class="xp-isento" title="Isento de IR para pessoa física" aria-label="Isento de IR para pessoa física">$</span>` : "") },
-    { chave: "Resgate", nome: "Resgate (Dias)", dica: "Prazo de resgate: cotização + liquidação (C = corridos, U = úteis)", tipo: "txt", g, crescente: true,
+    { chave: "Investidor", nome: "Inv.", centro: true, dica: "Tipo de investidor", tipo: "txt", g, html: badgeInv },
+    { chave: "Captação", nome: "Capt.", centro: true, dica: "Captação: aberto ou fechado para aplicação (e dinheiro novo)", tipo: "txt", g, html: (v, l) => cadeado(v) + dinheiroNovo(l._dinheiroNovo) },
+    { chave: "Isento", nome: "Isento", centro: true, dica: "Isento de IR para pessoa física", tipo: "txt", g, html: (v) => (v ? `<span class="xp-isento" title="Isento de IR para pessoa física" aria-label="Isento de IR para pessoa física">$</span>` : "") },
+    { chave: "Resgate", nome: "Resgate (Dias)", centro: true, dica: "Prazo de resgate: cotização + liquidação (C = corridos, U = úteis)", tipo: "txt", g, crescente: true,
       html: (v, l) => (l._naXP ? `<span class="xp-resg" title="${esc(`Cotização: ${l["Cotização"] || "–"}\nLiquidação: ${l["Liquidação"] || "–"}`)}">${esc(l.Resgate || "")}</span>`
         : foraNoResgate ? `<span class="fora-xp">não está na XP</span>` : ""),
       valor: (l) => { const a = prazoDias(l["Cotização"]), b = prazoDias(l["Liquidação"]); return a == null && b == null ? null : (a || 0) + (b || 0); } },
@@ -3059,7 +3072,7 @@ function aplicarDadosEquipe() {
 
 // coluna "Link Hub": abre a página do fundo no Hub da XP numa nova aba
 const URL_HUB = (id) => `https://hub.xpi.com.br/new/fundos-de-investimento#/${id}/detalhes`;
-const colunaHub = () => ({ chave: "_hubId", nome: "Link Hub", tipo: "txt", ord: false, g: "XP",
+const colunaHub = () => ({ chave: "_hubId", nome: "Link Hub", tipo: "txt", ord: false, g: "XP", centro: true,
   html: (v, l) => (v ? `<a class="hub-link" href="${URL_HUB(v)}" target="_blank" rel="noopener noreferrer" title="Abrir no Hub XP (nova aba)" aria-label="Abrir ${esc(l.Fundo || "")} no Hub XP">↗ Hub</a>`
     : `<span class="nota" title="${l._naXP ? "Sem o ID da XP: o Apps Script precisa estar na versão " + VERSAO_MIN_EQUIPE + " ou mais nova" : "Fundo fora da XP"}">–</span>`) });
 
@@ -3188,7 +3201,7 @@ function colunaClassif(g) {
       return `<span class="xp-classif" title="${esc(`${st.xp ? `XP: ${l["Classificação XP"] || "–"}\n` : ""}ANBIMA: ${an || "–"}\nCVM: ${cv || "–"}`)}">${esc(v || "")}</span>`; } };
 }
 // captação (aberto/fechado) como coluna fixa sem título visível, entre o Link Hub e o fundo
-const colunaCadeado = () => ({ chave: "Captação", nome: "Capt.", dica: "Captação: aberto ou fechado para aplicação (e dinheiro novo)", tipo: "txt", g: "XP",
+const colunaCadeado = () => ({ chave: "Captação", nome: "Capt.", centro: true, dica: "Captação: aberto ou fechado para aplicação (e dinheiro novo)", tipo: "txt", g: "XP",
   titulo: () => "", html: (v, l) => cadeado(v) + dinheiroNovo(l._dinheiroNovo) });
 
 // ---------- painel do fundo: clique numa linha da tabela de métricas
@@ -3258,17 +3271,23 @@ function abrirPainelFundo(c, onde = "analise") {
   $("#pfSelos").innerHTML = q._naXP ? `${cadeado(q["Captação"])}${dinheiroNovo(q._dinheiroNovo)} ${badgeInv(q.Investidor)}${q._hubId ? ` <a class="hub-link" href="${URL_HUB(q._hubId)}" target="_blank" rel="noopener noreferrer">↗ Hub</a>` : ""}` : "";
   const kpi = (rot, v, t = "pct", nome = "") => `<div class="kpi"><div class="l">${rot}</div><div class="v">${valorPF(t, v, nome)}</div></div>`;
   const kpis = `<div class="kpis pf-kpis">${kpi("Acumulado", l["% Acumulado"])}${kpi("Ao ano", l["% Anualizado"])}${kpi("% do CDI", l["%CDI"])}${kpi("Volatilidade", l.Volatilidade, "pct", "Volatilidade")}${kpi("Sharpe", l["Sharpe Anualizado"], "num2")}${kpi("Maior queda", l.Queda)}</div>`;
-  // minigráficos: rentabilidade x CDI e drawdown no período ativo
-  let grafs = "";
+  // gráficos do período (mesma função dos outros gráficos: zoom de arrastar, lupa e valor ao passar o mouse)
+  let grafs = "", desenhar = null;
   if (f?.d.length) {
     const i0 = lowerBound(f.d, fonte.dIni), i1 = upperBound(f.d, fonte.dFim);
-    const d = f.d.slice(i0, i1), qq = f.q.slice(i0, i1);
+    const d = Array.from(f.d.slice(i0, i1)), qq = Array.from(f.q.slice(i0, i1));
     if (d.length > 1) {
       const acum = qq.map((x) => x / qq[0] - 1); let pico = -Infinity; const dd = qq.map((x) => { pico = Math.max(pico, x); return x / pico - 1; });
-      const cdi = st.idx.niveis.CDI, s = [{ nome: "Fundo", cor: "#1f5aa6", d, v: acum }];
-      if (cdi?.d.length) { const j0 = lowerBound(cdi.d, d[0]), j1 = upperBound(cdi.d, d[d.length - 1]); const cd = cdi.d.slice(j0, j1), cl = cdi.L.slice(j0, j1);
-        if (cd.length > 1) s.push({ nome: "CDI", cor: "#c9a23a", d: cd, v: cl.map((x) => x / cl[0] - 1), tracejado: true }); }
-      grafs = `<div class="pf-grafs">${grafPF(s, { titulo: "Rentabilidade acumulada" })}${grafPF([{ nome: "Drawdown", cor: "#d0262c", d, v: dd, area: true }], { titulo: "Drawdown (queda desde o pico)" })}</div>`;
+      const sAc = [{ nome: "Fundo", cor: "#1f5aa6", x: d, y: acum, forte: true }], cdi = st.idx.niveis.CDI;
+      if (cdi?.d.length) { const j0 = lowerBound(cdi.d, d[0]), j1 = upperBound(cdi.d, d[d.length - 1]); const cd = Array.from(cdi.d.slice(j0, j1)), cl = Array.from(cdi.L.slice(j0, j1));
+        if (cd.length > 1) sAc.push({ nome: "CDI", cor: "#c9a23a", x: cd, y: cl.map((x) => x / cl[0] - 1), bench: true }); }
+      const leg = sAc.length > 1 ? `<span class="pf-leg"><i style="background:#1f5aa6"></i>Fundo <i style="background:#c9a23a"></i>CDI</span>` : "";
+      grafs = `<div class="pf-grafs"><figure class="pf-graf"><figcaption>Rentabilidade acumulada${leg}</figcaption><div class="graf"><canvas id="gPfAcum" aria-label="Rentabilidade acumulada do fundo e do CDI"></canvas></div></figure>
+        <figure class="pf-graf"><figcaption>Drawdown (queda desde o pico)</figcaption><div class="graf"><canvas id="gPfDd" aria-label="Drawdown do fundo"></canvas></div></figure></div>`;
+      desenhar = () => {
+        grafico("gPfAcum", sAc, { xMin: d[0], xMax: d[d.length - 1], fmtY: (v) => brPct(v, 2), ref: 0 });
+        grafico("gPfDd", [{ nome: "Drawdown", cor: "#d0262c", x: d, y: dd, forte: true }], { xMin: d[0], xMax: d[d.length - 1], fmtY: (v) => brPct(v, 2), ref: 0 });
+      };
     }
   }
   const tipos = Object.fromEntries(COLUNAS.map(([g, n, t]) => [n, [g, t]]));
@@ -3288,14 +3307,17 @@ function abrirPainelFundo(c, onde = "analise") {
   for (const [nome, filtro] of PF_SECOES.slice(1)) secoes.push(bloco(nome, itens(filtro)));
   $("#pfConteudo").innerHTML = kpis + grafs + `<div class="pf-grade">${secoes.join("")}</div>`;
   $("#mini").hidden = true;
+  for (const id of ["gPfAcum", "gPfDd"]) { st.graficos[id]?.destroy(); delete st.graficos[id]; }   // cada fundo começa sem zoom
+  semZoom("gPfAcum", "gPfDd");
   $("#dlgFundo").showModal(); $("#dlgFundo .pf-corpo").scrollTop = 0;
+  desenhar?.();                                                              // depois de abrir: o gráfico mede o tamanho certo
 }
 // qualquer tabela: clique no nome do fundo (ou na linha das tabelas de métricas) abre o painel; janelas de seleção ficam de fora
 const ondePainel = (el) => (el.closest("#pgRankings") ? "rk" : el.closest("#pgCarteira") ? "cart" : "analise");
 const ALVO_PAINEL = ".principal [data-mini], .principal tr[data-fundo]";
 document.addEventListener("click", (e) => {
   const dlg = $("#dlgFundo");
-  if (e.target === dlg) { dlg.close(); return; }                      // clique fora da janela fecha
+  if (e.target === dlg) { dlg.close(); return; }                      // clique fora da janela fecha (a área de fora é a própria janela)
   const alvo = e.target.closest?.(ALVO_PAINEL);
   if (!alvo || (alvo.matches("tr") && e.target.closest("a, button, input, select, label"))) return;
   if (alvo.closest(".cart-lista") && e.target.closest("input")) return;
