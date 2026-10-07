@@ -117,7 +117,10 @@ function adicionar(cnpjs) {
   return { ok, faltam };
 }
 function remover(c) { st.sel = st.sel.filter((x) => x !== c); atualizarSidebar(); }
-function avisoSel(html) { const el = $("#avisoSel"); el.innerHTML = html; clearTimeout(avisoSel.t); avisoSel.t = setTimeout(() => (el.innerHTML = ""), 9000); }
+function avisoSel(html) {
+  const el = $("#avisoSel"); el.innerHTML = html; el.dataset.aberto = ""; recolhivel(el); clearTimeout(avisoSel.t);
+  avisoSel.t = setTimeout(() => { el.innerHTML = ""; el.dataset.aberto = ""; recolhivel(el); }, el.textContent.length > 160 ? 30000 : 9000);   // aviso longo fica mais tempo
+}
 
 function buscar(texto, limite, filtroExtra) {
   const q = texto.trim().toUpperCase();
@@ -368,6 +371,7 @@ function renderColagem() {
   const lista = ordenarFundos(col.lista.map((c) => st.porCnpj.get(c)), "col"), jaSel = new Set(col.base || st.sel);
   $("#colInfo").innerHTML = `<b>${col.lista.length}</b> fundo(s) encontrado(s)` + (col.lista.some((c) => jaSel.has(c)) ? ` · ${col.lista.filter((c) => jaSel.has(c)).length} já estão ${col.aoConfirmar ? "no ranking" : "selecionados"}` : "") +
     (col.faltam.length ? `<br><span class="neg">Não encontrados na base (${col.faltam.length}): ${col.faltam.map(cnpjFmt).join(", ")}</span>` : "");
+  recolhivel($("#colInfo"));
   $("#colTabela").innerHTML = lista.length ? `<table class="tb tab-fundos">${cabFundos("col", false, "", "x")}<tbody>${lista.map((f) =>
     `<tr${jaSel.has(f.CNPJ) ? ' class="marcado" title="Já está selecionado"' : ""}>${colsFundo().map((c) => celFundo(f, c)).join("")}
       <td><button class="cart-rm" data-colrm="${f.CNPJ}" type="button" title="Tirar desta importação" aria-label="Tirar ${esc(f.NOME)} desta importação">×</button></td></tr>`).join("")}</tbody></table>`
@@ -529,6 +533,26 @@ document.addEventListener("change", (e) => {
 
 st.selAberta = false;
 document.addEventListener("click", (e) => { if (e.target.id === "selMostrar") { st.selAberta = !st.selAberta; atualizarSidebar(); } });
+
+// aviso longo (ex.: lista de fundos fora do cálculo): mostra até 2 linhas e um botão para ver o resto
+function recolhivel(el) {
+  if (!el) return;
+  el.classList.add("recolhe");
+  let b = el.nextElementSibling;
+  if (!b?.classList.contains("recolhe-btn")) { el.insertAdjacentHTML("afterend", `<button type="button" class="link recolhe-btn" hidden></button>`); b = el.nextElementSibling; }
+  requestAnimationFrame(() => {
+    el.classList.remove("aberto");
+    const passa = el.scrollHeight > el.clientHeight + 2;                 // mede recolhido: passa de 2 linhas?
+    const aberto = passa && el.dataset.aberto === "1";
+    el.classList.toggle("aberto", aberto);
+    b.hidden = !passa; b.textContent = aberto ? "mostrar menos" : "mostrar tudo";
+    b.setAttribute("aria-expanded", String(aberto));
+  });
+}
+document.addEventListener("click", (e) => {
+  const b = e.target.closest?.(".recolhe-btn"); if (!b) return;
+  const el = b.previousElementSibling; el.dataset.aberto = el.dataset.aberto === "1" ? "" : "1"; recolhivel(el);
+});
 // ============================== cálculo ==============================
 function apelidos(cnpjs) {
   const out = {}, usados = new Set();
@@ -3398,6 +3422,7 @@ function renderEditorRk() {
       ` (${parados.map((f) => `${esc(curto(f.NOME, 30))}: ${esc(situacaoCadastro(f).rot.toLowerCase())}`).join("; ")})</span>` : "") +
     (fora.length ? ` · <span class="neg">${fora.length} fora da base atual: ${fora.map(cnpjFmt).join(", ")}</span>` : "") +
     (parados.length || fora.length ? ` · entram no ranking cerca de <b>${rkEd.cnpjs.length - parados.length - fora.length}</b>` : "");
+  recolhivel($("#rkEdInfo"));
   $("#rkEdFundos").innerHTML = lista.length ? `<table class="tb tab-fundos">${cabFundos("rkEd", false, "", "x")}<tbody>${lista.map((f) =>
     `<tr>${colsFundo().map((c) => celFundo(f, c)).join("")}<td><button class="cart-rm" data-rk-edrm="${f.CNPJ}" type="button" title="Tirar do ranking" aria-label="Tirar ${esc(f.NOME)} do ranking">×</button></td></tr>`).join("")}</tbody></table>`
     : `<p class="nota" style="padding:10px">Nenhum fundo ainda. Use os botões acima para escolher na lista, colar CNPJs, carregar um grupo ou usar os selecionados.</p>`;
@@ -3579,6 +3604,7 @@ function renderRkTabela() {
   const fora = [...R.fora.map((x) => `${esc(curto(st.porCnpj.get(x.c)?.NOME || cnpjFmt(x.c), 50))} (${esc(x.motivo)})`), ...(R.foraDaBase || []).map((c) => `${cnpjFmt(c)} (fora da base)`)];
   $("#rkFora").innerHTML = (R.ordem.some((x) => x.l.curto) ? `<span class="rk-curto">⚑</span> histórico menor que o período do ranking (entra assim mesmo, com as métricas do tempo que tem). ` : "") +
     (fora.length ? `<b>Fora do ranking (${fora.length}):</b> ${fora.join("; ")}.` : "");
+  recolhivel($("#rkFora"));
 }
 function renderRkPontos() {
   const R = rkAtivo(); if (!R) return;

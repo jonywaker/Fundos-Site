@@ -828,3 +828,9 @@ sup.gu { font-size: 9px; font-weight: 800; color: var(--link); margin-left: 2px;
 
 .h-lat .sel-acoes { display: inline-flex; gap: 10px; align-items: center; }
 #selecionados[hidden] { display: none; }
+
+/* avisos longos: até 2 linhas, com "mostrar tudo" */
+.recolhe { line-height: 1.45; }
+.recolhe:not(.aberto) { max-height: 2.9em; overflow: hidden; }          /* 2 linhas; o resto aparece em "mostrar tudo" */
+.recolhe-btn { font-size: 12px; margin: 0 0 6px; }
+.recolhe-btn[hidden] { display: none; }
