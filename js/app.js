@@ -794,7 +794,7 @@ const CAMPOS_GRUPO = {
   "Classificação CVM": (l) => l["Classificação CVM"], "Classificação ANBIMA": (l) => l["Classificação ANBIMA"],
   "Objetivo de retorno": (l) => (l["Objetivo de retorno"] === "N/D" ? "" : l["Objetivo de retorno"]), "Gestor": (l) => l._gestor,
 };
-const nomeFundoHTML = (v, l) => `${marcaParado(l)}${l._selo || ""}<span data-mini="${esc(l._c)}">${esc(v ?? "")}</span>`;
+const nomeFundoHTML = (v, l) => `${marcaParado(l)}${l._selo || ""}<span class="lk-fundo" tabindex="0" role="button" data-mini="${esc(l._c)}">${esc(v ?? "")}</span>`;
 const COLS_GU = new Set(["% Acumulado", "% Anualizado", "%CDI", "CDI +"]);
 // tabela resumida: só as colunas principais; todas as outras métricas ficam no painel do fundo (clique na linha)
 const n2 = (v, d = 2) => (typeof v === "number" && Number.isFinite(v) ? br(v * 100, d) : "");
@@ -880,7 +880,7 @@ function tabelaLegenda(chave, itens, colsValor, opc = {}) {
   const okey = "leg:" + chave;
   const colunas = [{ chave: "#", nome: "#", tipo: "int" },
     { chave: "Fundo", nome: "Fundo", tipo: "txt", html: (v, l) => `<span class="sw" style="background:${l.cor}"></span>${marcaParado(l)}` +
-      (l._c ? `<span data-mini="${esc(l._c)}">${esc(v)}</span>` : esc(v)) },
+      (l._c ? `<span class="lk-fundo" tabindex="0" role="button" data-mini="${esc(l._c)}">${esc(v)}</span>` : esc(v)) },
     ...colsValor.map((c) => ({ chave: c, nome: c, tipo: "pct", cor: true }))];
   if (st.ord[okey]) ord = ordenar(ord, okey, colunas);
   const todos = opc.rk ? !!st.rkTodos : st.todos[chave];
@@ -1145,7 +1145,7 @@ function renderTabRisco() {
   const chaveX = st.riscoEixo === "ret" ? "ret" : "sharpe";
   const colunas = [
     { chave: "nome", nome: "Fundo / índice", tipo: "txt", html: (v, l) => `<span class="sw${l.bench ? " losango" : ""}" style="background:${l.cor}"></span>${marcaParado({ _parado: l.parado })}` +
-      (l.c ? `<span data-mini="${esc(l.c)}">${esc(v)}</span>` : `<i>${esc(v)}</i>`) },
+      (l.c ? `<span class="lk-fundo" tabindex="0" role="button" data-mini="${esc(l.c)}">${esc(v)}</span>` : `<i>${esc(v)}</i>`) },
     { chave: "ret", nome: "Retorno a.a.", tipo: "pct", cor: true }, { chave: "vol", nome: "Volatilidade", tipo: "pct" },
     { chave: "sharpe", nome: "Sharpe", tipo: "num2", cor: true }];
   const linhas = st.ord.risco ? ordenar(pts, "risco", colunas) : [...pts].sort((a, b) => (b[chaveX] ?? -Infinity) - (a[chaveX] ?? -Infinity));
@@ -1208,7 +1208,7 @@ function htmlResumoJM(lista, nomeB, tab, classeFn = null) {
     { chave: `${f}.ret`, nome: "Rentabilidade", tipo: "pct", cor: true, g: rot }, { chave: `${f}.retAA`, nome: "Fundo a.a.", tipo: "pct", cor: true, g: rot },
     { chave: `${f}.benchAA`, nome: `${B} a.a.`, tipo: "pct", cor: true, g: rot }, { chave: `${f}.dif`, nome: "Diferença", tipo: "pct", cor: true, g: rot }];
   const colunas = [
-    { chave: "Fundo", nome: "Fundo", tipo: "txt", g: "Fundo", html: (v, l) => (l._c ? `<span data-mini="${esc(l._c)}">${esc(v)}</span>` : `<b>${esc(v)}</b>`) },
+    { chave: "Fundo", nome: "Fundo", tipo: "txt", g: "Fundo", html: (v, l) => (l._c ? `<span class="lk-fundo" tabindex="0" role="button" data-mini="${esc(l._c)}">${esc(v)}</span>` : `<b>${esc(v)}</b>`) },
     { chave: "CNPJ", nome: "CNPJ", tipo: "txt", g: "Fundo" },
     { chave: "prim", nome: "Primeira aplicação", tipo: "data", g: "Período analisado" }, { chave: "ult", nome: "Última aplicação", tipo: "data", g: "Período analisado" },
     ...faixa("min", "Mínimo", true), ...faixa("med", "Mediana", false), ...faixa("max", "Máximo", true),
@@ -1395,7 +1395,7 @@ function extremosCorr(itens, r, marc) {
   const outros = itens.map((it, j) => ({ it, v: r(alvo, j) })).filter((x, j) => j !== alvo && x.v != null);
   if (!outros.length) return "";
   const lin = (x) => `<tr><td class="t"><span class="sw${x.it.bench ? " losango" : ""}" style="background:${x.it.cor}"></span>` +
-    (x.it.c ? `<span data-mini="${esc(x.it.c)}">${esc(x.it.nome)}</span>` : esc(x.it.nome)) + `</td><td>${br(x.v, 2)}</td></tr>`;
+    (x.it.c ? `<span class="lk-fundo" tabindex="0" role="button" data-mini="${esc(x.it.c)}">${esc(x.it.nome)}</span>` : esc(x.it.nome)) + `</td><td>${br(x.v, 2)}</td></tr>`;
   const ord = [...outros].sort((a, b) => b.v - a.v), zero = [...outros].sort((a, b) => Math.abs(a.v) - Math.abs(b.v));
   const bloco = (tit, lista) => `<div><h3 class="sub">${tit}</h3><table class="tb">${lista.map(lin).join("")}</table></div>`;
   return `<div class="corr-ext"><p class="nota">Correlação com <b>${esc(itens[alvo].nome)}</b>:</p>` +
@@ -1561,7 +1561,7 @@ function renderCarteira() {
     `<div class="tb-wrap cart-lista"><table class="tb"><thead><tr><th class="t">Ativo</th>${st.rk?.lista.length ? '<th class="t">Ranking</th>' : ""}<th>Peso (%)</th><th><span class="sr-only">Remover</span></th></tr></thead><tbody>${c.itens.map((it, i) => {
       const ok = serieItem(it);
       return `<tr${ok ? "" : ' class="indisp"'}><td class="t"><span class="sw${it.tipo === "i" ? " losango" : ""}" style="background:${corItem(it)}"></span>` +
-        (it.tipo === "f" && ok ? `<span data-mini="${esc(it.v)}">${esc(nomeItem(it))}</span>` : esc(nomeItem(it))) +
+        (it.tipo === "f" && ok ? `<span class="lk-fundo" tabindex="0" role="button" data-mini="${esc(it.v)}">${esc(nomeItem(it))}</span>` : esc(nomeItem(it))) +
         (ok ? "" : ` <small>· ainda não baixado: clique em 🧮 Calcular carteira</small>`) + `</td>
         ${st.rk?.lista.length ? `<td class="t cart-rk">${it.tipo === "f" ? rankingsDoFundo(it.v) : ""}</td>` : ""}
         <td><input class="cart-peso" data-i="${i}" type="number" min="0" step="1" value="${it.peso}" aria-label="Peso de ${esc(nomeItem(it))}"></td>
@@ -1641,7 +1641,7 @@ function renderCartResumo() {
   const thO = (col, rot, extra = "") => { const at = o && o.col === col;
     return `<th${extra}${at ? ` aria-sort="${o.dir > 0 ? "ascending" : "descending"}"` : ""}><button class="ord" type="button" data-ord="cartAtivos" data-col="${col}" data-txt="${col === "nome" ? 1 : 0}" title="Ordenar">${rot}${at ? (o.dir > 0 ? " ▲" : " ▼") : ""}</button></th>`; };
   const linhasA = ordemA.map((k) => { const it = validos[k]; return `<tr>${nomeFx(`<span class="sw${it.tipo === "i" ? " losango" : ""}" style="background:${corItem(it)}"></span>` +
-      (it.tipo === "f" ? `<span data-mini="${esc(it.v)}">${esc(nomeItem(it))}</span>` : esc(nomeItem(it))))}
+      (it.tipo === "f" ? `<span class="lk-fundo" tabindex="0" role="button" data-mini="${esc(it.v)}">${esc(nomeItem(it))}</span>` : esc(nomeItem(it))))}
     <td>${br(pesos[k] * 100, 1)}%</td>${celP(eA[k].total)}${celP(eA[k].anual)}<td>${brPct(eA[k].vol)}</td><td style="${corSinal(eA[k].sharpe)}">${eA[k].sharpe == null ? "–" : br(eA[k].sharpe, 2)}</td>
     ${celP(eA[k].mdd)}<td class="contrib"><b style="${corSinal(sim.contrib[k])}">${brPct(sim.contrib[k])}</b>
     <span class="minibar"><i class="${sim.contrib[k] >= 0 ? "up" : "down"}" style="width:${(Math.abs(sim.contrib[k]) / maxC * 50).toFixed(1)}%"></i></span></td></tr>`; }).join("");
@@ -1687,17 +1687,32 @@ function renderCartMetricas() {
   if (cacheAtivo.size > 3000) cacheAtivo.clear();
   const fora = new Set(["CNPJ", "Classificação CVM", "Classificação ANBIMA", "Cota Inicial", "Cota Final", "Captação Líquida no Período", "Objetivo de retorno"]);
   const cols = COLUNAS.filter(([, n]) => !fora.has(n));
-  const colunas = cols.map(([, n, t]) => {
+  // colunas completas: usadas pelo relatório (Excel/PDF)
+  const colunasRel = cols.map(([, n, t]) => {
     const c = { chave: n, nome: n, tipo: t, cor: t === "pct" };
-    if (n === "Fundo") { c.nome = "Carteira / ativo"; c.html = (v, l) => (l._cart ? `<b>★ ${esc(v)}</b>` :
-      `<span class="sw${l._idx ? " losango" : ""}" style="background:${l._cor}"></span>` + (l._c ? `<span data-mini="${esc(l._c)}">${esc(v)}</span>` : esc(v))); }
+    if (n === "Fundo") c.nome = "Carteira / ativo";
     return c;
   });
-  const vis = linhas.filter(Boolean);
+  // na tela: as mesmas colunas resumidas da tabela de métricas da análise; clique na linha de um fundo abre o painel
+  const colunas = colunasResumoMetricas().map((c) => (c.chave !== "Fundo" ? c : { ...c, nome: "Carteira / ativo",
+    html: (v, l) => (l._cart ? `<b>★ ${esc(v)}</b>` : `<span class="sw${l._idx ? " losango" : ""}" style="background:${l._cor}"></span>` +
+      (l._c ? `<span class="lk-fundo" tabindex="0" role="button" data-mini="${esc(l._c)}">${esc(v)}</span>` : esc(v))) }));
+  const vis = linhas.filter(Boolean).map((l) => {
+    if (!l._c) return { ...l, CNPJ: "", _classif: "" };
+    const x = st.xp ? { ...l, ...camposXP(l._c) } : { ...l }, cad = st.porCnpj.get(l._c) || {};
+    x.CNPJ = cnpjFmt(l._c); x._classif = x["Classificação XP"] || cad.CLASSIFICACAO_ANBIMA || cad.CLASSIFICACAO_CVM || "";
+    x["Classificação ANBIMA"] = cad.CLASSIFICACAO_ANBIMA; x["Classificação CVM"] = cad.CLASSIFICACAO_CVM;
+    x._pl = cad.VL_PATRIM_LIQ ?? null; x._capt = l["Captação Líquida no Período"];
+    if (x["XP Nome"]) { x._nomeCVM = l.Fundo; x.Fundo = String(x["XP Nome"]).toLocaleUpperCase("pt-BR"); }
+    return x;
+  });
   const ord = [...vis.filter((l) => l._cart), ...ordenar(vis.filter((l) => !l._cart), "cartMet", colunas)];
-  R.metricas = { colunas, linhas: ord };
-  $("#cartMetricas").innerHTML = tabelaHTML({ colunas, linhas: ord, fixas: 1, larguras: [240], grupos: cols.map(([g]) => g), ordenavel: "cartMet",
-    destacar: ord.map((l) => !l._cart && casa(st.destaque, l.Fundo)), classes: ord.map((l) => (l._cart ? "cart-total" : "")), altura: 420 });
+  R.metricas = { colunas: colunasRel, linhas: ord };
+  $("#cartMetricas").innerHTML = tabelaHTML({ colunas, linhas: ord, fixas: st.xp ? 4 : 2, larguras: st.xp ? [64, 58, 240, 136] : [240, 136],
+    grupos: colunas.map((c) => c.g), ordenavel: "cartMet", destacar: ord.map((l) => !l._cart && casa(st.destaque, l.Fundo, l._nomeCVM)),
+    classes: ord.map((l) => (l._cart ? "cart-total" : "")), altura: 420,
+    atrLinha: (l) => (l._c && !l._cart ? ` data-fundo="${esc(l._c)}" tabindex="0" title="Ver o painel do fundo"` : "") }) +
+    `<p class="nota">Clique no nome de um fundo (ou na linha dele) para ver o painel com todas as métricas no período da carteira.</p>`;
 }
 
 // ---------- rentabilidade acumulada (com "Relativa a") e drawdown
@@ -1758,7 +1773,7 @@ function renderTabCartRisco() {
   const chaveX = st.cartUI.eixo === "ret" ? "anual" : "sharpe";
   const colunas = [
     { chave: "nome", nome: "Ativo", tipo: "txt", html: (v, l) => (l.tipo === "carteira" ? `<b>★ ${esc(v)}</b>` :
-      `<span class="sw${l.tipo === "bench" ? " losango" : ""}" style="background:${l.cor}"></span>` + (l.c ? `<span data-mini="${esc(l.c)}">${esc(v)}</span>` : `<i>${esc(v)}</i>`)) },
+      `<span class="sw${l.tipo === "bench" ? " losango" : ""}" style="background:${l.cor}"></span>` + (l.c ? `<span class="lk-fundo" tabindex="0" role="button" data-mini="${esc(l.c)}">${esc(v)}</span>` : `<i>${esc(v)}</i>`)) },
     { chave: "anual", nome: "Retorno a.a.", tipo: "pct", cor: true }, { chave: "vol", nome: "Volatilidade", tipo: "pct" }, { chave: "sharpe", nome: "Sharpe", tipo: "num2", cor: true }];
   const linhas = st.ord.cartRisco ? ordenar(pts, "cartRisco", colunas) : [...pts].sort((a, b) => (b[chaveX] ?? -Infinity) - (a[chaveX] ?? -Infinity));
   $("#tabCartRisco").innerHTML = tabelaHTML({ colunas, linhas, fixas: 1, larguras: [210], ordenavel: "cartRisco", altura: 420,
@@ -2220,7 +2235,7 @@ function blocosRel(k) {
         { nome: "Volatilidade", tipo: "pct" }, { nome: "Sharpe", tipo: "num2" }, { nome: "Máx. queda", tipo: "pct" }, { nome: "Contribuição", tipo: "pct" }], linhas: lin });
       return { titulo: "Montagem de carteira · resumo", blocos: B };
     }
-    case "cartMet": B.push({ tipo: "tabela", ...anexarXPRel(tabelaMetricasRel("Carteira - métricas", R.metricas.linhas.map((l) => ({ ...l, Fundo: String(l.Fundo) })), R.metricas.colunas), (k) => R.metricas.linhas[k]._c || null) });
+    case "cartMet": B.push({ tipo: "tabela", ...anexarXPRel(tabelaMetricasRel("Carteira - métricas", R.metricas.linhas.map((l) => ({ ...l, Fundo: String(st.xp ? l.Fundo : l._nomeCVM || l.Fundo) })), R.metricas.colunas), (k) => R.metricas.linhas[k]._c || null) });
       return { titulo: "Montagem de carteira · métricas", blocos: B };
     case "cartAcum": img("gCartEvol", "Carteira - rentabilidade"); B.push({ tipo: "tabela", ...tabelaFinal("gCartEvol", "Carteira - rentab. final") }, { tipo: "tabela", ...tabelaDoGrafico("gCartEvol", "Carteira - rentab. diária") });
       return { titulo: `Montagem de carteira · rentabilidade acumulada${st.cartUI.rel.on ? ` · relativa a ${st.cartUI.rel.alvo}` : ""}`, blocos: B };
@@ -3211,19 +3226,42 @@ function grafPF(series, { titulo, h = 170 } = {}) {
     <svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(titulo)}"><line x1="${m.l}" x2="${W - m.r}" y1="${Y(0).toFixed(1)}" y2="${Y(0).toFixed(1)}" class="pf-zero"/>${marcas}
     <text x="${m.l}" y="${H - 5}">${esc(fmtData(d0))}</text><text x="${W - m.r}" y="${H - 5}" text-anchor="end">${esc(fmtData(d1))}</text>${series.map(linha).join("")}</svg></figure>`;
 }
-function abrirPainelFundo(c) {
-  const l = st.ctx?.dados.linhas.find((x) => x._c === c); if (!l) return;
-  const cad = st.porCnpj.get(c) || {}, q = st.xp ? camposXP(c) : {}, f = st.res?.fundos.get(c);
+// de onde vêm as métricas: da análise (período ativo), do ranking (período do ranking) ou da carteira (período da carteira)
+function fontePainel(c, onde) {
+  const cad = st.porCnpj.get(c) || {};
+  if (onde === "rk") {
+    for (const R of [rkAtivo(), ...(st.rk?.lista || [])].filter(Boolean)) {
+      const x = R.ordem.find((o) => o.id === c); if (!x) continue;
+      const r = x.l.r;
+      return { l: { Fundo: cad.NOME, CNPJ: cnpjFmt(c), ...r }, f: st.rk.fundos.get(c), dIni: r["Data Inicial"], dFim: r["Data Final"],
+        rotulo: `ranking ${R.nome} · ${R.M.periodo.toLowerCase()}`, extra: `${x.pos}º lugar · pontuação ${br(x.total, 1)} (Performance ${br(x.grupos.Performance, 1)} · Consistência ${br(x.grupos["Consistência"], 1)} · Risco ${br(x.grupos.Risco, 1)})` };
+    }
+  }
+  if (onde === "cart" && st.cartRes) {
+    const l = st.cartRes.metricas?.linhas.find((x) => x?._c === c);
+    if (l) return { l: { CNPJ: cnpjFmt(c), ...l, Fundo: cad.NOME || l.Fundo }, f: fundoCart(c), dIni: st.cartRes.d0, dFim: st.cartRes.dN, rotulo: "período da carteira" };
+  }
+  const l = st.ctx?.dados.linhas.find((x) => x._c === c);
+  if (l) return { l, f: st.res?.fundos.get(c), dIni: st.ctx.dIni, dFim: st.ctx.dFim, rotulo: `período ${st.perAtivo || ""}` };
+  // fundo carregado mas fora da análise: últimos 12 meses até a cota mais recente
+  const f = fundoCart(c); if (!f?.d.length) return null;
+  const r = calcularFundo(f, st.idx.ibov, "12 Meses", Number($("#peso").value) / 100, { fimComum: f.d[f.d.length - 1] });
+  return r && { l: { Fundo: cad.NOME, CNPJ: cnpjFmt(c), ...r }, f, dIni: r["Data Inicial"], dFim: r["Data Final"], rotulo: "últimos 12 meses" };
+}
+function abrirPainelFundo(c, onde = "analise") {
+  const fonte = fontePainel(c, onde); if (!fonte) return;
+  const { l, f } = fonte, cad = st.porCnpj.get(c) || {}, q = st.xp ? camposXP(c) : {};
   const nomeXP = q["XP Nome"] ? String(q["XP Nome"]).toLocaleUpperCase("pt-BR") : null;
   $("#pfTit").textContent = nomeXP || l.Fundo;
-  $("#pfSub").innerHTML = `${nomeXP ? `CVM: ${esc(l.Fundo)} · ` : ""}CNPJ ${esc(l.CNPJ)} · período ${esc(st.perAtivo || "")} (${esc(fmtData(st.ctx.dIni))} a ${esc(fmtData(st.ctx.dFim))})`;
+  $("#pfSub").innerHTML = `${nomeXP ? `CVM: ${esc(l.Fundo)} · ` : ""}CNPJ ${esc(l.CNPJ || cnpjFmt(c))} · ${esc(fonte.rotulo)} (${esc(fmtData(fonte.dIni))} a ${esc(fmtData(fonte.dFim))})` +
+    (fonte.extra ? `<br><b>${esc(fonte.extra)}</b>` : "");
   $("#pfSelos").innerHTML = q._naXP ? `${cadeado(q["Captação"])}${dinheiroNovo(q._dinheiroNovo)} ${badgeInv(q.Investidor)}${q._hubId ? ` <a class="hub-link" href="${URL_HUB(q._hubId)}" target="_blank" rel="noopener noreferrer">↗ Hub</a>` : ""}` : "";
   const kpi = (rot, v, t = "pct", nome = "") => `<div class="kpi"><div class="l">${rot}</div><div class="v">${valorPF(t, v, nome)}</div></div>`;
   const kpis = `<div class="kpis pf-kpis">${kpi("Acumulado", l["% Acumulado"])}${kpi("Ao ano", l["% Anualizado"])}${kpi("% do CDI", l["%CDI"])}${kpi("Volatilidade", l.Volatilidade, "pct", "Volatilidade")}${kpi("Sharpe", l["Sharpe Anualizado"], "num2")}${kpi("Maior queda", l.Queda)}</div>`;
   // minigráficos: rentabilidade x CDI e drawdown no período ativo
   let grafs = "";
   if (f?.d.length) {
-    const i0 = lowerBound(f.d, st.ctx.dIni), i1 = upperBound(f.d, st.ctx.dFim);
+    const i0 = lowerBound(f.d, fonte.dIni), i1 = upperBound(f.d, fonte.dFim);
     const d = f.d.slice(i0, i1), qq = f.q.slice(i0, i1);
     if (d.length > 1) {
       const acum = qq.map((x) => x / qq[0] - 1); let pico = -Infinity; const dd = qq.map((x) => { pico = Math.max(pico, x); return x / pico - 1; });
@@ -3252,13 +3290,22 @@ function abrirPainelFundo(c) {
   $("#mini").hidden = true;
   $("#dlgFundo").showModal(); $("#dlgFundo .pf-corpo").scrollTop = 0;
 }
+// qualquer tabela: clique no nome do fundo (ou na linha das tabelas de métricas) abre o painel; janelas de seleção ficam de fora
+const ondePainel = (el) => (el.closest("#pgRankings") ? "rk" : el.closest("#pgCarteira") ? "cart" : "analise");
+const ALVO_PAINEL = ".principal [data-mini], .principal tr[data-fundo]";
 document.addEventListener("click", (e) => {
   const dlg = $("#dlgFundo");
   if (e.target === dlg) { dlg.close(); return; }                      // clique fora da janela fecha
-  const tr = e.target.closest?.("#tabMetricas tr[data-fundo]");
-  if (tr && !e.target.closest("a, button, input, select, label")) abrirPainelFundo(tr.dataset.fundo);
+  const alvo = e.target.closest?.(ALVO_PAINEL);
+  if (!alvo || (alvo.matches("tr") && e.target.closest("a, button, input, select, label"))) return;
+  if (alvo.closest(".cart-lista") && e.target.closest("input")) return;
+  abrirPainelFundo(alvo.dataset.mini || alvo.dataset.fundo, ondePainel(alvo));
 });
-document.addEventListener("keydown", (e) => { if (e.key === "Enter" && e.target.matches?.("#tabMetricas tr[data-fundo]")) { e.preventDefault(); abrirPainelFundo(e.target.dataset.fundo); } });
+document.addEventListener("keydown", (e) => {
+  if ((e.key === "Enter" || (e.key === " " && e.target.matches?.("[data-mini]"))) && e.target.matches?.(ALVO_PAINEL)) {
+    e.preventDefault(); abrirPainelFundo(e.target.dataset.mini || e.target.dataset.fundo, ondePainel(e.target));
+  }
+});
 // ============================== rankings ==============================
 // Um ranking = nome + tipo de cálculo (pesos) + lista de fundos. Ficam guardados neste navegador, como os grupos.
 const lerRankings = () => pref("rankings", {});
@@ -3453,7 +3500,7 @@ function colunasRk(R, tela = false) {
   return [
     { chave: "pos", nome: "Pos.", tipo: "int", g: "Ranking", html: posHTML }, { chave: "var", nome: `Var. ${R.rotVar || "mês"}`, tipo: "int", g: "Ranking", html: (v) => varHTML(v) },
     ...(tela && st.xp ? [{ ...colunaCadeado(), g: "Ranking" }] : []),
-    { chave: "Fundo", nome: "Fundo", tipo: "txt", g: "Ranking", html: (v, l) => `${l.curto ? `<span class="rk-curto" title="Histórico menor que o período do ranking (desde ${fmtData(l.ini)})">⚑</span>` : ""}<span data-mini="${esc(l._c)}">${esc(v)}</span>` },
+    { chave: "Fundo", nome: "Fundo", tipo: "txt", g: "Ranking", html: (v, l) => `${l.curto ? `<span class="rk-curto" title="Histórico menor que o período do ranking (desde ${fmtData(l.ini)})">⚑</span>` : ""}<span class="lk-fundo" tabindex="0" role="button" data-mini="${esc(l._c)}">${esc(v)}</span>` },
     { chave: "total", nome: "Pontuação", tipo: "num2", g: "Ranking", dica: "Pontuação total (0 a 100); passe o mouse no valor para ver a divisão",
       html: (v, l) => `<b class="rk-tot" title="${esc(`Performance: ${br(l.perf, 1)}\nConsistência: ${br(l.cons, 1)}\nRisco: ${br(l.risco, 1)}`)}">${br(v, 1)}</b>` },
     ...(tela ? [] : [{ chave: "perf", nome: "Performance", tipo: "num2", g: "Pontos por grupo", html: (v) => br(v, 1) }, { chave: "cons", nome: "Consistência", tipo: "num2", g: "Pontos por grupo", html: (v) => br(v, 1) },
@@ -3490,7 +3537,7 @@ function renderRkPontos() {
   const R = rkAtivo(); if (!R) return;
   const ks = GRUPOS_RANK.flatMap((g) => Object.keys(R.M.pesos).filter((k) => grupoMetrica(R.M, k) === g));
   const fmtValor = (m) => (v) => (v == null ? `<span class="nota">sem valor</span>` : m.tipo === "valor" ? br(v / 1e6, 1) + " mi" : esc(FMT[m.tipo]?.(v) ?? v));
-  const colunas = [{ chave: "pos", nome: "Pos.", tipo: "int", g: "Ranking", html: posHTML }, { chave: "Fundo", nome: "Fundo", tipo: "txt", g: "Ranking", html: (v, l) => `<span data-mini="${esc(l._c)}">${esc(v)}</span>` },
+  const colunas = [{ chave: "pos", nome: "Pos.", tipo: "int", g: "Ranking", html: posHTML }, { chave: "Fundo", nome: "Fundo", tipo: "txt", g: "Ranking", html: (v, l) => `<span class="lk-fundo" tabindex="0" role="button" data-mini="${esc(l._c)}">${esc(v)}</span>` },
     { chave: "total", nome: "Pontuação", tipo: "num2", g: "Ranking", html: (v) => `<b>${br(v, 2)}</b>` },
     ...GRUPOS_RANK.map((g) => ({ chave: `g:${g}`, nome: g, tipo: "num2", g: "Pontos por grupo", html: (v) => br(v, 2) })),
     ...ks.flatMap((k) => { const m = metricaRank(k), p = R.M.pesos[k], gnome = `${m.nome} · peso ${Math.abs(p)} · ${p > 0 ? "maior é melhor" : "menor é melhor"}`;

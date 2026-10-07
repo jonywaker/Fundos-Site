@@ -463,7 +463,8 @@ dialog.dlg-pergunta { width: min(460px, 92vw); border: 0; border-top: 3px solid 
 @media (prefers-color-scheme: dark) { .dlg-pergunta h3 { color: var(--ouro); } }
 .dlg-pergunta p { font-size: 13.5px; line-height: 1.5; margin: 0 0 14px; }
 .dlg-pergunta .botoes { display: flex; justify-content: flex-end; gap: 8px; flex-wrap: wrap; }
-.aviso-chip { border-color: #b7791f !important; color: #b7791f; }
+.aviso-chip { border-color: #b7791f !important; color: #8a5a12; }           /* âmbar mais escuro: contraste 5,4 no fundo claro */
+@media (prefers-color-scheme: dark) { .aviso-chip { color: #f0c46a; } }
 .jm-info .aviso-chip { font-weight: 600; }
 /* nome do fundo sempre visível nas tabelas de seleção */
 .dlg-tab .tab-fundos th:first-child, .dlg-tab .tab-fundos td:first-child { position: sticky; left: 0; text-align: left; min-width: 260px; max-width: 300px;
@@ -805,3 +806,10 @@ sup.gu { font-size: 9px; font-weight: 800; color: var(--link); margin-left: 2px;
 .pf-sec dl { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 3px 12px; margin: 0; font-size: 13px; }
 .pf-sec dt { color: var(--sub); } .pf-sec dd { margin: 0; text-align: right; font-weight: 700; font-variant-numeric: tabular-nums; }
 .nowrap { white-space: nowrap; }
+
+/* nome do fundo clicável em qualquer tabela: abre o painel do fundo */
+.lk-fundo { cursor: pointer; }
+.lk-fundo:hover { text-decoration: underline; text-decoration-color: var(--ouro); text-underline-offset: 3px; }
+.lk-fundo:focus-visible { outline: 2px solid var(--ouro); outline-offset: 2px; border-radius: 3px; }
+#cartMetricas tr[data-fundo] { cursor: pointer; }
+#cartMetricas tr[data-fundo]:hover td { background: color-mix(in srgb, var(--azul) 7%, var(--card)); }
