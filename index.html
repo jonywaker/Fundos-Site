@@ -22,11 +22,12 @@
         <nav class="abas" role="tablist" aria-label="Ferramentas" aria-orientation="vertical">
           <button id="abaAnalise" role="tab" type="button" data-aba="analise" aria-controls="pgAnalise" aria-selected="true">📊 Análise de fundos</button>
           <button id="abaRankings" role="tab" type="button" data-aba="rankings" aria-controls="pgRankings" aria-selected="false" tabindex="-1">🏆 Rankings</button>
+          <button id="abaXP" role="tab" type="button" data-aba="xp" aria-controls="pgXP" aria-selected="false" tabindex="-1" hidden>🏦 Fundos XP</button>
           <button id="abaCarteira" role="tab" type="button" data-aba="carteira" aria-controls="pgCarteira" aria-selected="false" tabindex="-1">🧮 Montagem de carteira</button>
         </nav>
       </div>
       <div class="lat-meio">
-      <section class="bloco" data-pg="analise">
+      <section class="bloco" data-pg="analise xp">
         <h2 class="h-lat">Adicionar fundos</h2>
         <input id="busca" type="search" placeholder="Nome, gestor ou CNPJ (mín. 3 letras)…" aria-label="Buscar fundo por nome, gestor ou CNPJ" autocomplete="off" spellcheck="false">
         <div id="resBusca" class="resbusca"></div>
@@ -37,7 +38,7 @@
         </div>
       </section>
 
-      <section class="bloco" data-pg="analise">
+      <section class="bloco" data-pg="analise xp">
         <h2 class="h-lat"><span>Selecionados (<span id="nSel">0</span>)</span><span class="sel-acoes">
           <button id="selMostrar" class="link" type="button" aria-expanded="false" aria-controls="selecionados" hidden>Mostrar</button>
           <button id="limpar" class="link" hidden>limpar</button></span></h2>
@@ -51,7 +52,7 @@
         <p id="rkResumoLat" class="nota"></p>
       </section>
 
-      <section class="bloco" data-pg="analise">
+      <section class="bloco" data-pg="analise xp">
         <h2 class="h-lat">Períodos</h2>
         <div id="periodos" class="pilulas">
           <button data-p="Mês">Mês</button><button data-p="Ano">Ano</button><button data-p="3 Meses">3 Meses</button>
@@ -66,7 +67,7 @@
         </div>
       </section>
 
-      <section class="bloco" data-pg="analise">
+      <section class="bloco" data-pg="analise xp">
         <h2 class="h-lat">Índices de comparação</h2>
         <div id="idxChips" class="pilulas"></div>
       </section>
@@ -85,7 +86,7 @@
 
       <div id="log" class="nota"></div>
       </div>
-      <div class="lat-pe" data-pg="analise">
+      <div class="lat-pe" data-pg="analise xp">
         <button id="calcular" class="prim" disabled>Calcular</button>
         <div id="progresso" class="progresso" hidden><div></div></div>
         <div id="progTxt" class="nota"></div>
@@ -115,6 +116,7 @@
     </header>
     <main class="principal" id="principal" tabindex="-1">
       <div id="pgAnalise" class="pagina" role="tabpanel" aria-labelledby="abaAnalise" data-pagina="analise">
+      <div id="nucleoAnalise">
       <div class="barra">
         <div id="barraPer" class="pilulas"></div>
         <div class="slider">
@@ -219,6 +221,36 @@
         </div>
       </section>
 
+            </div>
+      </div>
+
+      <div id="pgXP" class="pagina" role="tabpanel" aria-labelledby="abaXP" data-pagina="xp" hidden>
+        <section id="secXPGeral" class="cartao">
+          <div class="cab"><h2>Visão geral dos fundos da XP</h2></div>
+          <p class="nota">Dados da planilha da XP (confidencial). Clique numa barra para selecionar esses fundos e calcular.</p>
+          <div id="xpGeral"></div>
+        </section>
+        <section class="cartao xp-calc">
+          <div class="cab"><h2>Calcular</h2></div>
+          <p class="nota">Escolha os fundos como na Análise de fundos, ou calcule todos os fundos da XP de uma vez. Os resultados aparecem abaixo e também na página Análise de fundos.</p>
+          <div class="xp-acoes">
+            <button class="sec" type="button" data-acao-sel="abrirSeletor">☰ Lista de fundos…</button>
+            <button class="sec" type="button" data-acao-sel="abrirColar">📋 Colar CNPJs…</button>
+            <button class="sec" type="button" data-acao-sel="abrirGrupos">★ Grupos…</button>
+            <button id="xpCalcTodos" class="prim" type="button">🧮 Calcular todos os fundos da XP</button>
+            <span id="xpSelInfo" class="nota"></span>
+          </div>
+        </section>
+        <div id="xpSlot"></div>
+        <section id="secROA" class="cartao" hidden>
+          <div class="cab"><h2>ROA × métricas</h2>
+            <div class="opcoes"><span id="roaEixo" class="pilulas mini" role="group" aria-label="Métrica do eixo horizontal">
+              <button type="button" data-e="sharpe" aria-pressed="true">Sharpe</button><button type="button" data-e="prazo" aria-pressed="false">Prazo de resgate</button>
+              <button type="button" data-e="risco" aria-pressed="false">Risco XP</button><button type="button" data-e="dor" aria-pressed="false">Índice de Dor</button>
+              <button type="button" data-e="jm" aria-pressed="false">Mediana da janela móvel</button></span></div></div>
+          <p id="roaNota" class="nota"></p>
+          <div class="graf graf-roa"><canvas id="gROA" aria-label="Gráfico de ROA contra a métrica escolhida"></canvas></div>
+        </section>
       </div>
 
       <div id="pgRankings" class="pagina" role="tabpanel" aria-labelledby="abaRankings" data-pagina="rankings" hidden>

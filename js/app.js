@@ -150,6 +150,7 @@ function atualizarSidebar() {
     || `<p class="nota">Nenhum fundo selecionado.</p>`;
   $("#limpar").hidden = !st.sel.length;
   // lista dos selecionados minimizada por padrão: o título mostra a quantidade e o botão abre/fecha
+  const xpi = $("#xpSelInfo"); if (xpi) xpi.textContent = st.sel.length ? `${st.sel.length} fundo(s) selecionado(s)` : "";
   $("#selMostrar").hidden = !st.sel.length;
   $("#selecionados").hidden = !st.sel.length || !st.selAberta;
   $("#selMostrar").textContent = st.selAberta ? "Ocultar" : "Mostrar"; $("#selMostrar").setAttribute("aria-expanded", String(!!st.selAberta));
@@ -631,7 +632,7 @@ async function calcular() {
     barra.firstElementChild.style.width = "100%";
     faseCarga("montando tabelas e gráficos…", 96);
     await new Promise((r) => setTimeout(r, 30));
-    mostrarPagina("analise");
+    mostrarPagina(st.pagina === "xp" ? "xp" : "analise");          // na página dos Fundos XP, os resultados aparecem lá
     renderResultado();
     $("#progTxt").textContent = `pronto em ${br((performance.now() - t0) / 1000, 1)} s`;
     fecharCarga();
@@ -1011,7 +1012,8 @@ function estrela(cor, tam = 28) {
 }
 // dispersão risco × retorno com poucos conjuntos de pontos (rápido mesmo com centenas de fundos)
 // pts: { nome, cor, x, y, tipo: "fundo" | "bench" | "carteira", forte, apagado }
-function graficoRR(id, pts, { fmtX, tituloX, refX = null }) {
+function graficoRR(id, pts, { fmtX, tituloX, refX = null, fmtY = (v) => brPct(v, 1), tituloY = "Volatilidade (risco, % a.a.)", yMin = 0, rotulo = null }) {
+  const rotuloRR = rotulo || ((it) => `${it.raw.nome}: volatilidade ${brPct(it.parsed.y)} · ${tituloX.startsWith("Retorno") ? "retorno " + brPct(it.parsed.x) + " a.a." : "Sharpe " + br(it.parsed.x, 2)}`);
   const grupo = (tipo, estilo) => {
     const ps = pts.filter((p) => p.tipo === tipo);
     return { label: tipo, data: ps.map((p) => ({ x: p.x, y: p.y, nome: p.nome, rotulo: p.tipo !== "fundo" || p.forte })),
@@ -1027,8 +1029,9 @@ function graficoRR(id, pts, { fmtX, tituloX, refX = null }) {
     ant.data.datasets = datasets;
     ant.options.scales.x.title.text = tituloX; ant.options.scales.x.ticks.callback = fmtX;
     ant.options.plugins.linhaRef = { x: refX };
-    ant.options.plugins.tooltip.callbacks.label = (it) => `${it.raw.nome}: volatilidade ${brPct(it.parsed.y)} · ${tituloX.startsWith("Retorno") ? "retorno " + brPct(it.parsed.x) + " a.a." : "Sharpe " + br(it.parsed.x, 2)}`;
-    ant.$base = { x: [undefined, undefined], y: [0, undefined] };
+    ant.options.plugins.tooltip.callbacks.label = rotuloRR;
+    ant.options.scales.y.title.text = tituloY; ant.options.scales.y.ticks.callback = fmtY;
+    ant.$base = { x: [undefined, undefined], y: [yMin, undefined] };
     aplicarZoomG(ant, id);
     ant.update("none");
     return;
@@ -1039,16 +1042,16 @@ function graficoRR(id, pts, { fmtX, tituloX, refX = null }) {
     options: {
       animation: false, responsive: true, maintainAspectRatio: false,
       plugins: { legend: { display: false }, linhaRef: { x: refX },
-        tooltip: { callbacks: { label: (it) => `${it.raw.nome}: volatilidade ${brPct(it.parsed.y)} · ${tituloX.startsWith("Retorno") ? "retorno " + brPct(it.parsed.x) + " a.a." : "Sharpe " + br(it.parsed.x, 2)}` } } },
+        tooltip: { callbacks: { label: rotuloRR } } },
       scales: {
         x: { title: { display: true, text: tituloX, color: corTexto() }, ticks: { callback: fmtX, color: corTexto() }, grid: { color: "rgba(128,128,128,.15)" } },
-        y: { min: 0, title: { display: true, text: "Volatilidade (risco, % a.a.)", color: corTexto() },
-          ticks: { callback: (v) => brPct(v, 1), color: corTexto() }, grid: { color: "rgba(128,128,128,.15)" } },
+        y: { min: yMin, grace: "6%", title: { display: true, text: tituloY, color: corTexto() },     // folga: pontos não colam na borda
+          ticks: { callback: fmtY, color: corTexto() }, grid: { color: "rgba(128,128,128,.15)" } },
       },
     },
     plugins: [linhaRef, rotulos],
   });
-  posCriar(id, { x: [undefined, undefined], y: [0, undefined] });
+  posCriar(id, { x: [undefined, undefined], y: [yMin, undefined] });
 }
 
 // ============================== resultado ==============================
@@ -1101,6 +1104,7 @@ function renderResultado() {
   renderAcum(); renderDd(); renderRisco(); renderCorrelacao();
   renderCarteira();
   avisoDesatualizado();
+  if (st.pagina === "xp") renderROA();
 }
 function renderMetricas() {
   const c = st.ctx; if (!c) return;
@@ -1229,6 +1233,7 @@ function renderJM() {
 function renderTabJM() {
   const jm = st.res?.jm; if (!jm || !jm.porFundo.length) return;
   $("#tabJM").innerHTML = htmlResumoJM(jm.porFundo.map(({ c, resumo }) => ({ _c: c, Fundo: st.porCnpj.get(c)?.NOME || c, CNPJ: cnpjFmt(c), resumo })), jm.nomeB, "jm");
+  if (st.pagina === "xp" && st.roaEixo === "jm") renderROA();
 }
 // tabela-resumo da janela móvel. lista: [{ Fundo, CNPJ, _c?, resumo }]
 function htmlResumoJM(lista, nomeB, tab, classeFn = null) {
@@ -2775,14 +2780,19 @@ function lerUrl() {
 }
 
 // ---------- três páginas: Análise de fundos, Rankings e Montagem de carteira (cada uma mostra só o que é dela)
-const PAGINAS = ["analise", "rankings", "carteira"];
+const PAGINAS = ["analise", "rankings", "xp", "carteira"];
 const TITULOS = {
   analise: ["Análise de fundos", "Métricas, gráficos, correlação e janela móvel dos fundos selecionados"],
   rankings: ["Rankings", "Pontuação dos fundos por métricas, janela móvel e correlação de cada ranking"],
   carteira: ["Montagem de carteira", "Pesos, rebalanceamento, desempenho e contribuição de cada ativo"],
+  xp: ["Fundos XP", "Visão geral dos fundos da XP, cálculo de todos de uma vez e análise do ROA"],
 };
 function mostrarPagina(pg, { rolar = true, foco = false } = {}) {
-  if (!PAGINAS.includes(pg)) pg = "analise";
+  if (!PAGINAS.includes(pg) || (pg === "xp" && !st.xp)) pg = "analise";        // a página da XP só existe com login
+  // os resultados da análise (tabelas e gráficos) aparecem também na página da XP: o mesmo bloco muda de lugar
+  const nucleo = $("#nucleoAnalise");
+  if (pg === "xp" && nucleo.parentElement.id !== "xpSlot") $("#xpSlot").append(nucleo);
+  else if (pg === "analise" && nucleo.parentElement.id !== "pgAnalise") $("#pgAnalise").append(nucleo);
   st.pagina = pg; salvar("pagina", pg);
   const [tit, sub] = TITULOS[pg];
   $("#tituloPagina").textContent = tit; $("#subtituloPagina").textContent = sub; document.title = `${tit} · Análise de Fundos`;
@@ -2793,6 +2803,7 @@ function mostrarPagina(pg, { rolar = true, foco = false } = {}) {
   requestAnimationFrame(() => Object.values(st.graficos).forEach((g) => { try { g?.resize(); } catch { /* gráfico já destruído */ } }));
   if (st.idx) sincronizarUrl();
   if (rolar) scrollTo({ top: 0, behavior: "auto" });
+  if (pg === "xp") { renderXPGeral(); renderROA(); }
 }
 // durante o relatório todas as páginas ficam visíveis (as imagens dos gráficos saem da tela)
 function mostrarTodasPaginas() { for (const el of $$(".pagina")) el.hidden = false; Object.values(st.graficos).forEach((g) => { try { g?.resize(); } catch { /* */ } }); }
@@ -2801,7 +2812,8 @@ document.addEventListener("keydown", (e) => {                      // setas entr
   const b = e.target.closest?.(".abas [role=tab]"); if (!b) return;
   const i = PAGINAS.indexOf(b.dataset.aba), n = PAGINAS.length;
   const prox = e.key === "ArrowRight" || e.key === "ArrowDown", ant = e.key === "ArrowLeft" || e.key === "ArrowUp";
-  const alvo = prox ? PAGINAS[(i + 1) % n] : ant ? PAGINAS[(i - 1 + n) % n] : e.key === "Home" ? PAGINAS[0] : e.key === "End" ? PAGINAS[n - 1] : null;
+  const vis = PAGINAS.filter((p) => !$(`.abas [data-aba="${p}"]`).hidden), iv = vis.indexOf(b.dataset.aba), nv = vis.length;   // pula abas escondidas
+  const alvo = prox ? vis[(iv + 1) % nv] : ant ? vis[(iv - 1 + nv) % nv] : e.key === "Home" ? vis[0] : e.key === "End" ? vis[nv - 1] : null;
   if (alvo) { e.preventDefault(); mostrarPagina(alvo, { rolar: false, foco: true }); }
 });
 
@@ -2874,6 +2886,8 @@ async function apiEquipe(acao, dados = {}) {
 }
 function desenharEquipe() {
   $("#equipeBox").hidden = !EQUIPE_URL;
+  $("#abaXP").hidden = !st.xp;
+  if (!st.xp && st.pagina === "xp") mostrarPagina("analise", { rolar: false });
   const on = !!st.equipe;
   $("#equipeEntrar").hidden = on; $("#equipeLogado").hidden = !on;
   if (on) { $("#equipeNome").textContent = `👤 ${st.equipe.nome}`; $("#equipeInfo").textContent = st.xp ? `${st.xp.size} fundos XP` + (st.xpOfertas > st.xp.size ? ` (${st.xpOfertas} ofertas)` : "") : "carregando dados…"; }
@@ -3359,6 +3373,128 @@ document.addEventListener("keydown", (e) => {
     e.preventDefault(); abrirPainelFundo(e.target.dataset.mini || e.target.dataset.fundo, ondePainel(e.target));
   }
 });
+
+// ============================== página "Fundos XP" (só com login) ==============================
+// visão geral (planilha da XP), seleção/cálculo (o mesmo motor da Análise) e o gráfico ROA × métrica
+const xpGrupos = new Map();                            // id da barra -> CNPJs (clique seleciona e calcula)
+function plXP(c) { const cad = st.porCnpj.get(c); if (cad && !cad._soXP && cad.VL_PATRIM_LIQ != null) return cad.VL_PATRIM_LIQ; return numXP(ofertaXP(c)?.NETEQUITY); }
+const mediana = (v) => { const a = v.filter(Number.isFinite).sort((x, y) => x - y); if (!a.length) return null; const m = a.length >> 1; return a.length % 2 ? a[m] : (a[m - 1] + a[m]) / 2; };
+function faixaDe(v, limites) { if (v == null || !Number.isFinite(v)) return null; for (const [rot, lim] of limites) if (v <= lim) return rot; return limites[limites.length - 1][0]; }
+function cartaoBarras(titulo, contagem, total, { ordem = null, cores = {}, max = 12, nota = "" } = {}) {
+  let itens = [...contagem.entries()];
+  itens = ordem ? ordem.filter((k) => contagem.has(k)).map((k) => [k, contagem.get(k)]) : itens.sort((a, b) => b[1].length - a[1].length);
+  if (!ordem && itens.length > max) { const resto = itens.slice(max - 1); itens = [...itens.slice(0, max - 1), ["Outras", resto.flatMap(([, v]) => v)]]; }
+  const maior = Math.max(1, ...itens.map(([, v]) => v.length));
+  return `<div class="xp-card"><h3>${esc(titulo)}</h3>${itens.map(([rot, cs]) => {
+    const id = `g${xpGrupos.size}`; xpGrupos.set(id, { rot: `${titulo}: ${rot}`, cs });
+    return `<button type="button" class="xp-barra" data-xpg="${id}" title="Selecionar estes ${cs.length} fundos e calcular">
+      <span class="xb-rot">${esc(rot)}</span><span class="xb-trilho"><i style="width:${(cs.length / maior * 100).toFixed(1)}%;${cores[rot] ? `background:${cores[rot]}` : ""}"></i></span>
+      <span class="xb-n">${cs.length} <small>(${br(cs.length / total * 100, 0)}%)</small></span></button>`; }).join("")}${nota ? `<p class="nota">${nota}</p>` : ""}</div>`;
+}
+function renderXPGeral() {
+  if (!st.xp) return;
+  xpGrupos.clear();
+  const cs = [...st.xp.keys()], n = cs.length, q = new Map(cs.map((c) => [c, camposXP(c)]));
+  const add = (m, k, c) => { if (k == null) return; (m.get(k) || m.set(k, []).get(k)).push(c); };
+  const classif = new Map(), inv = new Map(), risco = new Map(), prazo = new Map(), pl = new Map(), minimo = new Map(), roa = new Map(), adm = new Map(), cvm = new Map();
+  const naBase = cs.filter((c) => st.porCnpj.has(c) && !st.porCnpj.get(c)._soXP);
+  for (const c of cs) {
+    const x = q.get(c), o = ofertaXP(c);
+    add(classif, x["Classificação XP"] || "Sem classificação", c);
+    add(inv, { IG: "Geral (IG)", IQ: "Qualificado (IQ)", IP: "Profissional (IP)" }[x.Investidor], c);
+    add(risco, x._riscoDesc ? String(x._riscoDesc) : "Sem risco", c);
+    const pc = prazoDias(x["Cotização"]), pq = prazoDias(x["Liquidação"]);
+    add(prazo, pc == null && pq == null ? "Prazo especial" : faixaDe((pc || 0) + (pq || 0), [["até D+1", 1.6], ["D+2 a D+5", 5.6], ["D+6 a D+30", 30.6], ["D+31 a D+90", 90.6], ["D+91 a D+180", 180.6], ["acima de D+180", Infinity]]), c);
+    add(pl, faixaDe(plXP(c), [["até R$ 50 mi", 50e6], ["R$ 50–200 mi", 200e6], ["R$ 200–500 mi", 500e6], ["R$ 500 mi–1 bi", 1e9], ["R$ 1–5 bi", 5e9], ["acima de R$ 5 bi", Infinity]]) || "Sem PL", c);
+    add(minimo, faixaDe(x["Aplicação mín."], [["até R$ 100", 100], ["até R$ 1 mil", 1e3], ["até R$ 5 mil", 5e3], ["até R$ 10 mil", 1e4], ["até R$ 50 mil", 5e4], ["acima de R$ 50 mil", Infinity]]) || "Sem informação", c);
+    add(roa, x.ROA == null ? "Sem ROA" : faixaDe(x.ROA, [["0%", 0], ["até 0,25%", 0.25], ["0,25% a 0,50%", 0.5], ["0,50% a 1%", 1], ["acima de 1%", Infinity]]), c);
+    add(adm, x["Taxa adm."] == null ? "Sem informação" : faixaDe(x["Taxa adm."], [["até 0,5%", 0.5], ["0,5% a 1%", 1], ["1% a 2%", 2], ["acima de 2%", Infinity]]), c);
+    add(cvm, o?.CLASSIFICATIONCVM || "Sem classificação", c);
+  }
+  const conta = (f) => cs.filter((c) => f(q.get(c))).length, pls = cs.map(plXP).filter(Number.isFinite);
+  const kpi = (rot, v, sub = "") => `<div class="kpi"><div class="l">${rot}</div><div class="v">${v}</div>${sub ? `<div class="s">${sub}</div>` : ""}</div>`;
+  const abertos = conta((x) => x["Captação"] === "Aberto");
+  $("#xpGeral").innerHTML = `<div class="kpis xp-kpis">
+    ${kpi("Fundos na XP", br(n, 0), `${br(st.xpOfertas || n, 0)} ofertas`)}
+    ${kpi("Com cotas na CVM", br(naBase.length, 0), `${br(n - naBase.length, 0)} sem dados (FIDC, FII, FIP…)`)}
+    ${kpi("Abertos para aplicação", br(abertos, 0), `${br(n - abertos, 0)} fechados`)}
+    ${kpi("Dinheiro novo", br(conta((x) => x._dinheiroNovo != null), 0))}
+    ${kpi("Isentos de IR (PF)", br(conta((x) => x.Isento), 0))}
+    ${kpi("PL somado", `R$ ${br(pls.reduce((a, b) => a + b, 0) / 1e9, 1)} bi`, `mediana R$ ${br((mediana(pls) || 0) / 1e6, 0)} mi`)}
+    ${kpi("ROA mediano", `${br(mediana(cs.map((c) => q.get(c).ROA)) ?? 0, 2)}%`)}
+    ${kpi("Taxa de adm. mediana", `${br(mediana(cs.map((c) => q.get(c)["Taxa adm."])) ?? 0, 2)}%`)}
+  </div><div class="xp-cards">
+    ${cartaoBarras("Classificação XP", classif, n)}
+    ${cartaoBarras("Tipo de investidor", inv, n, { ordem: ["Geral (IG)", "Qualificado (IQ)", "Profissional (IP)"], cores: { "Geral (IG)": "#087040", "Qualificado (IQ)": "#f0b400", "Profissional (IP)": "#b35000" } })}
+    ${cartaoBarras("Risco XP", risco, n, { ordem: ["Baixo", "Médio", "Alto", "Sem risco"], cores: { Baixo: "#087040", "Médio": "#f0b400", Alto: "#c4222a" } })}
+    ${cartaoBarras("Prazo de resgate (cotização + liquidação)", prazo, n, { ordem: ["até D+1", "D+2 a D+5", "D+6 a D+30", "D+31 a D+90", "D+91 a D+180", "acima de D+180", "Prazo especial"] })}
+    ${cartaoBarras("Patrimônio líquido", pl, n, { ordem: ["até R$ 50 mi", "R$ 50–200 mi", "R$ 200–500 mi", "R$ 500 mi–1 bi", "R$ 1–5 bi", "acima de R$ 5 bi", "Sem PL"] })}
+    ${cartaoBarras("Aplicação mínima", minimo, n, { ordem: ["até R$ 100", "até R$ 1 mil", "até R$ 5 mil", "até R$ 10 mil", "até R$ 50 mil", "acima de R$ 50 mil", "Sem informação"] })}
+    ${cartaoBarras("ROA", roa, n, { ordem: ["0%", "até 0,25%", "0,25% a 0,50%", "0,50% a 1%", "acima de 1%", "Sem ROA"] })}
+    ${cartaoBarras("Taxa de administração", adm, n, { ordem: ["até 0,5%", "0,5% a 1%", "1% a 2%", "acima de 2%", "Sem informação"] })}
+    ${cartaoBarras("Classe CVM", cvm, n)}
+  </div>`;
+  atualizarXPSelInfo();
+}
+const atualizarXPSelInfo = () => { const el = $("#xpSelInfo"); if (el) el.textContent = st.sel.length ? `${st.sel.length} fundo(s) selecionado(s)` : ""; };
+// fundos da XP que dá para calcular: estão na base da CVM e têm cota nos últimos 30 dias
+function calculaveisXP(lista) {
+  const base = diaDe(new Date(st.meta.ultimo_dado));
+  const ok = lista.filter((c) => { const f = st.porCnpj.get(c); return f && !f._soXP && f._dia && f._dia >= base - 30; });
+  return { ok, fora: lista.length - ok.length };
+}
+async function selecionarECalcular(lista, rotulo) {
+  const { ok, fora } = calculaveisXP(lista);
+  if (!ok.length) { await perguntar("Nenhum fundo para calcular", `${esc(rotulo)}: nenhum desses fundos tem cotas recentes na CVM.`, [{ rot: "OK", v: 1, classe: "prim" }]); return; }
+  const r = await perguntar(`Calcular ${ok.length} fundo(s)?`, `<b>${esc(rotulo)}</b>: ${ok.length} fundo(s) com cotas recentes na CVM` +
+    (fora ? ` (${fora} ficam de fora: sem dados na CVM ou sem cota nos últimos 30 dias)` : "") + `.<br>A seleção atual (${st.sel.length}) será substituída.` +
+    (ok.length > 150 ? "<br>Com muitos fundos o cálculo pode levar alguns minutos na primeira vez (depois fica guardado neste computador)." : ""),
+    [{ rot: "Cancelar", v: false }, { rot: "Calcular", v: true, classe: "prim" }]);
+  if (!r) return;
+  st.sel = []; adicionar(ok); atualizarSidebar(); atualizarXPSelInfo();
+  calcular();
+}
+document.addEventListener("click", (e) => {
+  const a = e.target.closest?.("[data-acao-sel]"); if (a) { $("#" + a.dataset.acaoSel).click(); return; }
+  if (e.target.closest?.("#xpCalcTodos")) { selecionarECalcular([...st.xp.keys()], "Todos os fundos da XP"); return; }
+  const g = e.target.closest?.(".xp-barra"); if (g) { const x = xpGrupos.get(g.dataset.xpg); if (x) selecionarECalcular(x.cs, x.rot); return; }
+  const r = e.target.closest?.("#roaEixo button"); if (r) { st.roaEixo = r.dataset.e; renderROA(); }
+});
+// ---------- ROA × métrica (ROA no eixo Y; eixo X escolhido nos botões)
+st.roaEixo = "sharpe";
+const EIXOS_ROA = {
+  sharpe: { titulo: "Sharpe (sobre o CDI)", fmt: (v) => br(v, 2), ref: 0, valor: (l) => l["Sharpe Anualizado"] },
+  prazo: { titulo: "Prazo de resgate (dias: cotização + liquidação)", fmt: (v) => br(v, 0), valor: (l, q) => { const a = prazoDias(q["Cotização"]), b = prazoDias(q["Liquidação"]); return a == null && b == null ? null : Math.floor(a || 0) + Math.floor(b || 0); } },
+  risco: { titulo: "Risco XP", fmt: (v) => br(v, 0), valor: (l, q) => q.Risco },
+  dor: { titulo: "Índice de Dor (%)", fmt: (v) => brPct(v, 2), valor: (l) => l["Índice de Dor"] },
+  jm: { titulo: "Mediana da janela móvel (diferença a.a. contra o benchmark)", fmt: (v) => brPct(v, 1), ref: 0,
+    valor: (l) => st.res?.jm?.porFundo.find((x) => x.c === l._c)?.resumo?.med?.dif ?? null },
+};
+function renderROA() {
+  const sec = $("#secROA");
+  if (!st.xp || !st.ctx) { sec.hidden = true; return; }
+  sec.hidden = false;
+  const E = EIXOS_ROA[st.roaEixo] || EIXOS_ROA.sharpe;
+  $$("#roaEixo button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.e === st.roaEixo)));
+  const algum = st.ctx.dados.linhas.some((l) => casa(st.destaque, l.Fundo, l.CNPJ));
+  let semROA = 0, semX = 0;
+  const pts = [];
+  for (const l of st.ctx.dados.linhas) {
+    const q = camposXP(l._c);
+    if (!q._naXP || q.ROA == null) { semROA++; continue; }
+    const x = E.valor(l, q); if (x == null || !Number.isFinite(x)) { semX++; continue; }
+    const marcado = algum && casa(st.destaque, l.Fundo, l.CNPJ);
+    pts.push({ nome: q["XP Nome"] ? String(q["XP Nome"]).toLocaleUpperCase("pt-BR") : st.res.apelidos[l._c], cor: st.ctx.cores[l._c], x, y: q.ROA / 100, tipo: "fundo", forte: marcado, apagado: algum && !marcado });
+  }
+  $("#roaNota").textContent = `${pts.length} fundo(s) no gráfico · período ${st.perAtivo} (${fmtData(st.ctx.dIni)} a ${fmtData(st.ctx.dFim)})` +
+    (semROA ? ` · ${semROA} sem ROA ou fora da XP` : "") + (semX ? ` · ${semX} sem ${E.titulo.split(" (")[0].toLowerCase()}` : "") +
+    (st.roaEixo === "jm" && !st.res?.jm ? " · calcule a janela móvel na seção abaixo para ver a mediana" : "") + ". Arraste ou use a lupa para dar zoom.";
+  // casas decimais do eixo conforme o espaçamento das marcas (ROA pequeno ou com zoom não repete rótulos)
+  const fmtROA = (v, i, ticks) => { const passo = ticks?.length > 1 ? Math.abs(ticks[1].value - ticks[0].value) * 100 : 0.01;
+    return brPct(v, Math.min(4, Math.max(2, Math.ceil(-Math.log10(passo || 0.01))))); };
+  graficoRR("gROA", pts, { fmtX: E.fmt, tituloX: E.titulo, refX: E.ref ?? null, fmtY: fmtROA, tituloY: "ROA (% a.a.)", yMin: 0,
+    rotulo: (it) => `${it.raw.nome}: ROA ${brPct(it.parsed.y, 2)} · ${E.titulo.split(" (")[0]} ${E.fmt(it.parsed.x)}` });
+}
 // ============================== rankings ==============================
 // Um ranking = nome + tipo de cálculo (pesos) + lista de fundos. Ficam guardados neste navegador, como os grupos.
 const lerRankings = () => pref("rankings", {});
