@@ -946,6 +946,50 @@ const linhaRef = { id: "linhaRef", afterDraw(ch, _a, o) {
   if (o?.y != null) { const y = ch.scales.y.getPixelForValue(o.y); ctx.beginPath(); ctx.moveTo(left, y); ctx.lineTo(right, y); ctx.stroke(); }
   if (o?.x != null) { const x = ch.scales.x.getPixelForValue(o.x); ctx.beginPath(); ctx.moveTo(x, top); ctx.lineTo(x, bottom); ctx.stroke(); }
   ctx.restore(); } };
+// quadrantes (gráfico ROA × métrica): fundo colorido a partir das medianas de x e y; verde = bom, vermelho = ruim, âmbar = misto
+// o: { x, y (medianas), melhorX: 1 (maior é melhor) | -1 (menor é melhor), rotulos: { bom, ruim, mistoA, mistoB } }
+const quadrantes = {
+  id: "quadrantes",
+  beforeDraw(ch, _a, o) {
+    if (!o || o.x == null || o.y == null) return;
+    const { left, right, top, bottom } = ch.chartArea, cx = Math.min(right, Math.max(left, ch.scales.x.getPixelForValue(o.x))), cy = Math.min(bottom, Math.max(top, ch.scales.y.getPixelForValue(o.y)));
+    const a = escuro() ? 0.2 : 0.11, verde = `rgba(8,140,80,${a})`, vermelho = `rgba(208,38,44,${a})`, ambar = `rgba(220,160,0,${a * 0.6})`;
+    // lado "bom" do eixo x: direita se maior é melhor, esquerda se menor é melhor
+    const bomDireita = o.melhorX >= 0, ctx = ch.ctx;
+    const pinta = (x0, y0, x1, y1, cor) => { if (x1 > x0 && y1 > y0) { ctx.fillStyle = cor; ctx.fillRect(x0, y0, x1 - x0, y1 - y0); } };
+    ctx.save();
+    pinta(bomDireita ? cx : left, top, bomDireita ? right : cx, cy, verde);        // ROA alto + métrica boa
+    pinta(bomDireita ? left : cx, cy, bomDireita ? cx : right, bottom, vermelho);  // ROA baixo + métrica ruim
+    pinta(bomDireita ? left : cx, top, bomDireita ? cx : right, cy, ambar);        // ROA alto + métrica ruim
+    pinta(bomDireita ? cx : left, cy, bomDireita ? right : cx, bottom, ambar);     // ROA baixo + métrica boa
+    ctx.restore();
+  },
+  beforeDatasetsDraw(ch, _a, o) {
+    if (!o || o.x == null || o.y == null) return;
+    const { left, right, top, bottom } = ch.chartArea, ctx = ch.ctx;
+    const px = ch.scales.x.getPixelForValue(o.x), py = ch.scales.y.getPixelForValue(o.y);
+    ctx.save(); ctx.strokeStyle = escuro() ? "rgba(255,255,255,.55)" : "rgba(43,44,120,.55)"; ctx.setLineDash([5, 4]); ctx.lineWidth = 1.2;
+    if (px >= left && px <= right) { ctx.beginPath(); ctx.moveTo(px, top); ctx.lineTo(px, bottom); ctx.stroke(); }
+    if (py >= top && py <= bottom) { ctx.beginPath(); ctx.moveTo(left, py); ctx.lineTo(right, py); ctx.stroke(); }
+    // rótulos nos cantos de cada quadrante
+    const r = o.rotulos || {}, bomDireita = o.melhorX >= 0, m = 8;
+    ctx.setLineDash([]); ctx.font = "700 11.5px Manrope, sans-serif";
+    // rótulo com fundo claro (legível sobre os pontos)
+    const escreve = (txt, x, y, alinh, base, cor) => {
+      if (!txt) return;
+      const w = ctx.measureText(txt).width + 10, h = 18, x0 = alinh === "right" ? x - w + 5 : x - 5, y0 = base === "top" ? y - 3 : y - h + 3;
+      ctx.fillStyle = escuro() ? "rgba(21,27,65,.85)" : "rgba(255,255,255,.85)"; ctx.beginPath(); ctx.roundRect ? ctx.roundRect(x0, y0, w, h, 5) : ctx.rect(x0, y0, w, h); ctx.fill();
+      ctx.textAlign = alinh; ctx.textBaseline = base; ctx.fillStyle = cor; ctx.fillText(txt, x, y);
+    };
+    const verde = escuro() ? "#5fd99a" : "#087040", vermelho = escuro() ? "#ff8a8a" : "#b81f25", ambar = escuro() ? "#f0c46a" : "#8a5a12";
+    const t = top + 30;                                   // abaixo da lupa e dos botões de zoom do canto
+    escreve(r.bom, bomDireita ? right - m : left + m, t, bomDireita ? "right" : "left", "top", verde);
+    escreve(r.mistoA, bomDireita ? left + m : right - m, t, bomDireita ? "left" : "right", "top", ambar);
+    escreve(r.ruim, bomDireita ? left + m : right - m, bottom - m, bomDireita ? "left" : "right", "bottom", vermelho);
+    escreve(r.mistoB, bomDireita ? right - m : left + m, bottom - m, bomDireita ? "right" : "left", "bottom", ambar);
+    ctx.restore();
+  },
+};
 // nomes escritos ao lado dos pontos marcados (benchmarks, carteira e fundos destacados) nos gráficos de risco × retorno
 const rotulos = { id: "rotulos", afterDatasetsDraw(ch) {
   const ctx = ch.ctx; ctx.save(); ctx.font = "600 11px Manrope, sans-serif"; ctx.textAlign = "center"; ctx.fillStyle = corTexto();
@@ -1012,7 +1056,7 @@ function estrela(cor, tam = 28) {
 }
 // dispersão risco × retorno com poucos conjuntos de pontos (rápido mesmo com centenas de fundos)
 // pts: { nome, cor, x, y, tipo: "fundo" | "bench" | "carteira", forte, apagado }
-function graficoRR(id, pts, { fmtX, tituloX, refX = null, fmtY = (v) => brPct(v, 1), tituloY = "Volatilidade (risco, % a.a.)", yMin = 0, rotulo = null }) {
+function graficoRR(id, pts, { fmtX, tituloX, refX = null, fmtY = (v) => brPct(v, 1), tituloY = "Volatilidade (risco, % a.a.)", yMin = 0, rotulo = null, quad = null }) {
   const rotuloRR = rotulo || ((it) => `${it.raw.nome}: volatilidade ${brPct(it.parsed.y)} · ${tituloX.startsWith("Retorno") ? "retorno " + brPct(it.parsed.x) + " a.a." : "Sharpe " + br(it.parsed.x, 2)}`);
   const grupo = (tipo, estilo) => {
     const ps = pts.filter((p) => p.tipo === tipo);
@@ -1028,7 +1072,7 @@ function graficoRR(id, pts, { fmtX, tituloX, refX = null, fmtY = (v) => brPct(v,
   if (ant && ant.config.type === "scatter" && ant.canvas === $("#" + id)) {     // já existe: só troca os pontos
     ant.data.datasets = datasets;
     ant.options.scales.x.title.text = tituloX; ant.options.scales.x.ticks.callback = fmtX;
-    ant.options.plugins.linhaRef = { x: refX };
+    ant.options.plugins.linhaRef = { x: refX }; ant.options.plugins.quadrantes = quad;
     ant.options.plugins.tooltip.callbacks.label = rotuloRR;
     ant.options.scales.y.title.text = tituloY; ant.options.scales.y.ticks.callback = fmtY;
     ant.$base = { x: [undefined, undefined], y: [yMin, undefined] };
@@ -1041,7 +1085,7 @@ function graficoRR(id, pts, { fmtX, tituloX, refX = null, fmtY = (v) => brPct(v,
     data: { datasets },
     options: {
       animation: false, responsive: true, maintainAspectRatio: false,
-      plugins: { legend: { display: false }, linhaRef: { x: refX },
+      plugins: { legend: { display: false }, linhaRef: { x: refX }, quadrantes: quad,
         tooltip: { callbacks: { label: rotuloRR } } },
       scales: {
         x: { title: { display: true, text: tituloX, color: corTexto() }, ticks: { callback: fmtX, color: corTexto() }, grid: { color: "rgba(128,128,128,.15)" } },
@@ -1049,7 +1093,7 @@ function graficoRR(id, pts, { fmtX, tituloX, refX = null, fmtY = (v) => brPct(v,
           ticks: { callback: fmtY, color: corTexto() }, grid: { color: "rgba(128,128,128,.15)" } },
       },
     },
-    plugins: [linhaRef, rotulos],
+    plugins: [quadrantes, linhaRef, rotulos],
   });
   posCriar(id, { x: [undefined, undefined], y: [yMin, undefined] });
 }
@@ -3463,11 +3507,11 @@ document.addEventListener("click", (e) => {
 // ---------- ROA × métrica (ROA no eixo Y; eixo X escolhido nos botões)
 st.roaEixo = "sharpe";
 const EIXOS_ROA = {
-  sharpe: { titulo: "Sharpe (sobre o CDI)", fmt: (v) => br(v, 2), ref: 0, valor: (l) => l["Sharpe Anualizado"] },
-  prazo: { titulo: "Prazo de resgate (dias: cotização + liquidação)", fmt: (v) => br(v, 0), valor: (l, q) => { const a = prazoDias(q["Cotização"]), b = prazoDias(q["Liquidação"]); return a == null && b == null ? null : Math.floor(a || 0) + Math.floor(b || 0); } },
-  risco: { titulo: "Risco XP", fmt: (v) => br(v, 0), valor: (l, q) => q.Risco },
-  dor: { titulo: "Índice de Dor (%)", fmt: (v) => brPct(v, 2), valor: (l) => l["Índice de Dor"] },
-  jm: { titulo: "Mediana da janela móvel (diferença a.a. contra o benchmark)", fmt: (v) => brPct(v, 1), ref: 0,
+  sharpe: { titulo: "Sharpe (sobre o CDI)", curto: "Sharpe", melhor: 1, bom: "Sharpe alto", ruim: "Sharpe baixo", fmt: (v) => br(v, 2), valor: (l) => l["Sharpe Anualizado"] },
+  prazo: { titulo: "Prazo de resgate (dias: cotização + liquidação)", curto: "prazo de resgate", melhor: -1, bom: "resgate rápido", ruim: "resgate lento", fmt: (v) => br(v, 0), valor: (l, q) => { const a = prazoDias(q["Cotização"]), b = prazoDias(q["Liquidação"]); return a == null && b == null ? null : Math.floor(a || 0) + Math.floor(b || 0); } },
+  risco: { titulo: "Risco XP", curto: "risco XP", melhor: -1, bom: "risco baixo", ruim: "risco alto", fmt: (v) => br(v, 0), valor: (l, q) => q.Risco },
+  dor: { titulo: "Índice de Dor (%)", curto: "índice de dor", melhor: -1, bom: "dor baixa", ruim: "dor alta", fmt: (v) => brPct(v, 2), valor: (l) => l["Índice de Dor"] },
+  jm: { titulo: "Mediana da janela móvel (diferença a.a. contra o benchmark)", curto: "mediana da janela móvel", melhor: 1, bom: "janela móvel alta", ruim: "janela móvel baixa", fmt: (v) => brPct(v, 1),
     valor: (l) => st.res?.jm?.porFundo.find((x) => x.c === l._c)?.resumo?.med?.dif ?? null },
 };
 function renderROA() {
@@ -3486,13 +3530,21 @@ function renderROA() {
     const marcado = algum && casa(st.destaque, l.Fundo, l.CNPJ);
     pts.push({ nome: q["XP Nome"] ? String(q["XP Nome"]).toLocaleUpperCase("pt-BR") : st.res.apelidos[l._c], cor: st.ctx.cores[l._c], x, y: q.ROA / 100, tipo: "fundo", forte: marcado, apagado: algum && !marcado });
   }
-  $("#roaNota").textContent = `${pts.length} fundo(s) no gráfico · período ${st.perAtivo} (${fmtData(st.ctx.dIni)} a ${fmtData(st.ctx.dFim)})` +
-    (semROA ? ` · ${semROA} sem ROA ou fora da XP` : "") + (semX ? ` · ${semX} sem ${E.titulo.split(" (")[0].toLowerCase()}` : "") +
-    (st.roaEixo === "jm" && !st.res?.jm ? " · calcule a janela móvel na seção abaixo para ver a mediana" : "") + ". Arraste ou use a lupa para dar zoom.";
+  // quadrantes: o cruzamento é a mediana do ROA e a mediana do eixo x (só fundos do gráfico)
+  const medX = mediana(pts.map((p) => p.x)), medY = mediana(pts.map((p) => p.y));
+  const bomX = (x) => (E.melhor >= 0 ? x > medX : x < medX), q4 = { bom: 0, ruim: 0, misto: 0 };
+  for (const p of pts) { const roaAlto = p.y > medY, mb = bomX(p.x); if (roaAlto && mb) q4.bom++; else if (!roaAlto && !mb) q4.ruim++; else q4.misto++; }
+  const quad = pts.length >= 2 && medX != null && medY != null ? { x: medX, y: medY, melhorX: E.melhor,
+    rotulos: { bom: `✓ ROA alto · ${E.bom}`, ruim: `✗ ROA baixo · ${E.ruim}`, mistoA: `ROA alto · ${E.ruim}`, mistoB: `ROA baixo · ${E.bom}` } } : null;
+  $("#roaNota").innerHTML = esc(`${pts.length} fundo(s) no gráfico · período ${st.perAtivo} (${fmtData(st.ctx.dIni)} a ${fmtData(st.ctx.dFim)})`) +
+    (quad ? ` · quadrantes cruzam na mediana do ROA (<b>${esc(brPct(medY, 2))}</b>) e do ${esc(E.curto)} (<b>${esc(E.fmt(medX))}</b>):
+      <span class="roa-q bom">${q4.bom} no verde</span>, <span class="roa-q ruim">${q4.ruim} no vermelho</span>, ${q4.misto} nos mistos` : "") +
+    esc((semROA ? ` · ${semROA} sem ROA ou fora da XP` : "") + (semX ? ` · ${semX} sem ${E.curto}` : "")) +
+    esc((semROA ? "" : "") + (st.roaEixo === "jm" && !st.res?.jm ? " · calcule a janela móvel na seção abaixo para ver a mediana" : "") + ". Arraste ou use a lupa para dar zoom.");
   // casas decimais do eixo conforme o espaçamento das marcas (ROA pequeno ou com zoom não repete rótulos)
   const fmtROA = (v, i, ticks) => { const passo = ticks?.length > 1 ? Math.abs(ticks[1].value - ticks[0].value) * 100 : 0.01;
     return brPct(v, Math.min(4, Math.max(2, Math.ceil(-Math.log10(passo || 0.01))))); };
-  graficoRR("gROA", pts, { fmtX: E.fmt, tituloX: E.titulo, refX: E.ref ?? null, fmtY: fmtROA, tituloY: "ROA (% a.a.)", yMin: 0,
+  graficoRR("gROA", pts, { fmtX: E.fmt, tituloX: E.titulo, refX: null, fmtY: fmtROA, tituloY: "ROA (% a.a.)", yMin: 0, quad,
     rotulo: (it) => `${it.raw.nome}: ROA ${brPct(it.parsed.y, 2)} · ${E.titulo.split(" (")[0]} ${E.fmt(it.parsed.x)}` });
 }
 // ============================== rankings ==============================
