@@ -770,3 +770,9 @@ sup.gu { font-size: 9px; font-weight: 800; color: var(--link); margin-left: 2px;
 .rel-interno[hidden] { display: none; }
 .rel-interno summary { cursor: pointer; font-weight: 800; padding: 4px 0; }
 .rel-interno .prim { margin-top: 6px; }
+
+/* dinheiro novo (etiqueta da XP) e pontuação com a divisão no mouse */
+.xp-dn { display: inline-grid; place-items: center; color: #087040; margin-left: 4px; cursor: help; vertical-align: middle; }
+@media (prefers-color-scheme: dark) { .xp-dn { color: var(--pos); } }
+.xp-capcel { white-space: nowrap; }
+.rk-tot { cursor: help; }
