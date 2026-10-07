@@ -738,12 +738,12 @@ function tituloQuebrado(nome) {
   return out.map((x) => esc(x)).join("<br>");
 }
 const tituloHTML = (c) => (c.linhas ? c.linhas.map((x) => `<span class="th-l">${esc(x)}</span>`).join("<br>") : tituloQuebrado(c.nome));
-function tabelaHTML({ colunas, linhas, fixas = 0, larguras = [260, 150], grupos = null, destacar = [], separadores = new Set(), atrLinha = null,
+function tabelaHTML({ colunas, linhas, fixas = 0, larguras = [260, 150], grupos = null, destacar = [], separadores = new Set(), atrLinha = null, centralizar = false,
   altura = 460, ordenavel = null, classes = [] }) {
   const esq = larguras.map((_, j) => larguras.slice(0, j).reduce((s, x) => s + x, 0));
   const fx = (j, extra = "") => (j < fixas ? ` class="fx${extra}" style="left:${esq[j]}px;min-width:${larguras[j]}px;max-width:${larguras[j]}px"` : extra ? ` class="${extra.trim()}"` : "");
   const o = ordenavel ? st.ord[ordenavel] : null;
-  let h = `<div class="tb-wrap" style="max-height:${altura}px"><table class="tb"><thead>`;
+  let h = `<div class="tb-wrap" style="max-height:${altura}px"><table class="tb${centralizar ? " tb-centro" : ""}"><thead>`;
   if (grupos) {
     h += "<tr>";
     for (let j = 0; j < colunas.length;) {
@@ -3519,16 +3519,34 @@ function colunasRk(R, tela = false) {
     ...(st.xp ? colunasXP().filter((c) => !(tela && (c.chave === "Classificação XP" || c.chave === "Captação"))) : []),
   ];
 }
+// tabela do ranking na tela: as mesmas colunas resumidas da tabela de métricas (no período do ranking) + posição, variação e pontuação
+// (os relatórios continuam com colunasRk/linhaRk, que trazem todas as colunas)
+function colunasRkTela(R) {
+  const rk = Object.fromEntries(colunasRk(R, true).map((c) => [c.chave, c]));
+  const [v1, ...v2] = rk.var.nome.split(" ");
+  const resumo = colunasResumoMetricas().filter((c) => !["_hubId", "Captação", "Fundo"].includes(c.chave));
+  return [{ ...rk.pos }, { ...rk.var, linhas: [v1, v2.join(" ")] }, ...(st.xp ? [{ ...colunaHub(), g: "Ranking" }, { ...colunaCadeado(), g: "Ranking" }] : []),
+    { ...rk.Fundo }, { ...rk.total, linhas: ["Pontuação"] }, ...resumo];
+}
+function linhaRkTela(R, x) {
+  const l = linhaRk(R, x), r = x.l.r;
+  const out = { ...l, "% Acumulado": r["% Acumulado"], "%CDI": r["%CDI"], Volatilidade: r.Volatilidade, "Sharpe Anualizado": r["Sharpe Anualizado"],
+    "Índice de Dor": r["Índice de Dor"], "% de dias acima do CDI": r["% de dias acima do CDI"], Queda: r.Queda,
+    "Maior Período em Dias Underwater": r["Maior Período em Dias Underwater"], _pl: l.pl, _capt: l.capt,
+    "Classificação ANBIMA": l.anbima, "Classificação CVM": l.cvm, _classif: l._classif || l.anbima || l.cvm || "" };
+  if (out["XP Nome"]) { out._nomeCVM = l.Fundo; out.Fundo = String(out["XP Nome"]).toLocaleUpperCase("pt-BR"); }   // nome da XP; os dois no minigráfico
+  return out;
+}
 function renderRkTabela() {
   const R = rkAtivo(); if (!R) return;
-  const todos = !!st.rkTodos, colunas = colunasRk(R, true);
-  const linhas = ordenar(fundosVisiveis(R).map((x) => linhaRk(R, x)), "rk", colunas);
+  const todos = !!st.rkTodos, colunas = colunasRkTela(R);
+  const linhas = ordenar(fundosVisiveis(R).map((x) => linhaRkTela(R, x)), "rk", colunas);
   $("#rkInfo").innerHTML = !R.fim ? "Nenhum fundo com cotas." : `<b>${esc(R.M.nome)}</b> · métricas dos últimos ${esc(R.M.periodo.toLowerCase())} até ${fmtData(R.fim)} · janela móvel de ${R.M.jmMeses} meses ` +
     `contra o ${esc(nomeIndice(R.M.bench))} (aplicações desde ${fmtData(R.iniJM)}) · <b>${R.ordem.length}</b> fundo(s) analisado(s)` +
     (R.nDef > R.ordem.length ? ` (de ${R.nDef} no ranking; os demais estão listados abaixo da tabela)` : "") +
     (R.ordem.length > TOP_RANK && !todos ? ` · mostrando o top ${TOP_RANK}` : "") + ` · "Var. ${esc(R.rotVar || "mês")}" compara com o ranking de ${fmtData(R.fimAnt)}`;
-  $("#rkTabela").innerHTML = tabelaHTML({ colunas, linhas, fixas: st.xp ? 4 : 3, larguras: st.xp ? [52, 70, 58, 280] : [52, 70, 280], grupos: colunas.map((c) => c.g), ordenavel: "rk", altura: 560,
-    destacar: linhas.map((l) => casa(st.destaque, l.Fundo, l.CNPJ)), classes: linhas.map((l) => classeMedalha(l.pos)) });
+  $("#rkTabela").innerHTML = tabelaHTML({ colunas, linhas, fixas: st.xp ? 5 : 3, larguras: st.xp ? [48, 66, 64, 58, 250] : [48, 66, 270], grupos: colunas.map((c) => c.g), ordenavel: "rk", altura: 560,
+    destacar: linhas.map((l) => casa(st.destaque, l.Fundo, l.CNPJ, l._nomeCVM)), classes: linhas.map((l) => classeMedalha(l.pos)) });
   const fora = [...R.fora.map((x) => `${esc(curto(st.porCnpj.get(x.c)?.NOME || cnpjFmt(x.c), 50))} (${esc(x.motivo)})`), ...(R.foraDaBase || []).map((c) => `${cnpjFmt(c)} (fora da base)`)];
   $("#rkFora").innerHTML = (R.ordem.some((x) => x.l.curto) ? `<span class="rk-curto">⚑</span> histórico menor que o período do ranking (entra assim mesmo, com as métricas do tempo que tem). ` : "") +
     (fora.length ? `<b>Fora do ranking (${fora.length}):</b> ${fora.join("; ")}.` : "");
@@ -3547,7 +3565,7 @@ function renderRkPontos() {
   const linhas = ordenar(fundosVisiveis(R).map((x) => ({ _c: x.id, pos: x.pos, Fundo: nomeRk(R, x.id), CNPJ: cnpjFmt(x.id), total: x.total,
     ...Object.fromEntries(GRUPOS_RANK.map((g) => [`g:${g}`, x.grupos[g]])),
     ...Object.fromEntries(ks.flatMap((k) => [[`v:${k}`, x.notas[k].valor], [`n:${k}`, x.notas[k].nota], [`p:${k}`, x.notas[k].pontos]])) })), "rkPts", colunas);
-  $("#rkPontos").innerHTML = tabelaHTML({ colunas, linhas, fixas: 2, larguras: [52, 240], grupos: colunas.map((c) => c.g), ordenavel: "rkPts", altura: 520,
+  $("#rkPontos").innerHTML = tabelaHTML({ colunas, linhas, fixas: 2, larguras: [52, 240], grupos: colunas.map((c) => c.g), ordenavel: "rkPts", altura: 520, centralizar: true,
     destacar: linhas.map((l) => casa(st.destaque, l.Fundo, l.CNPJ)), classes: linhas.map((l) => classeMedalha(l.pos)) });
 }
 function topRk(R) { return R.ordem.slice(0, TOP_RANK); }

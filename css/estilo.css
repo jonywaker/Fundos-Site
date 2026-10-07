@@ -813,3 +813,7 @@ sup.gu { font-size: 9px; font-weight: 800; color: var(--link); margin-left: 2px;
 .lk-fundo:focus-visible { outline: 2px solid var(--ouro); outline-offset: 2px; border-radius: 3px; }
 #cartMetricas tr[data-fundo] { cursor: pointer; }
 #cartMetricas tr[data-fundo]:hover td { background: color-mix(in srgb, var(--azul) 7%, var(--card)); }
+
+/* tabelas com valores centralizados (ex.: valores e pontos do ranking); a coluna do nome fica à esquerda */
+.tb.tb-centro td, .tb.tb-centro td.t, .tb.tb-centro thead tr.h2 th, .tb.tb-centro thead tr.h2 th.t { text-align: center; }
+.tb.tb-centro tbody td.fx:nth-child(2), .tb.tb-centro thead tr.h2 th.fx:nth-child(2) { text-align: left; }
