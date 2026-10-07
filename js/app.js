@@ -3014,8 +3014,10 @@ document.addEventListener("change", (e) => { if (e.target.id === "dlgXP" || e.ta
 // ---------- dados da XP no site (só com login): colunas, gross up, cotas mais recentes e planilha
 const IR_GROSS_UP = 0.15;
 st.grossUp = false;
-// sim/não da planilha: aceita true/false, VERDADEIRO/FALSO (Sheets em português), SIM/NÃO e 1/0
-const verdadeiro = (v) => v === true || v === 1 || /^(true|verdadeiro|sim|s|yes|1)$/i.test(String(v ?? "").trim());
+// sim/não da planilha: aceita true/false, VERDADEIRO/FALSO (Sheets em português), SIM/NÃO e 1/0.
+// "########" também é verdadeiro: é como o Excel mostra "VERDADEIRO" numa coluna estreita, e copiar/colar leva esse texto
+// (nessas colunas o "FALSO" cabe e aparece escrito; só o "VERDADEIRO" vira ########)
+const verdadeiro = (v) => v === true || v === 1 || /^(true|verdadeiro|sim|s|yes|1|#{3,})$/i.test(String(v ?? "").trim());
 // prazo em dias para ordenar: "D+30 (Dias Corridos)" -> 30; com o mesmo número, corridos antes de úteis; textos especiais no fim
 function prazoDias(v) {
   const m = String(v ?? "").match(/D\s*\+\s*(\d+)/i); if (!m) return null;
@@ -3458,7 +3460,15 @@ function renderXPGeral() {
   const conta = (f) => cs.filter((c) => f(q.get(c))).length, pls = cs.map(plXP).filter(Number.isFinite);
   const kpi = (rot, v, sub = "") => `<div class="kpi"><div class="l">${rot}</div><div class="v">${v}</div>${sub ? `<div class="s">${sub}</div>` : ""}</div>`;
   const abertos = conta((x) => x["Captação"] === "Aberto");
-  $("#xpGeral").innerHTML = `<div class="kpis xp-kpis">
+  // células "########" = valores colados como apareciam na tela do Excel (coluna estreita)
+  let cerquilhas = 0, numerosCortados = 0;
+  for (const ofs of st.xp.values()) for (const o of ofs) for (const v of Object.values(o)) {
+    if (typeof v === "string" && /^#{3,}$/.test(v.trim())) cerquilhas++;
+    else if (typeof v === "string" && /^\d+,\d+E\+\d+$/i.test(v.trim())) numerosCortados++;
+  }
+  const avisoDados = cerquilhas || numerosCortados ? `<p class="nota xp-aviso-dados">⚠ A planilha da XP tem ${cerquilhas ? `${br(cerquilhas, 0)} célula(s) "########"` : ""}${cerquilhas && numerosCortados ? " e " : ""}${numerosCortados ? `${br(numerosCortados, 0)} número(s) arredondado(s) como "1,92E+09"` : ""}:
+    os valores foram colados como apareciam na tela do Excel. Os sim/não foram interpretados corretamente, mas para ter os números exatos importe o arquivo no Google Sheets (Arquivo → Importar → Substituir página atual).</p>` : "";
+  $("#xpGeral").innerHTML = avisoDados + `<div class="kpis xp-kpis">
     ${kpi("Fundos na XP", br(n, 0), `${br(st.xpOfertas || n, 0)} ofertas`)}
     ${kpi("Com cotas na CVM", br(naBase.length, 0), `${br(n - naBase.length, 0)} sem dados (FIDC, FII, FIP…)`)}
     ${kpi("Abertos para aplicação", br(abertos, 0), `${br(n - abertos, 0)} fechados`)}

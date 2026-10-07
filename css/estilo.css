@@ -852,3 +852,5 @@ sup.gu { font-size: 9px; font-weight: 800; color: var(--link); margin-left: 2px;
 .graf-roa { height: 460px; position: relative; }
 
 .roa-q { font-weight: 800; } .roa-q.bom { color: var(--pos); } .roa-q.ruim { color: var(--neg); }
+
+.xp-aviso-dados { border-left: 3px solid #b7791f; padding: 6px 10px; background: color-mix(in srgb, #b7791f 8%, var(--card)); border-radius: 0 8px 8px 0; color: var(--txt); }
