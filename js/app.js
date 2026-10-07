@@ -173,7 +173,7 @@ function perguntar(titulo, texto, botoes) {
 }
 
 // ---------- tabela de fundos (lista, colar CNPJs e janela de seleção)
-const COLS_FUNDO = [
+const COLS_BASE = [
   { k: "NOME", nome: "Fundo", tipo: "txt", filtro: "txt" },
   { k: "CNPJ", nome: "CNPJ", tipo: "cnpj", filtro: "txt" },
   { k: "CLASSIFICACAO_CVM", nome: "Classificação CVM", tipo: "txt", filtro: "lista" },
@@ -185,7 +185,26 @@ const COLS_FUNDO = [
   { k: "ACUMULADO", nome: "Desde a 1ª cota", tipo: "pct", filtro: "min" },
   { k: "VL_PATRIM_LIQ", nome: "PL (R$ mi)", tipo: "mi", filtro: "min" },
 ];
-const valFundo = (f, k) => { if (k === "_ini") return (f._ini ??= f.DATA_PRIMEIRA_COTA ? diaDe(f.DATA_PRIMEIRA_COTA) : null); return f[k]; };
+// com login, as colunas seguem o formato da tabela de métricas: nome da XP, cadeado, classificação única, investidor e prazo de resgate
+function colsFundo() {
+  if (!st.xp) return COLS_BASE;
+  const b = Object.fromEntries(COLS_BASE.map((c) => [c.k, c]));
+  return [b.NOME, { k: "_xpCap", nome: "", nomeOculto: "Captação: aberto ou fechado para aplicação", tipo: "xpcap" }, b.CNPJ,
+    { k: "_xpClassif", nome: "Classificação", tipo: "xpclassif", filtro: "lista" },
+    { k: "_xpInv", nome: "", nomeOculto: "Tipo de investidor", tipo: "xpinv" },
+    { k: "_xpResg", nome: "Prazo de resgate", tipo: "xpresg" }, b.GESTOR, b._ini, b._dia, b.RET_12M, b.ACUMULADO, b.VL_PATRIM_LIQ];
+}
+// campos da XP por CNPJ, guardados enquanto os dados da equipe não mudam
+const xpDe = (c) => { const m = (st._xpMemo ??= new Map()); if (!m.has(c)) m.set(c, camposXP(c)); return m.get(c); };
+const valFundo = (f, k) => {
+  if (k === "_ini") return (f._ini ??= f.DATA_PRIMEIRA_COTA ? diaDe(f.DATA_PRIMEIRA_COTA) : null);
+  if (k[0] === "_" && k.startsWith("_xp")) { const q = st.xp ? xpDe(f.CNPJ) : {};
+    if (k === "_xpClassif") return q["Classificação XP"] || f.CLASSIFICACAO_ANBIMA || f.CLASSIFICACAO_CVM || "";
+    if (k === "_xpCap") return q["Captação"] || "";
+    if (k === "_xpInv") return q.Investidor || "";
+    if (k === "_xpResg") { const a = prazoDias(q["Cotização"]), d = prazoDias(q["Liquidação"]); return a == null && d == null ? null : (a || 0) + (d || 0); } }
+  return f[k];
+};
 // cancelado, em liquidação ou sem cota nos 10 dias antes da data mais recente da base: fica fora de rankings e aparece com ⊘
 function situacaoCadastro(f) {
   if (!f) return null;
@@ -206,20 +225,29 @@ function celFundo(f, c) {
     const t = "Só na XP: sem cotas na base da CVM usada pelo site (ex.: FIDC, FII, FIP, FIAGRO ou fundo novo). Aparece com os dados da XP, mas não dá para calcular métricas.";
     return `<td class="t" title="${esc((v || "") + " · " + t)}"><span class="so-xp" title="${esc(t)}">⚠</span>${esc(v || "")}</td>`;
   }
-  if (c.k === "NOME") { const sp = situacaoCadastro(f);
-    return `<td class="t" title="${esc((v || "") + (sp ? ` · ${sp.txt}` : ""))}">${sp ? `<span class="parado" title="${esc(sp.txt)}">⊘</span>` : ""}${esc(v || "")}</td>`; }
+  if (c.tipo === "xpcap") return `<td>${cadeado(valFundo(f, c.k))}</td>`;
+  if (c.tipo === "xpinv") return `<td>${badgeInv(valFundo(f, c.k))}</td>`;
+  if (c.tipo === "xpclassif") { const q = xpDe(f.CNPJ);
+    return `<td class="t" title="${esc(`XP: ${q["Classificação XP"] || "–"}\nANBIMA: ${f.CLASSIFICACAO_ANBIMA || "–"}\nCVM: ${f.CLASSIFICACAO_CVM || "–"}`)}">${esc(valFundo(f, c.k))}</td>`; }
+  if (c.tipo === "xpresg") { const q = xpDe(f.CNPJ);
+    return q._naXP ? `<td title="${esc(`Cotização: ${q["Cotização"] || "–"}\nLiquidação: ${q["Liquidação"] || "–"}`)}">${esc(q.Resgate || "")}</td>` : `<td class="fora-xp">não está na XP</td>`; }
+  if (c.k === "NOME") { const sp = situacaoCadastro(f), oXP = st.xp && xpDe(f.CNPJ)["XP Nome"];
+    const nome = oXP ? String(oXP).toLocaleUpperCase("pt-BR") : v || "";
+    const dica = (oXP ? `XP: ${nome}\nCVM: ${v || ""}` : v || "") + (sp ? `\n${sp.txt}` : "");
+    return `<td class="t" title="${esc(dica)}">${sp ? `<span class="parado" title="${esc(sp.txt)}">⊘</span>` : ""}${esc(nome)}</td>`; }
   return `<td class="t" title="${esc(v || "")}">${esc(v || "")}</td>`;
 }
 // cabeçalho clicável (ordenar: 1º clique maior primeiro / A→Z, 2º inverte, 3º volta ao padrão por PL)
 function cabFundos(tab, comFiltros, extraIni = "", extraFim = "") {
   const o = st.ord[tab];
-  let h = `<thead><tr>${extraIni ? `<th><span class="sr-only">Ação</span></th>` : ""}${COLS_FUNDO.map((c) => {
+  let h = `<thead><tr>${extraIni ? `<th><span class="sr-only">Ação</span></th>` : ""}${colsFundo().map((c) => {
+    if (c.nomeOculto) return `<th title="${esc(c.nomeOculto)}"><span class="sr-only">${esc(c.nomeOculto)}</span></th>`;
     const at = o && o.col === c.k;
     return `<th class="${c.tipo === "txt" ? "t" : ""}"${at ? ` aria-sort="${o.dir > 0 ? "ascending" : "descending"}"` : ""}><button class="ord-f" data-tab="${tab}" data-col="${c.k}"
-      data-txt="${c.tipo === "txt" || c.tipo === "cnpj" ? 1 : 0}" title="Ordenar">${esc(c.nome)}${at ? (o.dir > 0 ? " ▲" : " ▼") : ""}</button></th>`; }).join("")}${extraFim ? `<th><span class="sr-only">Remover</span></th>` : ""}</tr>`;
+      data-txt="${c.tipo === "txt" || c.tipo === "cnpj" || c.tipo === "xpclassif" || c.tipo === "xpresg" ? 1 : 0}" title="Ordenar">${esc(c.nome)}${at ? (o.dir > 0 ? " ▲" : " ▼") : ""}</button></th>`; }).join("")}${extraFim ? `<th><span class="sr-only">Remover</span></th>` : ""}</tr>`;
   if (comFiltros) {
     const f = dlg.f;
-    h += `<tr class="filtros">${COLS_FUNDO.map((c) => {
+    h += `<tr class="filtros">${colsFundo().map((c) => {
       if (c.filtro === "txt") return `<th><input data-filtro="${c.k}" type="search" placeholder="filtrar…" aria-label="Filtrar por ${esc(c.nome)}" autocomplete="off" spellcheck="false" value="${esc(f[c.k] || "")}"></th>`;
       if (c.filtro === "lista") return `<th><select data-filtro="${c.k}" aria-label="Filtrar por ${esc(c.nome)}"><option value="">Todas</option>${(dlg.opcoes[c.k] || []).map((x) =>
         `<option${f[c.k] === x ? " selected" : ""}>${esc(x)}</option>`).join("")}</select></th>`;
@@ -247,6 +275,7 @@ function abrirSeletor(inicial = null, aoAplicar = null, titulo = "Lista de fundo
   $("#selTit").textContent = titulo;
   if (!dlg.opcoes.CLASSIFICACAO_CVM) for (const k of ["CLASSIFICACAO_CVM", "CLASSIFICACAO_ANBIMA"])
     dlg.opcoes[k] = [...new Set(st.lista.map((f) => f[k]).filter(Boolean))].sort((a, b) => a.localeCompare(b, "pt-BR"));
+  if (st.xp) dlg.opcoes._xpClassif = [...new Set(st.lista.map((f) => valFundo(f, "_xpClassif")).filter(Boolean))].sort((a, b) => a.localeCompare(b, "pt-BR"));
   $("#dlgSoSel").checked = false;
   renderSeletor(); renderSelDialogo();
   $("#seletor").showModal(); $("#dlgBusca").focus();
@@ -255,9 +284,9 @@ function filtrarLista() {
   const f = dlg.f, q = $("#dlgBusca").value.trim().toUpperCase(), dig = q.replace(/\D/g, "");
   const limiteDia = st.idx.cdi.d[st.idx.cdi.d.length - 1] - 30, ativos = $("#dlgAtivos").checked;
   const soSel = $("#dlgSoSel").checked, marcados = new Set(dlg.sel);
-  const txt = COLS_FUNDO.filter((c) => c.filtro === "txt" && f[c.k]).map((c) => [c.k, f[c.k].toUpperCase(), f[c.k].replace(/\D/g, "")]);
-  const lst = COLS_FUNDO.filter((c) => c.filtro === "lista" && f[c.k]).map((c) => [c.k, f[c.k]]);
-  const mins = COLS_FUNDO.filter((c) => c.filtro === "min" && f[c.k] !== "" && f[c.k] != null && !Number.isNaN(Number(f[c.k])))
+  const txt = colsFundo().filter((c) => c.filtro === "txt" && f[c.k]).map((c) => [c.k, f[c.k].toUpperCase(), f[c.k].replace(/\D/g, "")]);
+  const lst = colsFundo().filter((c) => c.filtro === "lista" && f[c.k]).map((c) => [c.k, f[c.k]]);
+  const mins = colsFundo().filter((c) => c.filtro === "min" && f[c.k] !== "" && f[c.k] != null && !Number.isNaN(Number(f[c.k])))
     .map((c) => [c.k, c.tipo === "mi" ? Number(f[c.k]) * 1e6 : Number(f[c.k]) / 100]);
   const soXP = st.xp && $("#dlgXP").checked, soAberto = st.xp && $("#dlgXPAberto").checked;
   return st.lista.filter((x) => {
@@ -268,7 +297,7 @@ function filtrarLista() {
     if (ativos && !x._soXP && !(x._dia && x._dia >= limiteDia)) return false;
     if (q.length >= 3 && !(x._busca.includes(q) || (dig.length >= 3 && x.CNPJ.includes(dig)))) return false;
     for (const [k, t, d] of txt) { const v = k === "CNPJ" ? x.CNPJ : String(x[k] || "").toUpperCase(); if (!(v.includes(t) || (k === "CNPJ" && d && v.includes(d)))) return false; }
-    for (const [k, v] of lst) if (x[k] !== v) return false;
+    for (const [k, v] of lst) if (valFundo(x, k) !== v) return false;
     for (const [k, m] of mins) if (!(typeof x[k] === "number" && x[k] >= m)) return false;
     return true;
   });
@@ -291,7 +320,7 @@ function renderSeletor() {
   const foco = document.activeElement?.dataset?.filtro, pos = document.activeElement?.selectionStart;
   $("#dlgTabela").innerHTML = `<table class="tb tab-fundos">${cabFundos("sel", true)}<tbody>${linhas.map((f) =>
     `<tr class="linha-f${marcados.has(f.CNPJ) ? " marcado" : ""}" data-c="${f.CNPJ}" tabindex="0" title="${marcados.has(f.CNPJ) ? "Selecionado · clique para tirar" : "Clique para selecionar"}">` +
-    COLS_FUNDO.map((c) => celFundo(f, c)).join("") + "</tr>").join("")}</tbody></table>` + (linhas.length ? "" : `<p class="nota" style="padding:12px">Nenhum fundo com esses filtros.</p>`);
+    colsFundo().map((c) => celFundo(f, c)).join("") + "</tr>").join("")}</tbody></table>` + (linhas.length ? "" : `<p class="nota" style="padding:12px">Nenhum fundo com esses filtros.</p>`);
   if (foco) { const el = $(`#dlgTabela [data-filtro="${foco}"]`); if (el) { el.focus(); try { el.setSelectionRange(pos, pos); } catch { /* number */ } } }
   $("#dlgMarcarVis").textContent = `Selecionar todos os mostrados (${linhas.length})`;
   const selVis = linhas.filter((f) => marcados.has(f.CNPJ)).length;
@@ -300,7 +329,7 @@ function renderSeletor() {
 function renderSelDialogo() {
   const lista = ordenarFundos(dlg.sel.map((c) => st.porCnpj.get(c)).filter(Boolean), "selB");
   $("#dlgSel").innerHTML = lista.length ? `<table class="tb tab-fundos">${cabFundos("selB", false, "", "x")}<tbody>${lista.map((f) =>
-    `<tr>${COLS_FUNDO.map((c) => celFundo(f, c)).join("")}<td><button class="cart-rm" data-dlgrm="${f.CNPJ}" type="button" title="Tirar da seleção" aria-label="Tirar ${esc(f.NOME)} da seleção">×</button></td></tr>`).join("")}</tbody></table>`
+    `<tr>${colsFundo().map((c) => celFundo(f, c)).join("")}<td><button class="cart-rm" data-dlgrm="${f.CNPJ}" type="button" title="Tirar da seleção" aria-label="Tirar ${esc(f.NOME)} da seleção">×</button></td></tr>`).join("")}</tbody></table>`
     : `<p class="nota" style="padding:10px">Nenhum fundo selecionado. Clique nas linhas da tabela de cima.</p>`;
   $("#dlgN").textContent = dlg.sel.length;
   $("#dlgAplicar").textContent = `Aplicar seleção (${dlg.sel.length} fundo${dlg.sel.length === 1 ? "" : "s"})`;
@@ -337,7 +366,7 @@ function renderColagem() {
   $("#colInfo").innerHTML = `<b>${col.lista.length}</b> fundo(s) encontrado(s)` + (col.lista.some((c) => jaSel.has(c)) ? ` · ${col.lista.filter((c) => jaSel.has(c)).length} já estão ${col.aoConfirmar ? "no ranking" : "selecionados"}` : "") +
     (col.faltam.length ? `<br><span class="neg">Não encontrados na base (${col.faltam.length}): ${col.faltam.map(cnpjFmt).join(", ")}</span>` : "");
   $("#colTabela").innerHTML = lista.length ? `<table class="tb tab-fundos">${cabFundos("col", false, "", "x")}<tbody>${lista.map((f) =>
-    `<tr${jaSel.has(f.CNPJ) ? ' class="marcado" title="Já está selecionado"' : ""}>${COLS_FUNDO.map((c) => celFundo(f, c)).join("")}
+    `<tr${jaSel.has(f.CNPJ) ? ' class="marcado" title="Já está selecionado"' : ""}>${colsFundo().map((c) => celFundo(f, c)).join("")}
       <td><button class="cart-rm" data-colrm="${f.CNPJ}" type="button" title="Tirar desta importação" aria-label="Tirar ${esc(f.NOME)} desta importação">×</button></td></tr>`).join("")}</tbody></table>`
     : `<p class="nota" style="padding:10px">Nenhum fundo para importar.</p>`;
   $("#colAcrescentar").disabled = $("#colSubstituir").disabled = !col.lista.length;
@@ -709,7 +738,7 @@ function tabelaHTML({ colunas, linhas, fixas = 0, larguras = [260, 150], grupos 
     h += `</tr><tr class="h2">`;
   } else h += "<tr>";
   colunas.forEach((c, j) => {
-    if (!ordenavel || c.ord === false) { h += `<th${fx(j)}>${c.nomeOculto ? `<span class="sr-only">${esc(c.nomeOculto)}</span>` : `<span class="th-txt">${esc(c.nome)}</span>`}</th>`; return; }
+    if (!ordenavel || c.ord === false || c.nomeOculto) { h += `<th${fx(j)}${c.nomeOculto ? ` title="${esc(c.nomeOculto)}"` : ""}>${c.nomeOculto ? `<span class="sr-only">${esc(c.nomeOculto)}</span>` : `<span class="th-txt">${esc(c.nome)}</span>`}</th>`; return; }
     const at = o && o.col === c.chave, texto = (c.tipo === "txt" && !c.valor) || c.crescente;   // texto e prazos: 1º clique do menor para o maior
     h += `<th${fx(j)}${at ? ` aria-sort="${o.dir > 0 ? "ascending" : "descending"}"` : ""}><button class="ord" data-ord="${esc(ordenavel)}" data-col="${esc(c.chave)}"
       data-txt="${texto ? 1 : 0}" title="Ordenar"><span class="th-txt">${esc(c.nome)}${at ? (o.dir > 0 ? " ▲" : " ▼") : ""}</span></button></th>`;
@@ -760,6 +789,7 @@ function tabelaMetricas(dados) {
       const txt = l._parado ? `<span class="parado-dt" title="${esc(l._parado.txt)}">${esc(FMT.data(v))}</span>` : esc(FMT.data(v));
       return txt + (comXP ? ` <span class="xp-cota" title="Cota de ${esc(FMT.data(v))} informada pela XP, mais recente que a da CVM">XP</span>` : "");
     };
+    if (n === "Objetivo de retorno") { c.html = (v) => (v && v !== "N/D" ? esc(v) : ""); c.valor = (l) => (l[n] && l[n] !== "N/D" ? l[n] : null); }
     if (st.grossUp && COLS_GU.has(n)) c.html = (v, l) => `<span style="${corSinal(v)}">${esc(FMT[t] ? FMT[t](v) : v)}</span>` +
       (l._gu ? `<sup class="gu" title="Com gross up: fundo isento de IR para pessoa física (equivalente com IR de 15%)">GU</sup>` : "");
     return c;
@@ -769,7 +799,7 @@ function tabelaMetricas(dados) {
     colunas = colunas.filter((c) => c.chave !== "Classificação ANBIMA").map((c) => (c.chave === "Classificação CVM" ? colunaClassif("Cadastro") : c));
     const fimCad = colunas.map((c) => c.g).lastIndexOf("Cadastro") + 1 || 2;
     colunas = [colunaHub(), colunaCadeado(), ...colunas.slice(0, fimCad),
-      ...colunasXP().filter((c) => !["XP Nome", "Classificação XP", "Captação"].includes(c.chave)), ...colunas.slice(fimCad)];
+      ...colunasXP("XP · confidencial", false, true).filter((c) => !["XP Nome", "Classificação XP", "Captação"].includes(c.chave)), ...colunas.slice(fimCad)];
   }
   const grupos = colunas.map((c) => c.g);
   // selos de maior e menor retorno no período (com 3 fundos ou mais)
@@ -1809,6 +1839,23 @@ async function calcularCarteiraBotao() {
   if (faltam.length) { fecharCarga(); atualizarEspaco(); }
 }
 document.addEventListener("click", (e) => { if (e.target.closest?.("#cartCalcular")) calcularCarteiraBotao(); });
+
+// "Lista de fundos…" na carteira: a seleção da lista vira a lista de fundos da carteira (os índices ficam)
+document.addEventListener("click", (e) => {
+  if (e.target.id !== "cartLista") return;
+  const atuais = st.cart.itens.filter((it) => it.tipo === "f").map((it) => it.v);
+  abrirSeletor(atuais, (cnpjs) => {
+    const quer = new Set(cnpjs), tem = new Set(atuais), vazia = !st.cart.itens.length;
+    st.cart.itens = st.cart.itens.filter((it) => it.tipo !== "f" || quer.has(it.v));
+    const novos = cnpjs.filter((c) => !tem.has(c));
+    for (const c of novos) st.cart.itens.push({ tipo: "f", v: c, peso: 0 });
+    if (vazia && st.cart.itens.length) st.cart.itens.forEach((it) => (it.peso = Math.round(10000 / st.cart.itens.length) / 100));
+    salvarCart(); renderCarteira();
+    const tirados = atuais.filter((c) => !quer.has(c)).length;
+    $("#cartAviso").innerHTML = `<span class="ok">${novos.length} fundo(s) adicionado(s)${tirados ? `, ${tirados} retirado(s)` : ""}.</span>` +
+      (novos.length && !vazia ? " Os novos entraram com peso 0: defina os pesos ou use “Pesos iguais”. Clique em 🧮 Calcular carteira para baixar as cotas que faltarem." : novos.length ? " Clique em 🧮 Calcular carteira para baixar as cotas que faltarem." : "");
+  }, "Fundos da carteira");
+});
 // ============================== relatórios: PDF, PNG e Excel ==============================
 // As bibliotecas só são baixadas na hora de gerar o arquivo (não pesam no uso normal do site).
 const CDN = "https://cdn.jsdelivr.net/npm/";
@@ -1871,7 +1918,7 @@ function abrirRelatorio() {
     (g === "Dados" ? `<span class="nota">Uma linha por fundo (ou ativo) e por dia, "um embaixo do outro": bom para tabela dinâmica e filtros.</span>` : "") +
     SECOES_REL.filter((s) => s.g === g).map((s) => `<label class="tog" data-sec-rel="${s.k}"><input type="checkbox" data-rel="${s.k}"> ${esc(s.nome)} <small></small></label>`).join("") + `</div>`).join("");
   desenharFormatoRel();
-  $("#relConf").hidden = !st.xp;
+  $("#relInterno").hidden = !st.xp; $("#relInterno").open = false;      // material interno: escondido até abrir
   // destaque do relatório: na 1ª vez, começa com os fundos destacados na tela
   if (!rel.destIni && st.res) {
     rel.destIni = true;
@@ -1881,7 +1928,7 @@ function abrirRelatorio() {
   for (const c of [...rel.dest]) if (!calculados.has(c)) rel.dest.delete(c);
   $("#relDestBusca").value = ""; $("#relDestSo").checked = false;
   renderDestRel();
-  $("#relProg").textContent = ""; $("#relBaixar").disabled = false;
+  $("#relProg").textContent = ""; $("#relBaixar").disabled = false; $("#relBaixarInterno").disabled = false;
   $("#dlgRel").showModal();
 }
 function desenharFormatoRel() {
@@ -1896,8 +1943,10 @@ function desenharFormatoRel() {
   const escolhidas = SECOES_REL.filter((s) => disponivel(s) && rel.sel.has(s.k));
   const brutos = escolhidas.filter((s) => s.bruto);
   $("#relEstim").textContent = brutos.length ? `Dados usados nos cálculos: cerca de ${br(contarLinhasBrutas(brutos.map((s) => s.k)), 0)} linhas.` : "";
-  $("#relBaixar").textContent = `⬇ Baixar ${({ pdf: "PDF", png: "PNG", xlsx: "Excel" })[rel.fmt]} (${escolhidas.length} parte${escolhidas.length === 1 ? "" : "s"})`;
-  $("#relBaixar").disabled = !escolhidas.length;
+  const rotulo = `${({ pdf: "PDF", png: "PNG", xlsx: "Excel" })[rel.fmt]} (${escolhidas.length} parte${escolhidas.length === 1 ? "" : "s"})`;
+  $("#relBaixar").textContent = st.xp ? `⬇ Baixar material aberto, sem dados da XP: ${rotulo}` : `⬇ Baixar ${rotulo}`;
+  $("#relBaixarInterno").textContent = `⬇ Baixar material completo: ${rotulo}`;
+  $("#relBaixar").disabled = $("#relBaixarInterno").disabled = !escolhidas.length;
 }
 
 // ---------- fundos destacados no relatório (clique na linha para marcar, como na lista de fundos)
@@ -1909,7 +1958,7 @@ function renderDestRel() {
   $("#relDestN").textContent = rel.dest.size;
   $("#relDestTab").innerHTML = lista.length ? `<table class="tb tab-fundos">${cabFundos("relDest", false)}<tbody>${lista.map((f) =>
     `<tr class="linha-f${rel.dest.has(f.CNPJ) ? " marcado" : ""}" data-dest="${f.CNPJ}" tabindex="0" title="${rel.dest.has(f.CNPJ) ? "Destacado · clique para tirar" : "Clique para destacar"}">` +
-    COLS_FUNDO.map((c) => celFundo(f, c)).join("") + "</tr>").join("")}</tbody></table>` : `<p class="nota" style="padding:10px">Nenhum fundo ${so ? "destacado" : "encontrado"}.</p>`;
+    colsFundo().map((c) => celFundo(f, c)).join("") + "</tr>").join("")}</tbody></table>` : `<p class="nota" style="padding:10px">Nenhum fundo ${so ? "destacado" : "encontrado"}.</p>`;
 }
 // nomes, apelidos e CNPJs dos fundos escolhidos (os gráficos e tabelas usam um ou outro)
 function conjuntoDestaque(cnpjs) {
@@ -2349,10 +2398,21 @@ async function csvDeTabela(b) {
 }
 
 // ---------- gerar e baixar
-async function baixarRelatorio() {
+// material aberto: o relatório é montado com os dados da XP desligados (nenhuma coluna, nome ou link da XP entra no arquivo)
+async function baixarRelatorio(interno = false) {
+  const xp = st.xp, outro = $(interno ? "#relBaixar" : "#relBaixarInterno");
+  if (!interno) st.xp = null;
+  outro.disabled = true;
+  try { await baixarRelatorioBase(interno ? "#relBaixarInterno" : "#relBaixar"); }
+  finally {
+    st.xp = xp; outro.disabled = false;
+    if (!interno && xp) { if (st.ctx) renderMetricas(); if (st.rk?.lista.length) renderRkTabela(); }   // a tela volta com as colunas da XP
+  }
+}
+async function baixarRelatorioBase(seletorBotao) {
   const escolhidas = SECOES_REL.filter((s) => disponivel(s) && rel.sel.has(s.k));
   if (!escolhidas.length) return;
-  const btn = $("#relBaixar"), prog = (t) => { $("#relProg").textContent = t; };
+  const btn = $(seletorBotao), prog = (t) => { $("#relProg").textContent = t; };
   btn.disabled = true;
   const destTela = st.destaque, comDest = rel.dest.size > 0;
   // seções minimizadas são abertas durante a geração (senão os gráficos delas sairiam vazios)
@@ -2423,7 +2483,8 @@ document.addEventListener("click", (e) => {
       i.checked = marca; marca ? rel.sel.add(i.dataset.rel) : rel.sel.delete(i.dataset.rel); });
     salvar("relSel", [...rel.sel]); return desenharFormatoRel();
   }
-  if (t.id === "relBaixar") return baixarRelatorio();
+  if (t.id === "relBaixar") return baixarRelatorio(false);
+  if (t.id === "relBaixarInterno") return baixarRelatorio(true);
   const gb = t.closest?.("[data-rel-g]");
   if (gb) {
     const marca = gb.dataset.marca === "1";
@@ -2844,14 +2905,15 @@ const prazoCompacto = (t) => { const m = String(t ?? "").match(/D\s*\+\s*(\d+)/i
 const pctXP = (v, d = 2) => (v == null ? "" : `${br(v, d)}%`);          // na planilha 0,1 já é 0,1%
 const badgeInv = (v) => (v ? `<span class="xp-inv xp-${v.toLowerCase()}" title="${{ IG: "Investidor em geral", IQ: "Investidor qualificado", IP: "Investidor profissional" }[v]}">${v}</span>` : "");
 const textoCurto = (v, n = 26) => (v == null ? "" : String(v).length > n ? `<span title="${esc(v)}">${esc(String(v).slice(0, n - 1))}…</span>` : esc(v));
-function colunasXP(g = "XP · confidencial", semInternas = false) {
+function colunasXP(g = "XP · confidencial", semInternas = false, foraNoResgate = false) {
   const cols = [
     { chave: "XP Nome", nome: "Nome comercial", tipo: "txt", g, html: (v, l) => (l._naXP ? textoCurto(v, 34) + (l._xpOfertas > 1 ? ` <small class="nota" title="${l._xpOfertas} ofertas deste CNPJ na XP">(${l._xpOfertas})</small>` : "") : `<span class="nota">não está na XP</span>`) },
-    { chave: "Investidor", nome: "Investidor", tipo: "txt", g, html: badgeInv },
+    { chave: "Investidor", nome: "", nomeOculto: "Tipo de investidor", ord: false, tipo: "txt", g, html: badgeInv },
     { chave: "Captação", nome: "Captação", tipo: "txt", g, html: (v) => cadeado(v) },
-    { chave: "Isento", nome: "Isento", tipo: "txt", g, html: (v) => (v ? `<span class="xp-isento" title="Isento de IR para pessoa física" aria-label="Isento de IR para pessoa física">$</span>` : "") },
+    { chave: "Isento", nome: "", nomeOculto: "Isento de IR para pessoa física", ord: false, tipo: "txt", g, html: (v) => (v ? `<span class="xp-isento" title="Isento de IR para pessoa física" aria-label="Isento de IR para pessoa física">$</span>` : "") },
     { chave: "Resgate", nome: "Prazo de resgate", tipo: "txt", g, crescente: true,
-      html: (v, l) => (l._naXP ? `<span class="xp-resg" title="${esc(`Cotização: ${l["Cotização"] || "–"}\nLiquidação: ${l["Liquidação"] || "–"}`)}">${esc(l.Resgate || "")}</span>` : ""),
+      html: (v, l) => (l._naXP ? `<span class="xp-resg" title="${esc(`Cotização: ${l["Cotização"] || "–"}\nLiquidação: ${l["Liquidação"] || "–"}`)}">${esc(l.Resgate || "")}</span>`
+        : foraNoResgate ? `<span class="fora-xp">não está na XP</span>` : ""),
       valor: (l) => { const a = prazoDias(l["Cotização"]), b = prazoDias(l["Liquidação"]); return a == null && b == null ? null : (a || 0) + (b || 0); } },
     { chave: "Classificação XP", nome: "Classificação XP", tipo: "txt", g, html: (v) => textoCurto(v, 30) },
     { chave: "Taxa adm.", nome: "Taxa de adm.", tipo: "num2", g, html: (v) => pctXP(v) },
@@ -2924,6 +2986,8 @@ document.addEventListener("click", (e) => { if (e.target.id === "equipeBaixar") 
 document.addEventListener("change", (e) => { if (e.target.id === "grossUp") { st.grossUp = e.target.checked; redesenharMantendo($("#tabMetricas"), renderMetricas); } });
 // ao entrar ou sair: aplica as cotas, mostra/esconde as colunas e avisa se é preciso recalcular
 function aplicarDadosEquipe() {
+  st._xpMemo = null;
+  for (const f of st.lista) { f._buscaBase ??= f._busca; const n = st.xp && ofertaXP(f.CNPJ)?.NAME; f._busca = n ? `${f._buscaBase} ${String(n).toUpperCase()}` : f._buscaBase; }
   D.definirCotasExtras(st.xp ? cotasXP() : null);
   $("#guBox").hidden = !st.xp; if (!st.xp) { st.grossUp = false; $("#grossUp").checked = false; }
   if (st.ctx) renderMetricas();
@@ -3127,7 +3191,7 @@ function renderEditorRk() {
     (fora.length ? ` · <span class="neg">${fora.length} fora da base atual: ${fora.map(cnpjFmt).join(", ")}</span>` : "") +
     (parados.length || fora.length ? ` · entram no ranking cerca de <b>${rkEd.cnpjs.length - parados.length - fora.length}</b>` : "");
   $("#rkEdFundos").innerHTML = lista.length ? `<table class="tb tab-fundos">${cabFundos("rkEd", false, "", "x")}<tbody>${lista.map((f) =>
-    `<tr>${COLS_FUNDO.map((c) => celFundo(f, c)).join("")}<td><button class="cart-rm" data-rk-edrm="${f.CNPJ}" type="button" title="Tirar do ranking" aria-label="Tirar ${esc(f.NOME)} do ranking">×</button></td></tr>`).join("")}</tbody></table>`
+    `<tr>${colsFundo().map((c) => celFundo(f, c)).join("")}<td><button class="cart-rm" data-rk-edrm="${f.CNPJ}" type="button" title="Tirar do ranking" aria-label="Tirar ${esc(f.NOME)} do ranking">×</button></td></tr>`).join("")}</tbody></table>`
     : `<p class="nota" style="padding:10px">Nenhum fundo ainda. Use os botões acima para escolher na lista, colar CNPJs, carregar um grupo ou usar os selecionados.</p>`;
 }
 async function juntarNoEditor(cnpjs, substituir) {

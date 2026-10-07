@@ -725,7 +725,7 @@ sup.gu { font-size: 9px; font-weight: 800; color: var(--link); margin-left: 2px;
 .tb thead th .th-txt { display: inline-block; max-width: 8.5em; white-space: normal; line-height: 1.2; text-align: inherit; }
 .tb thead th.fx .th-txt { max-width: none; }
 .tb thead th.g .th-txt, .tb thead tr:not(.h2) th .th-txt { max-width: none; }
-.tb td.longo { max-width: 240px; overflow: hidden; text-overflow: ellipsis; }
+.tb td.longo { max-width: 180px; overflow: hidden; text-overflow: ellipsis; }
 .hub-link { padding: 2px 6px; font-size: 11.5px; }
 
 /* XP: isento, risco pela faixa e cadeados de captação */
@@ -756,7 +756,17 @@ sup.gu { font-size: 9px; font-weight: 800; color: var(--link); margin-left: 2px;
 .env-tab td.env-fora { text-align: center; color: var(--sub); font-style: italic; font-size: 12px; }
 .minigraf .mini-nomes { font-size: 11px; line-height: 1.4; color: var(--sub); margin: 2px 0 6px; white-space: normal; }
 
-.rel-conf { border-left: 3px solid #b7791f; padding: 6px 10px; background: color-mix(in srgb, #b7791f 8%, var(--card)); border-radius: 0 8px 8px 0; color: var(--txt); }
-.rel-conf[hidden] { display: none; }
+.rel-conf { border-left: 3px solid #b7791f; padding: 8px 12px; background: color-mix(in srgb, #b7791f 8%, var(--card)); border-radius: 0 8px 8px 0; color: var(--txt); font-size: 14px; line-height: 1.45; }
+.rel-alerta { color: var(--neg); }
 .xp-resg { cursor: help; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .xp-classif { cursor: help; }
+
+/* listas de filtro dentro do cabeçalho: letra escura sobre fundo claro (o cabeçalho usa letra branca) */
+.tb thead select, .tb thead input { color: var(--txt); background: var(--campo); }
+.tb thead select option { color: var(--txt); background: var(--card); }
+.fora-xp { color: var(--sub); font-style: italic; font-size: 12px; white-space: nowrap; }
+/* relatório: material interno minimizado */
+.rel-interno { margin-top: 10px; border: 1px dashed #b7791f; border-radius: 10px; padding: 6px 12px 10px; }
+.rel-interno[hidden] { display: none; }
+.rel-interno summary { cursor: pointer; font-weight: 800; padding: 4px 0; }
+.rel-interno .prim { margin-top: 6px; }

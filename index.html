@@ -269,6 +269,7 @@
         </div>
         <div class="cart-acoes">
           <button id="cartCalcular" class="prim" type="button" title="Busca as cotas dos fundos que faltam e calcula a carteira">🧮 Calcular carteira</button>
+          <button id="cartLista" class="sec" type="button" title="Escolher os fundos da carteira pela lista completa, com filtros">☰ Lista de fundos…</button>
           <button id="cartIguais" class="sec" type="button">Pesos iguais</button>
           <button id="cartNormalizar" class="sec" type="button">Ajustar para somar 100%</button>
           <button id="cartTodos" class="sec" type="button">Adicionar todos os fundos calculados</button>
@@ -426,8 +427,13 @@
         se forem grandes demais para o Excel, eles vêm em CSV num .zip junto com o Excel.
         <label class="tog"><input id="relXlsImg" type="checkbox" checked> Incluir as imagens dos gráficos (aba "Gráficos")</label></div>
       <p id="relEstim" class="nota"></p>
-      <p id="relConf" class="nota rel-conf" hidden>🔒 Você está logado: os relatórios incluem os dados confidenciais da XP (classificação, captação, prazos, taxas, ROA, risco e link do Hub). Não compartilhe fora da equipe.</p>
       <button id="relBaixar" class="prim" type="button">⬇ Baixar</button>
+      <details id="relInterno" class="rel-interno" hidden>
+        <summary>🔒 Material interno (com dados da XP)</summary>
+        <p class="rel-conf">Este material inclui os dados confidenciais da XP (classificação, captação, prazos, taxas, ROA, risco e link do Hub).
+          <b class="rel-alerta">Não compartilhe fora da equipe.</b></p>
+        <button id="relBaixarInterno" class="prim" type="button">⬇ Baixar material completo</button>
+      </details>
       <p id="relProg" class="nota" aria-live="polite"></p>
     </div>
     <details id="relDestBox" class="rel-dest" open>
