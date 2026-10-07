@@ -825,3 +825,6 @@ sup.gu { font-size: 9px; font-weight: 800; color: var(--link); margin-left: 2px;
 .graf.lupa-ativa .zoom-dica { opacity: 1 !important; }
 /* gráficos do painel do fundo */
 .pf-graf .graf { height: 210px; position: relative; }
+
+.h-lat .sel-acoes { display: inline-flex; gap: 10px; align-items: center; }
+#selecionados[hidden] { display: none; }

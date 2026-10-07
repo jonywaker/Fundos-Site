@@ -38,9 +38,11 @@
       </section>
 
       <section class="bloco" data-pg="analise">
-        <h2 class="h-lat"><span>Selecionados (<span id="nSel">0</span>)</span><button id="limpar" class="link" hidden>limpar</button></h2>
+        <h2 class="h-lat"><span>Selecionados (<span id="nSel">0</span>)</span><span class="sel-acoes">
+          <button id="selMostrar" class="link" type="button" aria-expanded="false" aria-controls="selecionados" hidden>Mostrar</button>
+          <button id="limpar" class="link" hidden>limpar</button></span></h2>
         <div id="avisoSel" class="nota"></div>
-        <div id="selecionados" class="chips"></div>
+        <div id="selecionados" class="chips" hidden></div>
       </section>
 
       <section class="bloco" data-pg="rankings">
@@ -67,14 +69,13 @@
       <section class="bloco" data-pg="analise">
         <h2 class="h-lat">Índices de comparação</h2>
         <div id="idxChips" class="pilulas"></div>
-        <p class="nota">Entram nos gráficos de rentabilidade e de risco × retorno e na correlação (os de preço). Não precisa recalcular.</p>
       </section>
 
       <section class="bloco">
         <h2 class="h-lat">Opções</h2>
         <label class="campo">Peso total da carteira (%) <input id="peso" type="number" value="100" min="0" step="1"></label>
         <label class="tog"><input id="guardar" type="checkbox" checked> Guardar dados neste computador</label>
-        <p class="nota">Deixa as próximas consultas mais rápidas (máx. 150 MB, limpa sozinho). Espaço: <span id="espaco">–</span></p>
+        <p class="nota">Deixa as próximas consultas mais rápidas.<span id="espaco" hidden></span></p>
         <div class="backup">
           <button id="bkSalvar" class="sec" type="button" title="Grupos, rankings, tipos de cálculo, carteira e preferências num arquivo">⬇ Salvar backup</button>
           <label class="sec botao-arquivo" title="Restaura um backup salvo antes (substitui as configurações deste navegador)">⬆ Restaurar<input id="bkRestaurar" type="file" accept=".json,application/json" hidden></label>

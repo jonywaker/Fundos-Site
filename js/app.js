@@ -146,6 +146,10 @@ function atualizarSidebar() {
       ${esc(curto(st.porCnpj.get(c)?.NOME || c, 34))}<button data-rm="${c}" type="button" aria-label="Remover ${esc(st.porCnpj.get(c)?.NOME || cnpjFmt(c))}">×</button></span>`).join("")
     || `<p class="nota">Nenhum fundo selecionado.</p>`;
   $("#limpar").hidden = !st.sel.length;
+  // lista dos selecionados minimizada por padrão: o título mostra a quantidade e o botão abre/fecha
+  $("#selMostrar").hidden = !st.sel.length;
+  $("#selecionados").hidden = !st.sel.length || !st.selAberta;
+  $("#selMostrar").textContent = st.selAberta ? "Ocultar" : "Mostrar"; $("#selMostrar").setAttribute("aria-expanded", String(!!st.selAberta));
   // períodos
   $$("#periodos button").forEach((b) => b.setAttribute("aria-pressed", st.periodos.has(b.dataset.p)));
   $("#campoMes").hidden = !st.periodos.has("Mês");
@@ -522,6 +526,9 @@ document.addEventListener("change", (e) => {
   else if (t.id === "grImportar" && t.files[0]) { importarGrupos(t.files[0]); t.value = ""; }
 });
 
+
+st.selAberta = false;
+document.addEventListener("click", (e) => { if (e.target.id === "selMostrar") { st.selAberta = !st.selAberta; atualizarSidebar(); } });
 // ============================== cálculo ==============================
 function apelidos(cnpjs) {
   const out = {}, usados = new Set();
