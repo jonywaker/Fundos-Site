@@ -844,7 +844,7 @@ sup.gu { font-size: 9px; font-weight: 800; color: var(--link); margin-left: 2px;
 .xp-barra { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) auto; align-items: center; gap: 8px; width: 100%; padding: 3px 4px;
   border: 0; border-radius: 6px; background: none; color: var(--txt); font: 12.5px Manrope, sans-serif; text-align: left; cursor: pointer; }
 .xp-barra:hover { background: color-mix(in srgb, var(--azul) 8%, var(--card)); }
-.xb-rot { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.xb-rot { white-space: normal; overflow-wrap: anywhere; line-height: 1.25; }      /* texto inteiro, quebrando linha */
 .xb-trilho { height: 10px; border-radius: 5px; background: color-mix(in srgb, var(--borda) 60%, transparent); overflow: hidden; }
 .xb-trilho i { display: block; height: 100%; border-radius: 5px; background: var(--azul); }
 .xb-n { font-weight: 800; font-variant-numeric: tabular-nums; white-space: nowrap; } .xb-n small { font-weight: 500; color: var(--sub); }

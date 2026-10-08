@@ -3497,7 +3497,7 @@ function cartaoBarras(titulo, contagem, total, { ordem = null, cores = {}, max =
   const maior = Math.max(1, ...itens.map(([, v]) => v.length));
   return `<div class="xp-card"><h3>${esc(titulo)}</h3>${itens.map(([rot, cs]) => {
     const id = `g${xpGrupos.size}`; xpGrupos.set(id, { rot: `${titulo}: ${rot}`, cs });
-    return `<button type="button" class="xp-barra" data-xpg="${id}" title="Selecionar estes ${cs.length} fundos e calcular">
+    return `<button type="button" class="xp-barra" data-xpg="${id}" title="${esc(`${rot}: ${cs.length} fundo(s) (${br(cs.length / total * 100, 1)}%) · clique para selecionar e calcular`)}">
       <span class="xb-rot">${esc(rot)}</span><span class="xb-trilho"><i style="width:${(cs.length / maior * 100).toFixed(1)}%;${cores[rot] ? `background:${cores[rot]}` : ""}"></i></span>
       <span class="xb-n">${cs.length} <small>(${br(cs.length / total * 100, 0)}%)</small></span></button>`; }).join("")}${nota ? `<p class="nota">${nota}</p>` : ""}</div>`;
 }
@@ -3640,11 +3640,12 @@ function renderROA() {
   const todos = eixosROA(), E = todos[st.roaEixo] || todos.sharpe;
   definirCombo("cbROA", E.titulo);
   const algum = st.ctx.dados.linhas.some((l) => casa(st.destaque, l.Fundo, l.CNPJ));
-  let semROA = 0, semX = 0;
+  let semROA = 0, semX = 0, semCli = 0;
   const pts = [];
   for (const l of st.ctx.dados.linhas) {
     const q = camposXP(l._c);
     if (!q._naXP || q.ROA == null) { semROA++; continue; }
+    if (st.roaSoCli && !(q.Clientes > 0)) { semCli++; continue; }
     const x = E.valor(l, q); if (x == null || !Number.isFinite(x)) { semX++; continue; }
     const marcado = algum && casa(st.destaque, l.Fundo, l.CNPJ);
     pts.push({ _c: l._c, nome: q["XP Nome"] ? String(q["XP Nome"]).toLocaleUpperCase("pt-BR") : st.res.apelidos[l._c], cor: st.ctx.cores[l._c], x, y: q.ROA / 100, tipo: "fundo", forte: marcado, apagado: algum && !marcado,
@@ -3654,6 +3655,7 @@ function renderROA() {
   const temClientes = st.ctx.dados.linhas.some((l) => camposXP(l._c).Clientes != null);
   $("#roaBolhaBox").hidden = !temClientes; if (!temClientes) st.roaBolha = "";
   $("#roaBolha").value = st.roaBolha || "";
+  $("#roaSoCli").checked = !!st.roaSoCli; if (!temClientes) st.roaSoCli = false;
   const campoB = { vol: "Volume clientes", qtd: "Clientes" }[st.roaBolha], R_MIN = 4, R_MAX = 28;
   let maxB = 0;
   if (campoB) {
@@ -3677,7 +3679,7 @@ function renderROA() {
   $("#roaNota").innerHTML = esc(`${pts.length} fundo(s) no gráfico · período ${st.perAtivo} (${fmtData(st.ctx.dIni)} a ${fmtData(st.ctx.dFim)})`) +
     (quad ? ` · quadrantes cruzam nas medianas: ROA <b>${esc(brPct(medY, 2))}</b> · ${esc(E.curto)} <b>${esc(E.fmt(medX))}</b> —
       <span class="roa-q bom">${q4.bom} no verde</span>, <span class="roa-q ruim">${q4.ruim} no vermelho</span>, ${q4.misto} nos mistos` : "") +
-    esc((semROA ? ` · ${semROA} sem ROA ou fora da XP` : "") + (semX ? ` · ${semX} sem ${E.curto}` : "")) +
+    esc((semROA ? ` · ${semROA} sem ROA ou fora da XP` : "") + (semCli ? ` · ${semCli} sem clientes (ocultos)` : "") + (semX ? ` · ${semX} sem ${E.curto}` : "")) +
     esc((semROA ? "" : "") + (st.roaEixo === "jm" && !st.res?.jm ? " · calcule a janela móvel na seção abaixo para ver a mediana" : "") + ". Arraste ou use a lupa para dar zoom.");
   // casas decimais do eixo conforme o espaçamento das marcas (ROA pequeno ou com zoom não repete rótulos)
   const fmtROA = (v, i, ticks) => { const passo = ticks?.length > 1 ? Math.abs(ticks[1].value - ticks[0].value) * 100 : 0.01;
@@ -3689,8 +3691,13 @@ function renderROA() {
         (p.cli != null ? ` · ${br(p.cli, 0)} cliente(s) · R$ ${br((p.vol || 0) / 1e6, 2)} mi` : ""); } });
 }
 
-document.addEventListener("change", (e) => { if (e.target.id === "roaBolha") { st.roaBolha = e.target.value; renderROA(); } });
+document.addEventListener("change", (e) => {
+  if (e.target.id === "roaBolha") { st.roaBolha = e.target.value; renderROA(); }
+  if (e.target.id === "roaSoCli") { st.roaSoCli = e.target.checked; semZoom("gROA"); renderROA(); }
+});
 st.roaBolha = "";
+
+st.roaSoCli = false;
 // ============================== rankings ==============================
 // Um ranking = nome + tipo de cálculo (pesos) + lista de fundos. Ficam guardados neste navegador, como os grupos.
 const lerRankings = () => pref("rankings", {});
