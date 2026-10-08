@@ -895,3 +895,12 @@ sup.gu { font-size: 9px; font-weight: 800; color: var(--link); margin-left: 2px;
 .quad-ctrl { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; margin: 4px 0 6px; }
 .quad-ctrl .combo { min-width: 240px; }
 #roaSoCliBox[hidden] { display: none; }
+
+/* origem dos grupos e rankings: deste computador, da conta ou de um colega */
+.sv { display: inline-block; padding: 1px 8px; border-radius: 99px; font-size: 11.5px; font-weight: 700; white-space: nowrap; border: 1px solid; }
+.sv-local { color: var(--sub); border-color: var(--borda); background: var(--card); }
+.sv-meu { color: var(--azul); border-color: color-mix(in srgb, var(--azul) 45%, transparent); background: color-mix(in srgb, var(--azul) 8%, var(--card)); }
+.sv-eq { color: #8a5a12; border-color: #d9b56a; background: color-mix(in srgb, #b7791f 10%, var(--card)); }
+@media (prefers-color-scheme: dark) { .sv-meu { color: #9cc2ff; } .sv-eq { color: #f0c46a; } }
+tr.sv-linha-equipe td { background: color-mix(in srgb, #b7791f 4%, var(--card)); }
+#grCompBox[hidden], #rkEdCompBox[hidden] { display: none; }

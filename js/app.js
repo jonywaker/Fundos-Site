@@ -383,32 +383,63 @@ function renderColagem() {
 }
 
 // ---------- grupos salvos (neste navegador)
-const lerGrupos = () => pref("grupos", {});
-const gravarGrupos = (g) => salvar("grupos", g);
+// grupos de três origens: deste computador (local), meus na conta (meu) e compartilhados pelos colegas (equipe)
+const lerGruposLocais = () => pref("grupos", {});
+function lerGrupos() {
+  const out = {};
+  for (const [n, x] of Object.entries(lerGruposLocais())) out[n] = { ...x, _origem: "local", _nome: n };
+  for (const it of st.nuvem?.itens || []) {
+    if (it.tipo !== "grupo") continue;
+    const base = it.meu ? it.nome : `${it.nome} · ${it.autor}`; let k = base, i = 2; while (out[k]) k = `${base} (${i++})`;
+    out[k] = { cnpjs: it.conteudo?.cnpjs || [], atualizado: it.atualizado, _origem: it.meu ? "meu" : "equipe", _id: it.id, _autor: it.autor, _comp: it.compartilhado, _nome: it.nome };
+  }
+  return out;
+}
+// grava só os deste computador (os da conta ficam no Apps Script)
+const semInternos = (x) => Object.fromEntries(Object.entries(x).filter(([k]) => !k.startsWith("_")));
+const gravarGrupos = (g) => salvar("grupos", Object.fromEntries(Object.entries(g).filter(([, x]) => !x._origem || x._origem === "local").map(([n, x]) => [n, semInternos(x)])));
 function abrirGrupos() { renderGrupos(); $("#dlgGrupos").showModal(); }
 function renderGrupos() {
-  const g = lerGrupos(), nomes = Object.keys(g).sort((a, b) => a.localeCompare(b, "pt-BR"));
+  const g = lerGrupos(), ordem = { local: 0, meu: 1, equipe: 2 }, logado = !!st.nuvem;
+  const nomes = Object.keys(g).sort((a, b) => ordem[g[a]._origem] - ordem[g[b]._origem] || (g[a]._autor || "").localeCompare(g[b]._autor || "", "pt-BR") || a.localeCompare(b, "pt-BR"));
   $("#grN").textContent = st.sel.length;
-  $("#grSalvar").disabled = !st.sel.length;
-  $("#grNomes").innerHTML = nomes.map((n) => `<option value="${esc(n)}">`).join("");
-  $("#grLista").innerHTML = !nomes.length ? `<p class="nota">Nenhum grupo salvo ainda. Selecione fundos e salve acima.</p>` :
-    `<table class="tb gr-tab"><thead><tr><th class="t">Grupo</th><th>Fundos</th><th>Atualizado em</th><th class="t">Carregar</th><th></th></tr></thead><tbody>${nomes.map((n) => {
-      const x = g[n], aberto = renderGrupos.aberto === n;
-      return `<tr><td class="t"><button class="link gr-ver" data-gr="${esc(n)}" title="Ver os fundos">${aberto ? "▾" : "▸"} <b>${esc(n)}</b></button></td><td>${x.cnpjs.length}</td>
+  $("#grSalvar").disabled = !st.sel.length; $("#grSalvar").textContent = logado ? "Salvar grupo na conta" : "Salvar grupo";
+  $("#grCompBox").hidden = !logado;
+  $("#grNomes").innerHTML = nomes.filter((n) => g[n]._origem !== "equipe").map((n) => `<option value="${esc(g[n]._nome)}">`).join("");
+  $("#grLista").innerHTML = (logado ? "" : `<p class="nota">Entre na área da equipe para salvar na sua conta (aparece em qualquer computador) e ver os grupos dos colegas.</p>`) +
+    (!nomes.length ? `<p class="nota">Nenhum grupo salvo ainda. Selecione fundos e salve acima.</p>` :
+    `<table class="tb gr-tab"><thead><tr><th class="t">Grupo</th><th class="t">Onde está</th><th>Fundos</th><th>Atualizado em</th><th class="t">Carregar</th><th class="t"><span class="sr-only">Ações</span></th></tr></thead><tbody>${nomes.map((n) => {
+      const x = g[n], aberto = renderGrupos.aberto === n, k = esc(n);
+      const acoes = x._origem === "local" ? (logado ? `<button class="sec mini-btn" data-gr-up="${k}" type="button" title="Guarda na sua conta: aparece em qualquer computador e não some se o navegador apagar os dados">☁ Enviar para a conta</button> ` : "") +
+          `<button class="cart-rm" data-gr-del="${k}" type="button" title="Excluir grupo" aria-label="Excluir o grupo ${esc(x._nome)}">🗑</button>`
+        : x._origem === "meu" ? `<button class="sec mini-btn" data-gr-comp="${k}" type="button" title="${x._comp ? "Deixar só para você" : "Compartilhar com a equipe"}">${x._comp ? "🔒 Deixar só meu" : "👥 Compartilhar"}</button>
+          <button class="cart-rm" data-gr-del="${k}" type="button" title="Excluir da sua conta" aria-label="Excluir o grupo ${esc(x._nome)}">🗑</button>`
+        : `<button class="sec mini-btn" data-gr-copia="${k}" type="button" title="Cria uma cópia sua, que você pode alterar">⧉ Copiar para mim</button>`;
+      return `<tr class="sv-linha-${x._origem}"><td class="t"><button class="link gr-ver" data-gr="${k}" title="Ver os fundos">${aberto ? "▾" : "▸"} <b>${esc(x._nome)}</b></button></td><td class="t">${seloOrigem(x)}</td><td>${x.cnpjs.length}</td>
         <td>${x.atualizado ? new Date(x.atualizado).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }) : ""}</td>
-        <td class="t gr-acoes"><button class="sec mini-btn" data-gr-add="${esc(n)}" type="button" title="Junta estes fundos aos já selecionados">＋ Acrescentar</button>
-          <button class="prim mini-btn" data-gr-sub="${esc(n)}" type="button" title="Tira os selecionados e coloca só os do grupo">Substituir</button></td>
-        <td><button class="cart-rm" data-gr-del="${esc(n)}" type="button" title="Excluir grupo" aria-label="Excluir o grupo ${esc(n)}">🗑</button></td></tr>` +
-        (aberto ? `<tr class="gr-det"><td colspan="5"><div class="chips">${x.cnpjs.map((c) => `<span class="chip" title="${cnpjFmt(c)}">${esc(curto(st.porCnpj.get(c)?.NOME || cnpjFmt(c) + " (fora da base)", 40))}</span>`).join("")}</div></td></tr>` : "");
-    }).join("")}</tbody></table>`;
+        <td class="t gr-acoes"><button class="sec mini-btn" data-gr-add="${k}" type="button" title="Junta estes fundos aos já selecionados">＋ Acrescentar</button>
+          <button class="prim mini-btn" data-gr-sub="${k}" type="button" title="Tira os selecionados e coloca só os do grupo">Substituir</button></td>
+        <td class="t gr-acoes">${acoes}</td></tr>` +
+        (aberto ? `<tr class="gr-det"><td colspan="6"><div class="chips">${x.cnpjs.map((c) => `<span class="chip" title="${cnpjFmt(c)}">${esc(curto(st.porCnpj.get(c)?.NOME || cnpjFmt(c) + " (fora da base)", 40))}</span>`).join("")}</div></td></tr>` : "");
+    }).join("")}</tbody></table>`);
 }
 async function salvarGrupo() {
   const nome = $("#grNome").value.trim();
   if (!nome) { $("#grNome").focus(); return; }
   if (!st.sel.length) return;
   const g = lerGrupos();
-  if (g[nome]) {
-    const r = await perguntar("Substituir o grupo?", `Já existe o grupo <b>${esc(nome)}</b> com ${g[nome].cnpjs.length} fundo(s). Substituir pelos ${st.sel.length} fundos selecionados agora?`,
+  // com login: salva na conta (um grupo seu com o mesmo nome é atualizado)
+  if (st.nuvem) {
+    const ex = Object.values(g).find((x) => x._origem === "meu" && x._nome.toLowerCase() === nome.toLowerCase());
+    if (ex && !(await perguntar("Substituir o grupo?", `Você já tem na conta o grupo <b>${esc(ex._nome)}</b> com ${ex.cnpjs.length} fundo(s). Substituir pelos ${st.sel.length} fundos selecionados agora?`,
+      [{ rot: "Cancelar", v: false }, { rot: "Substituir", v: true, classe: "prim" }]))) return;
+    const r = await salvarNaNuvem({ id: ex?._id, tipo: "grupo", nome, compartilhado: $("#grComp").checked, conteudo: { cnpjs: [...st.sel] } });
+    if (r.ok) { $("#grNome").value = ""; renderGrupos(); avisoSel(`<span class="ok">Grupo "${esc(nome)}" salvo na sua conta${$("#grComp").checked ? " e compartilhado com a equipe" : ""} (${st.sel.length} fundo(s)).</span>`); return; }
+    if (!(await perguntar("Não foi possível salvar na conta", `${esc(r.erro)}<br>Salvar só neste computador?`, [{ rot: "Cancelar", v: false }, { rot: "Salvar neste computador", v: true, classe: "prim" }]))) return;
+  }
+  const loc = g[nome]?._origem === "local" ? g[nome] : null;
+  if (loc) {
+    const r = await perguntar("Substituir o grupo?", `Já existe o grupo <b>${esc(nome)}</b> com ${loc.cnpjs.length} fundo(s). Substituir pelos ${st.sel.length} fundos selecionados agora?`,
       [{ rot: "Cancelar", v: false }, { rot: "Substituir", v: true, classe: "prim" }]);
     if (!r) return;
   }
@@ -501,9 +532,30 @@ document.addEventListener("click", async (e) => {
     return carregarGrupo(n, true);
   }
   if (t.dataset?.grDel) {
-    const n = t.dataset.grDel;
-    if (!(await perguntar("Excluir o grupo?", `Excluir o grupo <b>${esc(n)}</b>? Os fundos selecionados agora não mudam.`, [{ rot: "Cancelar", v: false }, { rot: "Excluir", v: true, classe: "prim" }]))) return;
-    const g = lerGrupos(); delete g[n]; gravarGrupos(g); return renderGrupos();
+    const n = t.dataset.grDel, g = lerGrupos(), x = g[n]; if (!x) return;
+    if (!(await perguntar("Excluir o grupo?", `Excluir o grupo <b>${esc(x._nome)}</b>${x._origem === "meu" ? " da sua conta (some de todos os computadores" + (x._comp ? " e da equipe" : "") + ")" : ""}? Os fundos selecionados agora não mudam.`,
+      [{ rot: "Cancelar", v: false }, { rot: "Excluir", v: true, classe: "prim" }]))) return;
+    if (x._origem === "meu") { const r = await apagarDaNuvem(x._id); if (!r.ok) avisoSel(`<span class="neg">${esc(r.erro)}</span>`); return renderGrupos(); }
+    delete g[n]; gravarGrupos(g); return renderGrupos();
+  }
+  if (t.dataset?.grUp) {                                     // grupo deste computador -> conta (e sai do computador)
+    const n = t.dataset.grUp, g = lerGrupos(), x = g[n]; if (!x) return;
+    const r = await salvarNaNuvem({ tipo: "grupo", nome: x._nome, compartilhado: true, conteudo: { cnpjs: x.cnpjs } });
+    if (!r.ok) { avisoSel(`<span class="neg">${esc(r.erro)}</span>`); return; }
+    const loc = lerGruposLocais(); delete loc[n]; salvar("grupos", loc); return renderGrupos();
+  }
+  if (t.dataset?.grComp) {
+    const x = lerGrupos()[t.dataset.grComp]; if (!x) return;
+    const r = await salvarNaNuvem({ id: x._id, tipo: "grupo", nome: x._nome, compartilhado: !x._comp, conteudo: { cnpjs: x.cnpjs } });
+    if (!r.ok) avisoSel(`<span class="neg">${esc(r.erro)}</span>`); return renderGrupos();
+  }
+  if (t.dataset?.grCopia) {                                  // grupo de um colega -> cópia minha
+    const x = lerGrupos()[t.dataset.grCopia]; if (!x) return;
+    const meus = Object.values(lerGrupos()).filter((y) => y._origem !== "equipe").map((y) => y._nome.toLowerCase());
+    const nome = meus.includes(x._nome.toLowerCase()) ? `${x._nome} (de ${x._autor})` : x._nome;
+    const r = await salvarNaNuvem({ tipo: "grupo", nome, compartilhado: false, conteudo: { cnpjs: x.cnpjs } });
+    if (!r.ok) avisoSel(`<span class="neg">${esc(r.erro)}</span>`); else avisoSel(`<span class="ok">Grupo "${esc(nome)}" copiado para a sua conta.</span>`);
+    return renderGrupos();
   }
 });
 document.addEventListener("keydown", (e) => {
@@ -2954,6 +3006,7 @@ async function carregarDadosEquipe() {
   st.xpCols = r.colunas;
   st.xp = new Map(Object.entries(r.fundos).map(([c, linhas]) => [c, linhas.map((l) => Object.fromEntries(r.colunas.map((k, i) => [k, l[i]])))]));
   st.xpOfertas = r.linhas;
+  carregarNuvem();                                                    // grupos e rankings salvos na conta (em paralelo)
   if (!r.colunas.includes("ID") || (r.versao && r.versao < VERSAO_MIN_EQUIPE))
     setTimeout(() => avisoSel(`<span class="neg">O Apps Script da equipe está numa versão antiga (${esc(r.versao || "anterior a " + VERSAO_MIN_EQUIPE)}).
       Para o Link Hub e as correções mais recentes, publique a versão nova: Implantar → Gerenciar implantações → lápis → Nova versão.</span>`), 50);
@@ -2962,7 +3015,7 @@ async function carregarDadosEquipe() {
 }
 async function sairEquipe(silencioso = false) {
   const token = lerSessaoEquipe();
-  gravarSessaoEquipe(null); removerFundosSoXP(); st.equipe = null; st.xp = null; st.xpCols = [];
+  gravarSessaoEquipe(null); removerFundosSoXP(); st.equipe = null; st.xp = null; st.xpCols = []; st.nuvem = null; atualizarListasSalvos();
   desenharEquipe(); aplicarDadosEquipe();
   if (token && !silencioso) apiEquipe("sair", { token });
 }
@@ -3801,18 +3854,77 @@ function aplicarArrastoXP() {
   st.xpFiltros.set(titulo, sel);
   barras.forEach((el) => el.setAttribute("aria-pressed", String(sel.has(xpGrupos.get(el.dataset.xpg)?.rot))));   // retorno visual durante o arrasto
 }
+
+// ============================== grupos e rankings salvos na conta (Apps Script) ==============================
+// st.nuvem = { itens: [{ id, tipo, nome, autor, meu, compartilhado, atualizado, conteudo }] } (só com login)
+st.nuvem = null;
+async function carregarNuvem() {
+  const token = lerSessaoEquipe(); if (!token) return;
+  const r = await apiEquipe("salvos", { token });
+  if (!r.ok) { if (r.erro && !/Ação desconhecida/.test(r.erro)) avisoSel(`<span class="neg">Grupos e rankings da conta: ${esc(r.erro)}</span>`); return; }
+  st.nuvem = { itens: r.itens || [] }; atualizarListasSalvos();
+}
+async function salvarNaNuvem(item) {
+  const token = lerSessaoEquipe(); if (!token || !st.nuvem) return { ok: false, erro: "Entre na área da equipe para salvar na conta." };
+  const r = await apiEquipe("salvar", { token, item });
+  if (r.ok) { st.nuvem.itens = [...st.nuvem.itens.filter((x) => x.id !== r.item.id), r.item]; atualizarListasSalvos(); }
+  else if (/Ação desconhecida/.test(r.erro || "")) r.erro = "O Apps Script precisa ser atualizado (versão 2026-10-08.9 ou mais nova) para salvar na conta.";
+  return r;
+}
+async function apagarDaNuvem(id) {
+  const token = lerSessaoEquipe(); if (!token) return { ok: false, erro: "Entre na área da equipe." };
+  const r = await apiEquipe("apagarSalvo", { token, id });
+  if (r.ok && st.nuvem) { st.nuvem.itens = st.nuvem.itens.filter((x) => x.id !== id); atualizarListasSalvos(); }
+  return r;
+}
+function atualizarListasSalvos() {
+  if ($("#dlgGrupos").open) renderGrupos();
+  if ($("#dlgRank").open && !rkEd.aberto) renderRkLista();
+  resumoLateralRk();
+}
+// selo "onde está": só neste computador · na sua conta (compartilhado ou só você) · de um colega
+function seloOrigem(x) {
+  if (x._origem === "meu") return `<span class="sv sv-meu" title="Guardado na sua conta: aparece em qualquer computador em que você entrar">☁ Na sua conta · ${x._comp ? "👥 compartilhado" : "🔒 só você"}</span>`;
+  if (x._origem === "equipe") return `<span class="sv sv-eq" title="Salvo e compartilhado por ${esc(x._autor)}">👥 ${esc(x._autor)}</span>`;
+  return `<span class="sv sv-local" title="Guardado só neste navegador, neste computador: some se o navegador apagar os dados">💻 Só neste computador</span>`;
+}
 // ============================== rankings ==============================
 // Um ranking = nome + tipo de cálculo (pesos) + lista de fundos. Ficam guardados neste navegador, como os grupos.
-const lerRankings = () => pref("rankings", {});
-const gravarRankings = (r) => salvar("rankings", r);
+// rankings de três origens, como os grupos: deste computador, meus na conta e compartilhados pelos colegas.
+// os da conta levam junto o tipo de cálculo personalizado (modeloDef), para calcular igual em qualquer computador
+const lerRankingsLocais = () => pref("rankings", {});
+st.modelosNuvemMeus = {}; st.modelosEquipe = {};
+function lerRankings() {
+  const out = {};
+  for (const [n, x] of Object.entries(lerRankingsLocais())) out[n] = { ...x, _origem: "local", _nome: n };
+  st.modelosNuvemMeus = {}; st.modelosEquipe = {};
+  for (const it of st.nuvem?.itens || []) {
+    if (it.tipo !== "ranking") continue;
+    const c = it.conteudo || {}, base = it.meu ? it.nome : `${it.nome} · ${it.autor}`; let k = base, i = 2; while (out[k]) k = `${base} (${i++})`;
+    let modelo = c.modelo || "MM";
+    if (c.modeloDef && !(it.meu && modelosSalvos()[c.modelo])) {               // tipo personalizado que não existe neste computador
+      modelo = `nv:${it.id}`;
+      (it.meu ? st.modelosNuvemMeus : st.modelosEquipe)[modelo] = { ...c.modeloDef, _orig: c.modelo, nome: c.modeloDef.nome + (it.meu ? "" : ` (de ${it.autor})`) };
+    }
+    out[k] = { modelo, cnpjs: c.cnpjs || [], atualizado: it.atualizado, _origem: it.meu ? "meu" : "equipe", _id: it.id, _autor: it.autor, _comp: it.compartilhado, _nome: it.nome };
+  }
+  return out;
+}
+const gravarRankings = (r) => salvar("rankings", Object.fromEntries(Object.entries(r).filter(([, x]) => !x._origem || x._origem === "local").map(([n, x]) => [n, semInternos(x)])));
+// conteúdo de um ranking para a conta: chave do tipo de cálculo + a definição dele, quando é personalizado
+function conteudoRanking(modelo, cnpjs) {
+  const nv = st.modelosNuvemMeus[modelo] || st.modelosEquipe[modelo];
+  const def = nv ? semInternos(nv) : modelosSalvos()[modelo];
+  return { modelo: nv ? nv._orig || modelo : modelo, cnpjs: [...cnpjs], ...(def ? { modeloDef: def } : {}) };
+}
 const rkSel = new Set(pref("rankingsSel", []));
 const salvarRkSel = () => salvar("rankingsSel", [...rkSel]);
 const rkEd = { aberto: false, nomeOrig: null, modelo: "MM", cnpjs: [] };
 const TOP_RANK = 10;
 // tipos de cálculo: os 4 padrão (ranking.js) + os editados/criados aqui (o editado de um padrão usa o mesmo id e o substitui)
 const modelosSalvos = () => pref("modelosRank", {});
-const modelos = () => ({ ...MODELOS_RANK, ...modelosSalvos() });
-const modeloDe = (id) => modelos()[id] || MODELOS_RANK.MM;
+const modelos = () => ({ ...MODELOS_RANK, ...modelosSalvos(), ...st.modelosNuvemMeus });       // os meus da conta aparecem em qualquer computador
+const modeloDe = (id) => modelos()[id] || st.modelosEquipe[id] || MODELOS_RANK.MM;
 
 function resumoLateralRk() {
   const n = Object.keys(lerRankings()).length, m = [...rkSel].filter((x) => lerRankings()[x]).length;
@@ -3820,17 +3932,22 @@ function resumoLateralRk() {
 }
 function abrirRank() { rkEd.aberto = false; renderRkLista(); mostrarTelaRk("lista"); $("#dlgRank").showModal(); }
 function renderRkLista() {
-  const g = lerRankings(), nomes = Object.keys(g).sort((a, b) => a.localeCompare(b, "pt-BR"));
-  for (const n of [...rkSel]) if (!g[n]) rkSel.delete(n);
-  $("#rkLista").innerHTML = !nomes.length ? `<p class="nota">Nenhum ranking ainda. Clique em "＋ Novo ranking", dê um nome, escolha o tipo de cálculo e os fundos.</p>` :
-    `<table class="tb gr-tab"><thead><tr><th><span class="sr-only">Calcular</span></th><th class="t">Ranking</th><th class="t">Tipo de cálculo</th><th>Fundos</th><th>Atualizado em</th><th></th></tr></thead><tbody>${nomes.map((n) => {
-      const x = g[n], M = modelos()[x.modelo] || {};
+  const g = lerRankings(), ordem = { local: 0, meu: 1, equipe: 2 }, logado = !!st.nuvem;
+  const nomes = Object.keys(g).sort((a, b) => ordem[g[a]._origem] - ordem[g[b]._origem] || (g[a]._autor || "").localeCompare(g[b]._autor || "", "pt-BR") || a.localeCompare(b, "pt-BR"));
+  if (st.nuvem || !st.equipe) for (const n of [...rkSel]) if (!g[n]) rkSel.delete(n);    // sem apagar marcações enquanto a conta ainda carrega
+  $("#rkLista").innerHTML = (logado ? "" : `<p class="nota">Entre na área da equipe para salvar rankings na sua conta (aparecem em qualquer computador) e ver os dos colegas.</p>`) + (!nomes.length ? `<p class="nota">Nenhum ranking ainda. Clique em "＋ Novo ranking", dê um nome, escolha o tipo de cálculo e os fundos.</p>` :
+    `<table class="tb gr-tab"><thead><tr><th><span class="sr-only">Calcular</span></th><th class="t">Ranking</th><th class="t">Onde está</th><th class="t">Tipo de cálculo</th><th>Fundos</th><th>Atualizado em</th><th><span class="sr-only">Ações</span></th></tr></thead><tbody>${nomes.map((n) => {
+      const x = g[n], M = modeloDe(x.modelo) || {}, k = esc(n);
+      const acoes = x._origem === "equipe" ? `<button class="sec mini-btn" data-rk-copia="${k}" type="button" title="Cria uma cópia sua, que você pode alterar">⧉ Copiar para mim</button>`
+        : `<button class="sec mini-btn" data-rk-ed="${k}" type="button">Editar</button>` +
+          (x._origem === "local" && logado ? ` <button class="sec mini-btn" data-rk-up="${k}" type="button" title="Guarda na sua conta: aparece em qualquer computador e não some se o navegador apagar os dados">☁ Enviar para a conta</button>` : "") +
+          (x._origem === "meu" ? ` <button class="sec mini-btn" data-rk-comp="${k}" type="button">${x._comp ? "🔒 Deixar só meu" : "👥 Compartilhar"}</button>` : "") +
+          ` <button class="cart-rm" data-rk-del="${k}" type="button" title="Excluir ranking" aria-label="Excluir o ranking ${esc(x._nome)}">🗑</button>`;
       return `<tr class="linha-f${rkSel.has(n) ? " marcado" : ""}" data-rk="${esc(n)}" title="Clique para marcar ou desmarcar"><td><label class="tog"><input type="checkbox" data-rk-sel="${esc(n)}" aria-label="Calcular o ranking ${esc(n)}" ${rkSel.has(n) ? "checked" : ""}></label></td>
-        <td class="t"><b>${esc(n)}</b></td><td class="t">${esc(M.nome || x.modelo)} <small class="nota">· ${esc(M.periodo || "")} · janela ${M.jmMeses || "?"}m vs ${esc(M.bench || "")}
+        <td class="t"><b>${esc(x._nome)}</b></td><td class="t">${seloOrigem(x)}</td><td class="t">${esc(M.nome || x.modelo)} <small class="nota">· ${esc(M.periodo || "")} · janela ${M.jmMeses || "?"}m vs ${esc(M.bench || "")}
 </small></td>
         <td>${x.cnpjs.length}</td><td>${x.atualizado ? new Date(x.atualizado).toLocaleDateString("pt-BR") : ""}</td>
-        <td class="gr-acoes"><button class="sec mini-btn" data-rk-ed="${esc(n)}" type="button">Editar</button>
-          <button class="cart-rm" data-rk-del="${esc(n)}" type="button" title="Excluir ranking" aria-label="Excluir o ranking ${esc(n)}">🗑</button></td></tr>`; }).join("")}</tbody></table>`;
+        <td class="gr-acoes">${acoes}</td></tr>`; }).join("")}</tbody></table>`);
   const m = [...rkSel].length;
   $("#rkCalcular").disabled = !m;
   $("#rkCalcular").textContent = `🏆 Calcular ${m || ""} ranking${m === 1 ? "" : "s"}`.replace("  ", " ");
@@ -3843,7 +3960,8 @@ function renderRkLista() {
 function abrirEditorRk(nome = null) {
   const x = nome ? lerRankings()[nome] : null;
   Object.assign(rkEd, { aberto: true, nomeOrig: nome, modelo: x?.modelo && modelos()[x.modelo] ? x.modelo : "MM", cnpjs: [...(x?.cnpjs || [])] });
-  $("#rkNome").value = nome || "";
+  $("#rkNome").value = x?._nome || nome || "";
+  $("#rkEdCompBox").hidden = !st.nuvem || x?._origem === "local"; $("#rkEdComp").checked = x?._origem === "meu" ? !!x._comp : true;
   $("#rkModelo").innerHTML = Object.entries(modelos()).map(([k, M]) => `<option value="${k}"${k === rkEd.modelo ? " selected" : ""}>${esc(M.nome)}</option>`).join("");
   const grupos = Object.keys(lerGrupos()).sort((a, b) => a.localeCompare(b, "pt-BR"));
   $("#rkEdGrupo").innerHTML = `<option value="">★ Carregar de um grupo…</option>` + grupos.map((n) => `<option value="${esc(n)}">${esc(n)} (${lerGrupos()[n].cnpjs.length})</option>`).join("");
@@ -3882,6 +4000,16 @@ async function salvarEditorRk() {
   const nome = $("#rkNome").value.trim(), g = lerRankings();
   if (!nome) { $("#rkNome").focus(); return; }
   if (rkEd.cnpjs.length < 2) { await perguntar("Poucos fundos", "Um ranking precisa de pelo menos 2 fundos.", [{ rot: "OK", v: 1, classe: "prim" }]); return; }
+  // com login (ranking novo ou já da conta): salva na conta; um ranking deste computador continua no computador
+  const orig = rkEd.nomeOrig ? g[rkEd.nomeOrig] : null;
+  if (st.nuvem && (!orig || orig._origem === "meu")) {
+    const outro = Object.entries(g).find(([k, x]) => x._origem === "meu" && x._nome.toLowerCase() === nome.toLowerCase() && k !== rkEd.nomeOrig);
+    if (outro && !(await perguntar("Substituir o ranking?", `Você já tem na conta o ranking <b>${esc(nome)}</b>. Substituir?`, [{ rot: "Cancelar", v: false }, { rot: "Substituir", v: true, classe: "prim" }]))) return;
+    const r = await salvarNaNuvem({ id: orig?._id || outro?.[1]._id, tipo: "ranking", nome, compartilhado: $("#rkEdComp").checked, conteudo: conteudoRanking(rkEd.modelo, rkEd.cnpjs) });
+    if (!r.ok) { await perguntar("Não foi possível salvar na conta", esc(r.erro), [{ rot: "OK", v: 1, classe: "prim" }]); return; }
+    if (rkEd.nomeOrig) rkSel.delete(rkEd.nomeOrig);
+    rkSel.add(nome); rkEd.aberto = false; $("#rkEditor").hidden = true; $("#rkListaBox").hidden = false; renderRkLista(); return;
+  }
   if (g[nome] && nome !== rkEd.nomeOrig && !(await perguntar("Substituir o ranking?", `Já existe o ranking <b>${esc(nome)}</b> com ${g[nome].cnpjs.length} fundo(s). Substituir?`,
     [{ rot: "Cancelar", v: false }, { rot: "Substituir", v: true, classe: "prim" }]))) return;
   if (rkEd.nomeOrig && rkEd.nomeOrig !== nome) { delete g[rkEd.nomeOrig]; if (rkSel.delete(rkEd.nomeOrig)) rkSel.add(nome); }
@@ -4358,9 +4486,29 @@ document.addEventListener("click", async (e) => {
   if (t.id === "rkNovo") return abrirEditorRk();
   if (t.dataset?.rkEd) return abrirEditorRk(t.dataset.rkEd);
   if (t.dataset?.rkDel) {
-    const n = t.dataset.rkDel;
-    if (!(await perguntar("Excluir o ranking?", `Excluir o ranking <b>${esc(n)}</b>?`, [{ rot: "Cancelar", v: false }, { rot: "Excluir", v: true, classe: "prim" }]))) return;
-    const g = lerRankings(); delete g[n]; gravarRankings(g); rkSel.delete(n); return renderRkLista();
+    const n = t.dataset.rkDel, g = lerRankings(), x = g[n]; if (!x) return;
+    if (!(await perguntar("Excluir o ranking?", `Excluir o ranking <b>${esc(x._nome)}</b>${x._origem === "meu" ? " da sua conta (some de todos os computadores" + (x._comp ? " e da equipe" : "") + ")" : ""}?`,
+      [{ rot: "Cancelar", v: false }, { rot: "Excluir", v: true, classe: "prim" }]))) return;
+    if (x._origem === "meu") { const r = await apagarDaNuvem(x._id); if (!r.ok) { avisoSel(`<span class="neg">${esc(r.erro)}</span>`); return; } rkSel.delete(n); return renderRkLista(); }
+    delete g[n]; gravarRankings(g); rkSel.delete(n); return renderRkLista();
+  }
+  if (t.dataset?.rkUp) {                                     // ranking deste computador -> conta (e sai do computador)
+    const n = t.dataset.rkUp, x = lerRankings()[n]; if (!x) return;
+    const r = await salvarNaNuvem({ tipo: "ranking", nome: x._nome, compartilhado: true, conteudo: conteudoRanking(x.modelo, x.cnpjs) });
+    if (!r.ok) { avisoSel(`<span class="neg">${esc(r.erro)}</span>`); return; }
+    const loc = lerRankingsLocais(); delete loc[n]; salvar("rankings", loc); return renderRkLista();
+  }
+  if (t.dataset?.rkComp) {
+    const x = lerRankings()[t.dataset.rkComp]; if (!x) return;
+    const r = await salvarNaNuvem({ id: x._id, tipo: "ranking", nome: x._nome, compartilhado: !x._comp, conteudo: conteudoRanking(x.modelo, x.cnpjs) });
+    if (!r.ok) avisoSel(`<span class="neg">${esc(r.erro)}</span>`); return renderRkLista();
+  }
+  if (t.dataset?.rkCopia) {                                  // ranking de um colega -> cópia minha (com o tipo de cálculo dele)
+    const x = lerRankings()[t.dataset.rkCopia]; if (!x) return;
+    const meus = Object.values(lerRankings()).filter((y) => y._origem !== "equipe").map((y) => y._nome.toLowerCase());
+    const nome = meus.includes(x._nome.toLowerCase()) ? `${x._nome} (de ${x._autor})` : x._nome;
+    const r = await salvarNaNuvem({ tipo: "ranking", nome, compartilhado: false, conteudo: conteudoRanking(x.modelo, x.cnpjs) });
+    if (!r.ok) avisoSel(`<span class="neg">${esc(r.erro)}</span>`); return renderRkLista();
   }
   const lr = t.closest?.("#rkLista tr[data-rk]");
   if (lr && !t.closest("button, input, label")) { const n = lr.dataset.rk; rkSel.has(n) ? rkSel.delete(n) : rkSel.add(n); return renderRkLista(); }
