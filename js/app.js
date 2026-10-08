@@ -825,6 +825,7 @@ function tabelaHTML({ colunas, linhas, fixas = 0, larguras = [260, 150], grupos 
 
 // ---------- tabela de métricas
 const CAMPOS_GRUPO = {
+  "Classificação": (l) => l._classif,                   // a mesma da coluna da tabela (XP com login; senão ANBIMA)
   "Classificação CVM": (l) => l["Classificação CVM"], "Classificação ANBIMA": (l) => l["Classificação ANBIMA"],
   "Objetivo de retorno": (l) => (l["Objetivo de retorno"] === "N/D" ? "" : l["Objetivo de retorno"]), "Gestor": (l) => l._gestor,
 };
@@ -1591,6 +1592,8 @@ const opcoesFundos = (lista = [...new Set([...(st.res?.sel || []), ...st.cart.it
 const opcoesBase = (excluir) => st.lista.filter((f) => !excluir.has(f.CNPJ)).map((f) => ({ tipo: "f", v: f.CNPJ, rot: f.NOME, cnpj: f.CNPJ, grupo: "Outros fundos da base" }));
 
 function montarCombos() {
+  criarCombo("cbROA", { placeholder: "Digite para buscar a métrica…", opcoes: () => opcoesROA(),
+    aoEscolher: (o) => { st.roaEixo = o.v; semZoom("gROA"); renderROA(); } });
   criarCombo("cbAlvo", { opcoes: () => [...opcoesIndices(), ...opcoesFundos((st.ctx?.dados.linhas || []).map((l) => l._c))],
     aoEscolher: (o) => { st.rel.alvo = o.rot; semZoom("gAcum"); renderAcum(); } });
   criarCombo("cbJmBench", { opcoes: () => [{ tipo: "n", v: "", rot: "Nenhum (retorno absoluto)", grupo: "Sem comparação" }, ...opcoesIndices(), ...opcoesFundos()],
@@ -3512,7 +3515,6 @@ document.addEventListener("click", (e) => {
   const a = e.target.closest?.("[data-acao-sel]"); if (a) { $("#" + a.dataset.acaoSel).click(); return; }
   if (e.target.closest?.("#xpCalcTodos")) { selecionarECalcular([...st.xp.keys()], "Todos os fundos da XP"); return; }
   const g = e.target.closest?.(".xp-barra"); if (g) { const x = xpGrupos.get(g.dataset.xpg); if (x) selecionarECalcular(x.cs, x.rot); return; }
-  const r = e.target.closest?.("#roaEixo button"); if (r) { st.roaEixo = r.dataset.e; renderROA(); }
 });
 // ---------- ROA × métrica (ROA no eixo Y; eixo X escolhido nos botões)
 st.roaEixo = "sharpe";
@@ -3524,12 +3526,43 @@ const EIXOS_ROA = {
   jm: { titulo: "Mediana da janela móvel (diferença a.a. contra o benchmark)", curto: "mediana da janela móvel", melhor: 1, bom: "janela móvel alta", ruim: "janela móvel baixa", fmt: (v) => brPct(v, 1),
     valor: (l) => st.res?.jm?.porFundo.find((x) => x.c === l._c)?.resumo?.med?.dif ?? null },
 };
+// todas as métricas com valor que dá para cruzar com o ROA: as escolhidas acima + dados da XP + métricas calculadas
+const ROA_MENOR_MELHOR = new Set(["Volatilidade", "No. de estouros", "Duração Total", "Duração da Queda", "Duração da Recuperação", "Dias em Underwater Atual",
+  "Maior Período em Dias Underwater", "Períodos 21d-30d", "Períodos 31d-60d", "Períodos 61d-90d", "Períodos 91d-120d", "Períodos acima de 120d", "Beta"]);
+const ROA_FORA = new Set(["Cota Inicial", "Cota Final", "Poço", "Máxima anterior", "Sharpe Anualizado", "Índice de Dor"]);    // níveis de cota e as que já têm atalho
+const ROA_GRUPOS = { Rentabilidade: "Rentabilidade", VaR: "Risco · VaR", Risco: "Risco", MDD: "Drawdown", Underwater: "Underwater", IBOV: "Contra o IBOV", Outras: "Outras métricas", "Captação": "Captação" };
+function eixosROA() {
+  const fmtT = { pct: (v) => brPct(v, 2), num: (v) => br(v, 2), num2: (v) => br(v, 2), int: (v) => br(v, 0), valor: (v) => `R$ ${br(v / 1e6, 1)} mi` };
+  const xp = (titulo, curto, melhor, chave, fmt, div = 1) => ({ titulo, curto, melhor, grupo: "Dados da XP", bom: `${curto} ${melhor > 0 ? "alto" : "baixo"}`, ruim: `${curto} ${melhor > 0 ? "baixo" : "alto"}`,
+    fmt, valor: (l, q) => (q[chave] == null ? null : q[chave] / div) });
+  const out = {
+    sharpe: { ...EIXOS_ROA.sharpe, grupo: "Principais" }, dor: { ...EIXOS_ROA.dor, grupo: "Principais" },
+    prazo: { ...EIXOS_ROA.prazo, grupo: "Dados da XP" }, risco: { ...EIXOS_ROA.risco, grupo: "Dados da XP" },
+    taxaAdm: xp("Taxa de administração (% a.a.)", "taxa de adm.", -1, "Taxa adm.", (v) => brPct(v, 2), 100),
+    taxaPerf: xp("Taxa de performance (%)", "taxa de perf.", -1, "Taxa perf.", (v) => brPct(v, 0), 100),
+    minimo: xp("Aplicação mínima (R$)", "aplicação mínima", -1, "Aplicação mín.", (v) => `R$ ${br(v, 0)}`),
+    jm: { ...EIXOS_ROA.jm, grupo: "Janela móvel" },
+  };
+  for (const [g, n, t] of COLUNAS) {
+    if (!fmtT[t] || ROA_FORA.has(n) || !ROA_GRUPOS[g]) continue;
+    const melhor = ROA_MENOR_MELHOR.has(n) ? -1 : 1;
+    out[`m:${n}`] = { titulo: t === "pct" ? `${n} (%)` : n, curto: n, melhor, grupo: ROA_GRUPOS[g], bom: `${n}: melhor`, ruim: `${n}: pior`, fmt: fmtT[t], valor: (l) => l[n] };
+  }
+  return out;
+}
+// opções da caixa: só métricas com valor para pelo menos 2 fundos com ROA
+function opcoesROA() {
+  if (!st.ctx || !st.xp) return [];
+  const linhas = st.ctx.dados.linhas.map((l) => [l, camposXP(l._c)]).filter(([, q]) => q._naXP && q.ROA != null);
+  return Object.entries(eixosROA()).filter(([, E]) => linhas.filter(([l, q]) => Number.isFinite(E.valor(l, q))).length >= 2)
+    .map(([k, E]) => ({ tipo: "m", v: k, rot: E.titulo, grupo: E.grupo }));
+}
 function renderROA() {
   const sec = $("#secROA");
   if (!st.xp || !st.ctx) { sec.hidden = true; return; }
   sec.hidden = false;
-  const E = EIXOS_ROA[st.roaEixo] || EIXOS_ROA.sharpe;
-  $$("#roaEixo button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.e === st.roaEixo)));
+  const todos = eixosROA(), E = todos[st.roaEixo] || todos.sharpe;
+  definirCombo("cbROA", E.titulo);
   const algum = st.ctx.dados.linhas.some((l) => casa(st.destaque, l.Fundo, l.CNPJ));
   let semROA = 0, semX = 0;
   const pts = [];
@@ -3547,7 +3580,7 @@ function renderROA() {
   const quad = pts.length >= 2 && medX != null && medY != null ? { x: medX, y: medY, melhorX: E.melhor,
     rotulos: { bom: `✓ ROA alto · ${E.bom}`, ruim: `✗ ROA baixo · ${E.ruim}`, mistoA: `ROA alto · ${E.ruim}`, mistoB: `ROA baixo · ${E.bom}` } } : null;
   $("#roaNota").innerHTML = esc(`${pts.length} fundo(s) no gráfico · período ${st.perAtivo} (${fmtData(st.ctx.dIni)} a ${fmtData(st.ctx.dFim)})`) +
-    (quad ? ` · quadrantes cruzam na mediana do ROA (<b>${esc(brPct(medY, 2))}</b>) e do ${esc(E.curto)} (<b>${esc(E.fmt(medX))}</b>):
+    (quad ? ` · quadrantes cruzam nas medianas: ROA <b>${esc(brPct(medY, 2))}</b> · ${esc(E.curto)} <b>${esc(E.fmt(medX))}</b> —
       <span class="roa-q bom">${q4.bom} no verde</span>, <span class="roa-q ruim">${q4.ruim} no vermelho</span>, ${q4.misto} nos mistos` : "") +
     esc((semROA ? ` · ${semROA} sem ROA ou fora da XP` : "") + (semX ? ` · ${semX} sem ${E.curto}` : "")) +
     esc((semROA ? "" : "") + (st.roaEixo === "jm" && !st.res?.jm ? " · calcule a janela móvel na seção abaixo para ver a mediana" : "") + ". Arraste ou use a lupa para dar zoom.");
