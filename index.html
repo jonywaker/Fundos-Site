@@ -243,11 +243,13 @@
         </section>
         <div id="xpSlot"></div>
         <section id="secROA" class="cartao" hidden>
-          <div class="cab"><h2>ROA × métricas</h2>
-            <div class="opcoes"><label class="ordem roa-eixo">Comparar o ROA com <div id="cbROA" class="combo"></div></label></div>
-            <div class="opcoes" id="roaBolhaBox" hidden><label class="ordem">Tamanho das bolhas <select id="roaBolha">
-              <option value="">Igual para todos</option><option value="vol">Volume dos clientes</option><option value="qtd">Quantidade de clientes</option></select></label>
-              <label class="tog" title="Mostra só os fundos que têm pelo menos 1 cliente"><input id="roaSoCli" type="checkbox"> Só fundos com clientes</label></div></div>
+          <div class="cab"><h2>Gráfico de quadrantes</h2></div>
+          <div class="opcoes quad-ctrl">
+            <label class="ordem">Eixo Y <div id="cbEixoY" class="combo"></div></label>
+            <label class="ordem">Eixo X <div id="cbROA" class="combo"></div></label>
+            <label class="ordem">Tamanho <div id="cbTam" class="combo"></div></label>
+            <label id="roaSoCliBox" class="tog" title="Mostra só os fundos que têm pelo menos 1 cliente"><input id="roaSoCli" type="checkbox"> Só fundos com clientes</label>
+          </div>
           <p id="roaNota" class="nota"></p>
           <div class="graf graf-roa"><canvas id="gROA" aria-label="Gráfico de ROA contra a métrica escolhida"></canvas></div>
           <div id="roaLegBolhas" class="roa-leg-bolhas" hidden></div>

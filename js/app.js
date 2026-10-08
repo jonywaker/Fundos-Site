@@ -948,20 +948,22 @@ const linhaRef = { id: "linhaRef", afterDraw(ch, _a, o) {
   ctx.restore(); } };
 // quadrantes (gráfico ROA × métrica): fundo colorido a partir das medianas de x e y; verde = bom, vermelho = ruim, âmbar = misto
 // o: { x, y (medianas), melhorX: 1 (maior é melhor) | -1 (menor é melhor), rotulos: { bom, ruim, mistoA, mistoB } }
+// quadrantes numerados como no plano cartesiano: 1 = superior direito, 2 = superior esquerdo, 3 = inferior esquerdo, 4 = inferior direito.
+// cor pelo sentido das métricas: verde = os dois eixos do lado bom, vermelho = os dois do lado ruim, âmbar = misto
+// o: { x, y (medianas), melhorX, melhorY (1 = maior é melhor, -1 = menor é melhor), rotulos: { 1, 2, 3, 4 } }
+const QUADS = [[1, true, true], [2, false, true], [3, false, false], [4, true, false]];    // [número, x alto, y alto]
+const qualidadeQ = (o, xAlto, yAlto) => (xAlto === (o.melhorX >= 0)) + (yAlto === ((o.melhorY ?? 1) >= 0));
 const quadrantes = {
   id: "quadrantes",
   beforeDraw(ch, _a, o) {
     if (!o || o.x == null || o.y == null) return;
     const { left, right, top, bottom } = ch.chartArea, cx = Math.min(right, Math.max(left, ch.scales.x.getPixelForValue(o.x))), cy = Math.min(bottom, Math.max(top, ch.scales.y.getPixelForValue(o.y)));
-    const a = escuro() ? 0.2 : 0.11, verde = `rgba(8,140,80,${a})`, vermelho = `rgba(208,38,44,${a})`, ambar = `rgba(220,160,0,${a * 0.6})`;
-    // lado "bom" do eixo x: direita se maior é melhor, esquerda se menor é melhor
-    const bomDireita = o.melhorX >= 0, ctx = ch.ctx;
-    const pinta = (x0, y0, x1, y1, cor) => { if (x1 > x0 && y1 > y0) { ctx.fillStyle = cor; ctx.fillRect(x0, y0, x1 - x0, y1 - y0); } };
+    const a = escuro() ? 0.2 : 0.11, cor = [`rgba(208,38,44,${a})`, `rgba(220,160,0,${a * 0.6})`, `rgba(8,140,80,${a})`], ctx = ch.ctx;
     ctx.save();
-    pinta(bomDireita ? cx : left, top, bomDireita ? right : cx, cy, verde);        // ROA alto + métrica boa
-    pinta(bomDireita ? left : cx, cy, bomDireita ? cx : right, bottom, vermelho);  // ROA baixo + métrica ruim
-    pinta(bomDireita ? left : cx, top, bomDireita ? cx : right, cy, ambar);        // ROA alto + métrica ruim
-    pinta(bomDireita ? cx : left, cy, bomDireita ? right : cx, bottom, ambar);     // ROA baixo + métrica boa
+    for (const [, xAlto, yAlto] of QUADS) {
+      const x0 = xAlto ? cx : left, x1 = xAlto ? right : cx, y0 = yAlto ? top : cy, y1 = yAlto ? cy : bottom;
+      if (x1 > x0 && y1 > y0) { ctx.fillStyle = cor[qualidadeQ(o, xAlto, yAlto)]; ctx.fillRect(x0, y0, x1 - x0, y1 - y0); }
+    }
     ctx.restore();
   },
   beforeDatasetsDraw(ch, _a, o) {
@@ -971,22 +973,16 @@ const quadrantes = {
     ctx.save(); ctx.strokeStyle = escuro() ? "rgba(255,255,255,.55)" : "rgba(43,44,120,.55)"; ctx.setLineDash([5, 4]); ctx.lineWidth = 1.2;
     if (px >= left && px <= right) { ctx.beginPath(); ctx.moveTo(px, top); ctx.lineTo(px, bottom); ctx.stroke(); }
     if (py >= top && py <= bottom) { ctx.beginPath(); ctx.moveTo(left, py); ctx.lineTo(right, py); ctx.stroke(); }
-    // rótulos nos cantos de cada quadrante
-    const r = o.rotulos || {}, bomDireita = o.melhorX >= 0, m = 8;
     ctx.setLineDash([]); ctx.font = "700 11.5px Manrope, sans-serif";
-    // rótulo com fundo claro (legível sobre os pontos)
+    const cores = escuro() ? ["#ff8a8a", "#f0c46a", "#5fd99a"] : ["#b81f25", "#8a5a12", "#087040"], m = 8, t = top + 30;
     const escreve = (txt, x, y, alinh, base, cor) => {
       if (!txt) return;
       const w = ctx.measureText(txt).width + 10, h = 18, x0 = alinh === "right" ? x - w + 5 : x - 5, y0 = base === "top" ? y - 3 : y - h + 3;
       ctx.fillStyle = escuro() ? "rgba(21,27,65,.85)" : "rgba(255,255,255,.85)"; ctx.beginPath(); ctx.roundRect ? ctx.roundRect(x0, y0, w, h, 5) : ctx.rect(x0, y0, w, h); ctx.fill();
       ctx.textAlign = alinh; ctx.textBaseline = base; ctx.fillStyle = cor; ctx.fillText(txt, x, y);
     };
-    const verde = escuro() ? "#5fd99a" : "#087040", vermelho = escuro() ? "#ff8a8a" : "#b81f25", ambar = escuro() ? "#f0c46a" : "#8a5a12";
-    const t = top + 30;                                   // abaixo da lupa e dos botões de zoom do canto
-    escreve(r.bom, bomDireita ? right - m : left + m, t, bomDireita ? "right" : "left", "top", verde);
-    escreve(r.mistoA, bomDireita ? left + m : right - m, t, bomDireita ? "left" : "right", "top", ambar);
-    escreve(r.ruim, bomDireita ? left + m : right - m, bottom - m, bomDireita ? "left" : "right", "bottom", vermelho);
-    escreve(r.mistoB, bomDireita ? right - m : left + m, bottom - m, bomDireita ? "right" : "left", "bottom", ambar);
+    for (const [n, xAlto, yAlto] of QUADS)
+      escreve(o.rotulos?.[n], xAlto ? right - m : left + m, yAlto ? t : bottom - m, xAlto ? "right" : "left", yAlto ? "top" : "bottom", cores[qualidadeQ(o, xAlto, yAlto)]);
     ctx.restore();
   },
 };
@@ -1057,7 +1053,7 @@ function estrela(cor, tam = 28) {
 // dispersão risco × retorno com poucos conjuntos de pontos (rápido mesmo com centenas de fundos)
 // pts: { nome, cor, x, y, tipo: "fundo" | "bench" | "carteira", forte, apagado }
 // opcional por ponto: r (raio da bolha), vazio (só contorno), alfa (transparência, ex.: "B3"); xLog: eixo x em escala logarítmica
-function graficoRR(id, pts, { fmtX, tituloX, refX = null, fmtY = (v) => brPct(v, 1), tituloY = "Volatilidade (risco, % a.a.)", yMin = 0, rotulo = null, quad = null, xLog = false }) {
+function graficoRR(id, pts, { fmtX, tituloX, refX = null, fmtY = (v) => brPct(v, 1), tituloY = "Volatilidade (risco, % a.a.)", yMin = 0, rotulo = null, quad = null, xLog = false, yLog = false }) {
   const rotuloRR = rotulo || ((it) => `${it.raw.nome}: volatilidade ${brPct(it.parsed.y)} · ${tituloX.startsWith("Retorno") ? "retorno " + brPct(it.parsed.x) + " a.a." : "Sharpe " + br(it.parsed.x, 2)}`);
   const grupo = (tipo, estilo) => {
     const ps = pts.filter((p) => p.tipo === tipo);
@@ -1078,8 +1074,8 @@ function graficoRR(id, pts, { fmtX, tituloX, refX = null, fmtY = (v) => brPct(v,
     ant.options.plugins.linhaRef = { x: refX }; ant.options.plugins.quadrantes = quad;
     ant.options.plugins.tooltip.callbacks.label = rotuloRR;
     ant.options.scales.y.title.text = tituloY; ant.options.scales.y.ticks.callback = fmtY;
-    ant.options.scales.x.type = xLog ? "logarithmic" : "linear";
-    ant.$base = { x: [undefined, undefined], y: [yMin, undefined] };
+    ant.options.scales.x.type = xLog ? "logarithmic" : "linear"; ant.options.scales.y.type = yLog ? "logarithmic" : "linear"; ant.options.scales.y.min = yMin ?? undefined;
+    ant.$base = { x: [undefined, undefined], y: [yMin ?? undefined, undefined] };
     aplicarZoomG(ant, id);
     ant.update("none");
     return;
@@ -1093,13 +1089,13 @@ function graficoRR(id, pts, { fmtX, tituloX, refX = null, fmtY = (v) => brPct(v,
         tooltip: { callbacks: { label: rotuloRR } } },
       scales: {
         x: { type: xLog ? "logarithmic" : "linear", title: { display: true, text: tituloX, color: corTexto() }, ticks: { callback: fmtX, color: corTexto() }, grid: { color: "rgba(128,128,128,.15)" } },
-        y: { min: yMin, grace: "6%", title: { display: true, text: tituloY, color: corTexto() },     // folga: pontos não colam na borda
+        y: { type: yLog ? "logarithmic" : "linear", min: yMin ?? undefined, grace: "6%", title: { display: true, text: tituloY, color: corTexto() },     // folga: pontos não colam na borda
           ticks: { callback: fmtY, color: corTexto() }, grid: { color: "rgba(128,128,128,.15)" } },
       },
     },
     plugins: [quadrantes, linhaRef, rotulos],
   });
-  posCriar(id, { x: [undefined, undefined], y: [yMin, undefined] });
+  posCriar(id, { x: [undefined, undefined], y: [yMin ?? undefined, undefined] });
 }
 
 // ============================== resultado ==============================
@@ -1597,6 +1593,10 @@ const opcoesBase = (excluir) => st.lista.filter((f) => !excluir.has(f.CNPJ)).map
 function montarCombos() {
   criarCombo("cbROA", { placeholder: "Digite para buscar a métrica…", opcoes: () => opcoesROA(),
     aoEscolher: (o) => { st.roaEixo = o.v; semZoom("gROA"); renderROA(); } });
+  criarCombo("cbEixoY", { placeholder: "Digite para buscar a métrica…", opcoes: () => opcoesROA(),
+    aoEscolher: (o) => { st.eixoY = o.v; semZoom("gROA"); renderROA(); } });
+  criarCombo("cbTam", { placeholder: "Digite para buscar a métrica…", opcoes: () => [{ tipo: "m", v: "", rot: "Igual para todos", grupo: "Tamanho" }, ...opcoesROA()],
+    aoEscolher: (o) => { st.roaTam = o.v; renderROA(); } });
   criarCombo("cbAlvo", { opcoes: () => [...opcoesIndices(), ...opcoesFundos((st.ctx?.dados.linhas || []).map((l) => l._c))],
     aoEscolher: (o) => { st.rel.alvo = o.rot; semZoom("gAcum"); renderAcum(); } });
   criarCombo("cbJmBench", { opcoes: () => [{ tipo: "n", v: "", rot: "Nenhum (retorno absoluto)", grupo: "Sem comparação" }, ...opcoesIndices(), ...opcoesFundos()],
@@ -3667,11 +3667,12 @@ const ROA_MENOR_MELHOR = new Set(["Volatilidade", "No. de estouros", "Duração 
 const ROA_FORA = new Set(["Cota Inicial", "Cota Final", "Poço", "Máxima anterior", "Sharpe Anualizado", "Índice de Dor"]);    // níveis de cota e as que já têm atalho
 const ROA_GRUPOS = { Rentabilidade: "Rentabilidade", VaR: "Risco · VaR", Risco: "Risco", MDD: "Drawdown", Underwater: "Underwater", IBOV: "Contra o IBOV", Outras: "Outras métricas", "Captação": "Captação" };
 function eixosROA() {
-  const fmtT = { pct: (v) => brPct(v, 2), num: (v) => br(v, 2), num2: (v) => br(v, 2), int: (v) => br(v, 0), valor: (v) => `R$ ${br(v / 1e6, 1)} mi` };
+  const fmtT = { pct: (v) => brPct(v, 2), num: (v) => br(v, 2), num2: (v) => br(v, 2), int: (v) => br(v, 0), valor: (v) => (Math.abs(v) >= 1e6 ? `R$ ${br(v / 1e6, 1)} mi` : `R$ ${br(v / 1e3, 0)} mil`) };
   const xp = (titulo, curto, melhor, chave, fmt, div = 1) => ({ titulo, curto, melhor, grupo: "Dados da XP", bom: `${curto} ${melhor > 0 ? "alto" : "baixo"}`, ruim: `${curto} ${melhor > 0 ? "baixo" : "alto"}`,
     fmt, valor: (l, q) => (q[chave] == null ? null : q[chave] / div) });
   const out = {
-    sharpe: { ...EIXOS_ROA.sharpe, grupo: "Principais" }, dor: { ...EIXOS_ROA.dor, grupo: "Principais" },
+    roa: { titulo: "ROA (% a.a.)", curto: "ROA", melhor: 1, grupo: "Principais", zeroMin: true, pct: true, fmt: (v) => brPct(v, 2), valor: (l, q) => (q.ROA == null ? null : q.ROA / 100) },
+    sharpe: { ...EIXOS_ROA.sharpe, grupo: "Principais" }, dor: { ...EIXOS_ROA.dor, grupo: "Principais", pct: true },
     prazo: { ...EIXOS_ROA.prazo, grupo: "Dados da XP" }, risco: { ...EIXOS_ROA.risco, grupo: "Dados da XP" },
     taxaAdm: xp("Taxa de administração (% a.a.)", "taxa de adm.", -1, "Taxa adm.", (v) => brPct(v, 2), 100),
     taxaPerf: xp("Taxa de performance (%)", "taxa de perf.", -1, "Taxa perf.", (v) => brPct(v, 0), 100),
@@ -3685,73 +3686,77 @@ function eixosROA() {
   for (const [g, n, t] of COLUNAS) {
     if (!fmtT[t] || ROA_FORA.has(n) || !ROA_GRUPOS[g]) continue;
     const melhor = ROA_MENOR_MELHOR.has(n) ? -1 : 1;
-    out[`m:${n}`] = { titulo: t === "pct" ? `${n} (%)` : n, curto: n, melhor, grupo: ROA_GRUPOS[g], bom: `${n}: melhor`, ruim: `${n}: pior`, fmt: fmtT[t], valor: (l) => l[n] };
+    out[`m:${n}`] = { titulo: t === "pct" ? `${n} (%)` : n, curto: n, melhor, grupo: ROA_GRUPOS[g], bom: `${n}: melhor`, ruim: `${n}: pior`, fmt: fmtT[t], pct: t === "pct", valor: (l) => l[n] };
   }
   return out;
 }
 // opções da caixa: só métricas com valor para pelo menos 2 fundos com ROA
 function opcoesROA() {
   if (!st.ctx || !st.xp) return [];
-  const linhas = st.ctx.dados.linhas.map((l) => [l, camposXP(l._c)]).filter(([, q]) => q._naXP && q.ROA != null);
+  const linhas = st.ctx.dados.linhas.map((l) => [l, camposXP(l._c)]);
   return Object.entries(eixosROA()).filter(([, E]) => linhas.filter(([l, q]) => Number.isFinite(E.valor(l, q))).length >= 2)
     .map(([k, E]) => ({ tipo: "m", v: k, rot: E.titulo, grupo: E.grupo }));
 }
+// gráfico de quadrantes com eixos e tamanho escolhidos (padrão: Y = ROA, X = Sharpe, tamanho = volume dos clientes)
+st.eixoY = "roa"; st.roaTam = "volCli";
 function renderROA() {
   const sec = $("#secROA");
   if (!st.xp || !st.ctx) { sec.hidden = true; return; }
   sec.hidden = false;
-  const todos = eixosROA(), E = todos[st.roaEixo] || todos.sharpe;
-  definirCombo("cbROA", E.titulo);
+  const cat = eixosROA(), EX = cat[st.roaEixo] || cat.sharpe, EY = cat[st.eixoY] || cat.roa;
+  const temClientes = st.ctx.dados.linhas.some((l) => camposXP(l._c).Clientes != null);
+  if (!temClientes) { st.roaSoCli = false; if (["volCli", "qtdCli"].includes(st.roaTam)) st.roaTam = ""; }
+  const ET = st.roaTam ? cat[st.roaTam] : null;
+  definirCombo("cbROA", EX.titulo); definirCombo("cbEixoY", EY.titulo); definirCombo("cbTam", ET ? ET.titulo : "Igual para todos");
+  $("#roaSoCliBox").hidden = !temClientes; $("#roaSoCli").checked = !!st.roaSoCli;
   const algum = st.ctx.dados.linhas.some((l) => casa(st.destaque, l.Fundo, l.CNPJ));
-  let semROA = 0, semX = 0, semCli = 0;
+  let semX = 0, semY = 0, semCli = 0;
   const pts = [];
   for (const l of st.ctx.dados.linhas) {
     const q = camposXP(l._c);
-    if (!q._naXP || q.ROA == null) { semROA++; continue; }
     if (st.roaSoCli && !(q.Clientes > 0)) { semCli++; continue; }
-    const x = E.valor(l, q); if (x == null || !Number.isFinite(x)) { semX++; continue; }
+    const y = EY.valor(l, q); if (y == null || !Number.isFinite(y) || (EY.log && y <= 0)) { semY++; continue; }
+    const x = EX.valor(l, q); if (x == null || !Number.isFinite(x) || (EX.log && x <= 0)) { semX++; continue; }
     const marcado = algum && casa(st.destaque, l.Fundo, l.CNPJ);
-    pts.push({ _c: l._c, nome: q["XP Nome"] ? String(q["XP Nome"]).toLocaleUpperCase("pt-BR") : st.res.apelidos[l._c], cor: st.ctx.cores[l._c], x, y: q.ROA / 100, tipo: "fundo", forte: marcado, apagado: algum && !marcado,
-      cli: q.Clientes, vol: q["Volume clientes"] });
+    pts.push({ _c: l._c, nome: q["XP Nome"] ? String(q["XP Nome"]).toLocaleUpperCase("pt-BR") : st.res.apelidos[l._c], cor: st.ctx.cores[l._c], x, y, tipo: "fundo",
+      forte: marcado, apagado: algum && !marcado, t: ET ? ET.valor(l, q) : null, cli: q.Clientes, vol: q["Volume clientes"] });
   }
-  // bolhas: área proporcional ao volume (ou à quantidade) de clientes; sem clientes = ponto vazado
-  const temClientes = st.ctx.dados.linhas.some((l) => camposXP(l._c).Clientes != null);
-  $("#roaBolhaBox").hidden = !temClientes; if (!temClientes) st.roaBolha = "";
-  $("#roaBolha").value = st.roaBolha || "";
-  $("#roaSoCli").checked = !!st.roaSoCli; if (!temClientes) st.roaSoCli = false;
-  const campoB = { vol: "Volume clientes", qtd: "Clientes" }[st.roaBolha], R_MIN = 4, R_MAX = 28;
-  let maxB = 0;
-  if (campoB) {
-    for (const p of pts) { const v = camposXP(p._c)[campoB]; p.b = Number.isFinite(v) ? v : 0; maxB = Math.max(maxB, p.b); }
-    const raio = (v) => (v > 0 && maxB > 0 ? R_MIN + (R_MAX - R_MIN) * Math.sqrt(v / maxB) : R_MIN);
-    for (const p of pts) { p.r = raio(p.b); p.vazio = !(p.b > 0); p.alfa = p.vazio ? "" : "B3"; }
-    pts.sort((a, b) => b.r - a.r);                                     // grandes desenhadas primeiro (ficam por baixo)
-    const fmtB = st.roaBolha === "vol" ? (v) => (v >= 1e6 ? `R$ ${br(v / 1e6, v >= 1e7 ? 0 : 1)} mi` : `R$ ${br(v / 1e3, 0)} mil`) : (v) => `${br(v, 0)} cliente${v === 1 ? "" : "s"}`;
-    const refs = [maxB, maxB / 4, maxB / 25].map((v) => (st.roaBolha === "qtd" ? Math.max(1, Math.round(v)) : v));
-    $("#roaLegBolhas").innerHTML = `<span class="nota">Área da bolha proporcional ${st.roaBolha === "vol" ? "ao volume" : "à quantidade"} de clientes:</span>` +
-      refs.map((v) => { const d = 2 * raio(v); return `<span class="rb-item"><i style="width:${d.toFixed(0)}px;height:${d.toFixed(0)}px"></i>${esc(fmtB(v))}</span>`; }).join("") +
-      `<span class="rb-item"><i class="rb-vazio" style="width:${2 * R_MIN}px;height:${2 * R_MIN}px"></i>sem clientes</span>`;
+  // tamanho: área proporcional ao valor; valor ≤ 0 ou ausente = ponto vazado; métrica toda negativa (ex.: quedas) usa o valor sem sinal
+  const R_MIN = 4, R_MAX = 28;
+  if (ET) {
+    const vals = pts.map((p) => p.t).filter(Number.isFinite), modulo = vals.length > 0 && vals.every((v) => v <= 0);
+    const mag = (v) => (Number.isFinite(v) ? (modulo ? Math.abs(v) : Math.max(v, 0)) : 0), maxB = Math.max(0, ...pts.map((p) => mag(p.t)));
+    const raio = (m) => (m > 0 && maxB > 0 ? R_MIN + (R_MAX - R_MIN) * Math.sqrt(m / maxB) : R_MIN);
+    for (const p of pts) { const m = mag(p.t); p.r = raio(m); p.vazio = !(m > 0); p.alfa = p.vazio ? "" : "B3"; }
+    pts.sort((a, b) => b.r - a.r);                                       // grandes desenhadas primeiro (ficam por baixo)
+    const refs = maxB > 0 ? [maxB, maxB / 4, maxB / 25] : [];
+    $("#roaLegBolhas").innerHTML = `<span class="nota">Área da bolha proporcional a <b>${esc(ET.curto)}</b>${modulo ? " (valor sem o sinal)" : ""}:</span>` +
+      refs.map((m) => { const d = 2 * raio(m); return `<span class="rb-item"><i style="width:${d.toFixed(0)}px;height:${d.toFixed(0)}px"></i>${esc(ET.fmt(modulo ? -m : m))}</span>`; }).join("") +
+      `<span class="rb-item"><i class="rb-vazio" style="width:${2 * R_MIN}px;height:${2 * R_MIN}px"></i>sem valor${modulo ? "" : " ou ≤ 0"}</span>`;
   }
-  $("#roaLegBolhas").hidden = !campoB;
-  // quadrantes: o cruzamento é a mediana do ROA e a mediana do eixo x (só fundos do gráfico)
-  const medX = mediana(pts.map((p) => p.x)), medY = mediana(pts.map((p) => p.y));
-  const bomX = (x) => (E.melhor >= 0 ? x > medX : x < medX), q4 = { bom: 0, ruim: 0, misto: 0 };
-  for (const p of pts) { const roaAlto = p.y > medY, mb = bomX(p.x); if (roaAlto && mb) q4.bom++; else if (!roaAlto && !mb) q4.ruim++; else q4.misto++; }
-  const quad = pts.length >= 2 && medX != null && medY != null ? { x: medX, y: medY, melhorX: E.melhor,
-    rotulos: { bom: `✓ ROA alto · ${E.bom}`, ruim: `✗ ROA baixo · ${E.ruim}`, mistoA: `ROA alto · ${E.ruim}`, mistoB: `ROA baixo · ${E.bom}` } } : null;
+  $("#roaLegBolhas").hidden = !ET;
+  // quadrantes nas medianas; numeração cartesiana (1 = superior direito, sentido anti-horário)
+  const medX = mediana(pts.map((p) => p.x)), medY = mediana(pts.map((p) => p.y)), cont = { 1: 0, 2: 0, 3: 0, 4: 0 };
+  for (const p of pts) { const xa = p.x > medX, ya = p.y > medY; cont[xa ? (ya ? 1 : 4) : (ya ? 2 : 3)]++; }
+  const lado = (E, alto) => `${E.curto} ${alto ? "alto" : "baixo"}`, qual = (xa, ya) => (xa === (EX.melhor >= 0)) + (ya === (EY.melhor >= 0));
+  const rot = {}, verde = [], vermelho = [];
+  for (const [n, xa, ya] of [[1, true, true], [2, false, true], [3, false, false], [4, true, false]]) {
+    const qq = qual(xa, ya); rot[n] = `${n} · ${qq === 2 ? "✓ " : qq === 0 ? "✗ " : ""}${lado(EY, ya)} · ${lado(EX, xa)}`;
+    if (qq === 2) verde.push(n); if (qq === 0) vermelho.push(n);
+  }
+  const quad = pts.length >= 2 && medX != null && medY != null ? { x: medX, y: medY, melhorX: EX.melhor, melhorY: EY.melhor, rotulos: rot } : null;
   $("#roaNota").innerHTML = esc(`${pts.length} fundo(s) no gráfico · período ${st.perAtivo} (${fmtData(st.ctx.dIni)} a ${fmtData(st.ctx.dFim)})`) +
-    (quad ? ` · quadrantes cruzam nas medianas: ROA <b>${esc(brPct(medY, 2))}</b> · ${esc(E.curto)} <b>${esc(E.fmt(medX))}</b> —
-      <span class="roa-q bom">${q4.bom} no verde</span>, <span class="roa-q ruim">${q4.ruim} no vermelho</span>, ${q4.misto} nos mistos` : "") +
-    esc((semROA ? ` · ${semROA} sem ROA ou fora da XP` : "") + (semCli ? ` · ${semCli} sem clientes (ocultos)` : "") + (semX ? ` · ${semX} sem ${E.curto}` : "")) +
-    esc((semROA ? "" : "") + (st.roaEixo === "jm" && !st.res?.jm ? " · calcule a janela móvel na seção abaixo para ver a mediana" : "") + ". Arraste ou use a lupa para dar zoom.");
-  // casas decimais do eixo conforme o espaçamento das marcas (ROA pequeno ou com zoom não repete rótulos)
-  const fmtROA = (v, i, ticks) => { const passo = ticks?.length > 1 ? Math.abs(ticks[1].value - ticks[0].value) * 100 : 0.01;
-    return brPct(v, Math.min(4, Math.max(2, Math.ceil(-Math.log10(passo || 0.01))))); };
-  const pontos = pts.map((p) => ({ ...p, nome: p.nome }));
-  graficoRR("gROA", pontos, { fmtX: E.fmt, tituloX: E.titulo, refX: null, fmtY: fmtROA, tituloY: "ROA (% a.a.)", yMin: 0, quad, xLog: !!E.log,
-    rotulo: (it) => { const p = pontos.find((x) => x.nome === it.raw.nome) || {};
-      return `${it.raw.nome}: ROA ${brPct(it.parsed.y, 2)} · ${E.titulo.split(" (")[0]} ${E.fmt(it.parsed.x)}` +
-        (p.cli != null ? ` · ${br(p.cli, 0)} cliente(s) · R$ ${br((p.vol || 0) / 1e6, 2)} mi` : ""); } });
+    (quad ? ` · medianas: ${esc(EY.curto)} <b>${esc(EY.fmt(medY))}</b> · ${esc(EX.curto)} <b>${esc(EX.fmt(medX))}</b> —
+      ${[1, 2, 3, 4].map((n) => `<span class="roa-q${verde.includes(n) ? " bom" : vermelho.includes(n) ? " ruim" : ""}">Q${n}: ${cont[n]}</span>`).join(" · ")}` : "") +
+    esc((semCli ? ` · ${semCli} sem clientes (ocultos)` : "") + (semY ? ` · ${semY} sem ${EY.curto}` : "") + (semX ? ` · ${semX} sem ${EX.curto}` : "") +
+      ([st.roaEixo, st.eixoY].includes("jm") && !st.res?.jm ? " · calcule a janela móvel na seção abaixo para ver a mediana" : "") + ". Arraste ou use a lupa para dar zoom.");
+  // marcas dos eixos: percentuais com casas conforme o espaçamento (não repete rótulos com valores pequenos ou com zoom)
+  const tick = (E) => (E.pct ? (v, i, ticks) => { const passo = ticks?.length > 1 ? Math.abs(ticks[1].value - ticks[0].value) * 100 : 0.01;
+    return brPct(v, Math.min(4, Math.max(E.zeroMin ? 2 : 1, Math.ceil(-Math.log10(passo || 0.01))))); } : E.fmt);
+  graficoRR("gROA", pts, { fmtX: tick(EX), tituloX: EX.titulo, refX: null, fmtY: tick(EY), tituloY: EY.titulo, yMin: EY.zeroMin ? 0 : null, quad, xLog: !!EX.log, yLog: !!EY.log,
+    rotulo: (it) => { const p = pts.find((x) => x.nome === it.raw.nome) || {};
+      return `${it.raw.nome}: ${EY.curto} ${EY.fmt(it.parsed.y)} · ${EX.curto} ${EX.fmt(it.parsed.x)}` + (ET && Number.isFinite(p.t) ? ` · ${ET.curto} ${ET.fmt(p.t)}` : "") +
+        (p.cli != null && st.roaTam !== "qtdCli" && st.roaTam !== "volCli" ? ` · ${br(p.cli, 0)} cliente(s)` : ""); } });
 }
 
 document.addEventListener("change", (e) => {
