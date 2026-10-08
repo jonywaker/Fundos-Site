@@ -248,7 +248,7 @@ function celFundo(f, c) {
 // cabeçalho clicável (ordenar: 1º clique maior primeiro / A→Z, 2º inverte, 3º volta ao padrão por PL)
 function cabFundos(tab, comFiltros, extraIni = "", extraFim = "") {
   const o = st.ord[tab];
-  let h = `<thead><tr>${extraIni ? `<th><span class="sr-only">Ação</span></th>` : ""}${colsFundo().map((c) => {
+  let h = `<thead><tr>${extraIni ? `<th><span class="sr-only">Remover</span></th>` : ""}${colsFundo().map((c) => {
     const at = o && o.col === c.k;
     return `<th class="${c.tipo === "txt" || c.tipo === "xpclassif" ? "t" : ""}"${at ? ` aria-sort="${o.dir > 0 ? "ascending" : "descending"}"` : ""}><button class="ord-f" data-tab="${tab}" data-col="${c.k}"
       data-txt="${c.tipo === "txt" || c.tipo === "cnpj" || c.tipo === "xpclassif" || c.tipo === "xpresg" ? 1 : 0}" title="${c.dica ? esc(c.dica) + " · clique para ordenar" : "Ordenar"}">${tituloQuebrado(c.nome)}${at ? (o.dir > 0 ? " ▲" : " ▼") : ""}</button></th>`; }).join("")}${extraFim ? `<th><span class="sr-only">Remover</span></th>` : ""}</tr>`;
@@ -335,8 +335,8 @@ function renderSeletor() {
 }
 function renderSelDialogo() {
   const lista = ordenarFundos(dlg.sel.map((c) => st.porCnpj.get(c)).filter(Boolean), "selB");
-  $("#dlgSel").innerHTML = lista.length ? `<table class="tb tab-fundos">${cabFundos("selB", false, "", "x")}<tbody>${lista.map((f) =>
-    `<tr>${colsFundo().map((c) => celFundo(f, c)).join("")}<td><button class="cart-rm" data-dlgrm="${f.CNPJ}" type="button" title="Tirar da seleção" aria-label="Tirar ${esc(f.NOME)} da seleção">×</button></td></tr>`).join("")}</tbody></table>`
+  $("#dlgSel").innerHTML = lista.length ? `<table class="tb tab-fundos rm-ini">${cabFundos("selB", false, "x", "")}<tbody>${lista.map((f) =>
+    `<tr><td><button class="cart-rm" data-dlgrm="${f.CNPJ}" type="button" title="Tirar da seleção" aria-label="Tirar ${esc(f.NOME)} da seleção">×</button></td>${colsFundo().map((c) => celFundo(f, c)).join("")}</tr>`).join("")}</tbody></table>`
     : `<p class="nota" style="padding:10px">Nenhum fundo selecionado. Clique nas linhas da tabela de cima.</p>`;
   $("#dlgN").textContent = dlg.sel.length;
   $("#dlgAplicar").textContent = `Aplicar seleção (${dlg.sel.length} fundo${dlg.sel.length === 1 ? "" : "s"})`;
@@ -373,9 +373,8 @@ function renderColagem() {
   $("#colInfo").innerHTML = `<b>${col.lista.length}</b> fundo(s) encontrado(s)` + (col.lista.some((c) => jaSel.has(c)) ? ` · ${col.lista.filter((c) => jaSel.has(c)).length} já estão ${col.aoConfirmar ? "no ranking" : "selecionados"}` : "") +
     (col.faltam.length ? `<br><span class="neg">Não encontrados na base (${col.faltam.length}): ${col.faltam.map(cnpjFmt).join(", ")}</span>` : "");
   recolhivel($("#colInfo"));
-  $("#colTabela").innerHTML = lista.length ? `<table class="tb tab-fundos">${cabFundos("col", false, "", "x")}<tbody>${lista.map((f) =>
-    `<tr${jaSel.has(f.CNPJ) ? ' class="marcado" title="Já está selecionado"' : ""}>${colsFundo().map((c) => celFundo(f, c)).join("")}
-      <td><button class="cart-rm" data-colrm="${f.CNPJ}" type="button" title="Tirar desta importação" aria-label="Tirar ${esc(f.NOME)} desta importação">×</button></td></tr>`).join("")}</tbody></table>`
+  $("#colTabela").innerHTML = lista.length ? `<table class="tb tab-fundos rm-ini">${cabFundos("col", false, "x", "")}<tbody>${lista.map((f) =>
+    `<tr${jaSel.has(f.CNPJ) ? ' class="marcado" title="Já está selecionado"' : ""}><td><button class="cart-rm" data-colrm="${f.CNPJ}" type="button" title="Tirar desta importação" aria-label="Tirar ${esc(f.NOME)} desta importação">×</button></td>${colsFundo().map((c) => celFundo(f, c)).join("")}</tr>`).join("")}</tbody></table>`
     : `<p class="nota" style="padding:10px">Nenhum fundo para importar.</p>`;
   $("#colAcrescentar").disabled = $("#colSubstituir").disabled = !col.lista.length;
   const doRk = !!col.aoConfirmar;
@@ -3485,8 +3484,31 @@ document.addEventListener("keydown", (e) => {
 
 // ============================== página "Fundos XP" (só com login) ==============================
 // visão geral (planilha da XP), seleção/cálculo (o mesmo motor da Análise) e o gráfico ROA × métrica
-const tribCurta = (t) => (t ? String(t).split(" - ")[0].trim() : null);
-const xpGrupos = new Map();                            // id da barra -> CNPJs (clique seleciona e calcula)
+// tributação resumida: só o tipo ("Longo Prazo", "Renda Variável"…), cortando a explicação depois de " - " ou ":";
+// grafias que só diferem por acento ou maiúsculas viram uma só (fica a forma acentuada)
+const tribCanon = new Map();
+function tribCurta(t) {
+  if (!t) return null;
+  const base = String(t).split(/\s+-\s+|:/)[0].trim(); if (!base) return null;
+  const chave = semAcento(base).toLowerCase(), atual = tribCanon.get(chave);
+  if (!atual || (atual === semAcento(atual) && base !== semAcento(base))) tribCanon.set(chave, base);   // prefere a versão com acento
+  return chave;
+}
+const tribNome = (chave) => tribCanon.get(chave) || chave;
+const xpGrupos = new Map();
+// ROA em faixas de 0,05 p.p. até 1% ("0%", "0 até 0,05%", "0,05 até 0,10%"…), depois "acima de 1%"
+const ROA_PASSO = 0.05, ROA_TETO = 1;
+const rotROA = (k) => `${k === 1 ? "0" : br((k - 1) * ROA_PASSO, 2)} até ${br(k * ROA_PASSO, 2)}%`;
+const ORDEM_ROA = ["0%", ...Array.from({ length: Math.round(ROA_TETO / ROA_PASSO) }, (_, i) => rotROA(i + 1)), "acima de 1%", "Sem ROA"];
+function faixaROA(v) {
+  if (v == null || !Number.isFinite(v)) return "Sem ROA";
+  if (v <= 0) return "0%";
+  if (v > ROA_TETO + 1e-9) return "acima de 1%";
+  return rotROA(Math.max(1, Math.ceil(v / ROA_PASSO - 1e-9)));
+}
+// filtros marcados nas barras: título do quadro -> rótulos marcados (mesmo quadro = "ou"; quadros diferentes = "e")
+st.xpFiltros = new Map();
+const xpConjuntos = new Map();                         // título -> rótulo -> CNPJs (preenchido a cada desenho)                            // id da barra -> CNPJs (clique seleciona e calcula)
 function plXP(c) { const cad = st.porCnpj.get(c); if (cad && !cad._soXP && cad.VL_PATRIM_LIQ != null) return cad.VL_PATRIM_LIQ; return numXP(ofertaXP(c)?.NETEQUITY); }
 const mediana = (v) => { const a = v.filter(Number.isFinite).sort((x, y) => x - y); if (!a.length) return null; const m = a.length >> 1; return a.length % 2 ? a[m] : (a[m - 1] + a[m]) / 2; };
 function faixaDe(v, limites) { if (v == null || !Number.isFinite(v)) return null; for (const [rot, lim] of limites) if (v <= lim) return rot; return limites[limites.length - 1][0]; }
@@ -3496,14 +3518,16 @@ function cartaoBarras(titulo, contagem, total, { ordem = null, cores = {}, max =
   if (!ordem && itens.length > max) { const resto = itens.slice(max - 1); itens = [...itens.slice(0, max - 1), ["Outras", resto.flatMap(([, v]) => v)]]; }
   const maior = Math.max(1, ...itens.map(([, v]) => v.length));
   return `<div class="xp-card"><h3>${esc(titulo)}</h3>${itens.map(([rot, cs]) => {
-    const id = `g${xpGrupos.size}`; xpGrupos.set(id, { rot: `${titulo}: ${rot}`, cs });
-    return `<button type="button" class="xp-barra" data-xpg="${id}" title="${esc(`${rot}: ${cs.length} fundo(s) (${br(cs.length / total * 100, 1)}%) · clique para selecionar e calcular`)}">
+    const id = `g${xpGrupos.size}`; xpGrupos.set(id, { titulo, rot, cs });
+    (xpConjuntos.get(titulo) || xpConjuntos.set(titulo, new Map()).get(titulo)).set(rot, cs);
+    const on = !!st.xpFiltros.get(titulo)?.has(rot);
+    return `<button type="button" class="xp-barra" data-xpg="${id}" aria-pressed="${on}" title="${esc(`${rot}: ${cs.length} fundo(s) (${br(cs.length / total * 100, 1)}%) · clique para ${on ? "tirar do" : "incluir no"} filtro`)}">
       <span class="xb-rot">${esc(rot)}</span><span class="xb-trilho"><i style="width:${(cs.length / maior * 100).toFixed(1)}%;${cores[rot] ? `background:${cores[rot]}` : ""}"></i></span>
       <span class="xb-n">${cs.length} <small>(${br(cs.length / total * 100, 0)}%)</small></span></button>`; }).join("")}${nota ? `<p class="nota">${nota}</p>` : ""}</div>`;
 }
 function renderXPGeral() {
   if (!st.xp) return;
-  xpGrupos.clear();
+  xpGrupos.clear(); xpConjuntos.clear();
   const cs = [...st.xp.keys()], n = cs.length, q = new Map(cs.map((c) => [c, camposXP(c)]));
   const add = (m, k, c) => { if (k == null) return; (m.get(k) || m.set(k, []).get(k)).push(c); };
   const classif = new Map(), inv = new Map(), risco = new Map(), prazo = new Map(), pl = new Map(), minimo = new Map(), roa = new Map(), adm = new Map(), cvm = new Map();
@@ -3518,10 +3542,10 @@ function renderXPGeral() {
     add(prazo, pc == null && pq == null ? "Prazo especial" : faixaDe((pc || 0) + (pq || 0), [["até D+1", 1.6], ["D+2 a D+5", 5.6], ["D+6 a D+30", 30.6], ["D+31 a D+90", 90.6], ["D+91 a D+180", 180.6], ["acima de D+180", Infinity]]), c);
     add(pl, faixaDe(plXP(c), [["até R$ 50 mi", 50e6], ["R$ 50–200 mi", 200e6], ["R$ 200–500 mi", 500e6], ["R$ 500 mi–1 bi", 1e9], ["R$ 1–5 bi", 5e9], ["acima de R$ 5 bi", Infinity]]) || "Sem PL", c);
     add(minimo, faixaDe(x["Aplicação mín."], [["até R$ 100", 100], ["até R$ 1 mil", 1e3], ["até R$ 5 mil", 5e3], ["até R$ 10 mil", 1e4], ["até R$ 50 mil", 5e4], ["acima de R$ 50 mil", Infinity]]) || "Sem informação", c);
-    add(roa, x.ROA == null ? "Sem ROA" : faixaDe(x.ROA, [["0%", 0], ["até 0,25%", 0.25], ["0,25% a 0,50%", 0.5], ["0,50% a 1%", 1], ["acima de 1%", Infinity]]), c);
+    add(roa, faixaROA(x.ROA), c);
     add(adm, x["Taxa adm."] == null ? "Sem informação" : faixaDe(x["Taxa adm."], [["até 0,5%", 0.5], ["0,5% a 1%", 1], ["1% a 2%", 2], ["acima de 2%", Infinity]]), c);
     add(cvm, o?.CLASSIFICATIONCVM || "Sem classificação", c);
-    add(categoria, x.Categoria || "Sem categoria", c); add(gestora, x.Gestora || "Sem gestora", c); add(trib, tribCurta(x["Tributação"]) || "Sem informação", c);
+    add(categoria, x.Categoria || "Sem categoria", c); add(gestora, x.Gestora || "Sem gestora", c); add(trib, tribCurta(x["Tributação"]) || "sem informação", c);
     add(volCli, !x["Volume clientes"] ? "Sem clientes" : faixaDe(x["Volume clientes"], [["até R$ 100 mil", 1e5], ["R$ 100 mil–1 mi", 1e6], ["R$ 1–5 mi", 5e6], ["R$ 5–20 mi", 2e7], ["acima de R$ 20 mi", Infinity]]), c);
   }
   const conta = (f) => cs.filter((c) => f(q.get(c))).length, pls = cs.map(plXP).filter(Number.isFinite);
@@ -3555,15 +3579,45 @@ function renderXPGeral() {
     ${cartaoBarras("Prazo de resgate (cotização + liquidação)", prazo, n, { ordem: ["até D+1", "D+2 a D+5", "D+6 a D+30", "D+31 a D+90", "D+91 a D+180", "acima de D+180", "Prazo especial"] })}
     ${cartaoBarras("Patrimônio líquido", pl, n, { ordem: ["até R$ 50 mi", "R$ 50–200 mi", "R$ 200–500 mi", "R$ 500 mi–1 bi", "R$ 1–5 bi", "acima de R$ 5 bi", "Sem PL"] })}
     ${cartaoBarras("Aplicação mínima", minimo, n, { ordem: ["até R$ 100", "até R$ 1 mil", "até R$ 5 mil", "até R$ 10 mil", "até R$ 50 mil", "acima de R$ 50 mil", "Sem informação"] })}
-    ${cartaoBarras("ROA", roa, n, { ordem: ["0%", "até 0,25%", "0,25% a 0,50%", "0,50% a 1%", "acima de 1%", "Sem ROA"] })}
+    ${cartaoBarras("ROA", roa, n, { ordem: ORDEM_ROA })}
     ${cartaoBarras("Taxa de administração", adm, n, { ordem: ["até 0,5%", "0,5% a 1%", "1% a 2%", "acima de 2%", "Sem informação"] })}
     ${cartaoBarras("Classe CVM", cvm, n)}
     ${categoria.size > 1 || !categoria.has("Sem categoria") ? cartaoBarras("Categoria XP", categoria, n) : ""}
     ${gestora.size > 1 || !gestora.has("Sem gestora") ? cartaoBarras("Gestora (12 maiores)", gestora, n) : ""}
-    ${trib.size > 1 || !trib.has("Sem informação") ? cartaoBarras("Tributação", trib, n) : ""}
+    ${trib.size > 1 || !trib.has("sem informação") ? cartaoBarras("Tributação", new Map([...trib].map(([k, v]) => [k === "sem informação" ? "Sem informação" : tribNome(k), v])), n) : ""}
     ${volCli.size > 1 || !volCli.has("Sem clientes") ? cartaoBarras("Volume dos clientes por fundo", volCli, n, { ordem: ["Sem clientes", "até R$ 100 mil", "R$ 100 mil–1 mi", "R$ 1–5 mi", "R$ 5–20 mi", "acima de R$ 20 mi"] }) : ""}
   </div>`;
+  $("#xpGeral").insertAdjacentHTML("afterbegin", barraFiltrosXP());
   atualizarXPSelInfo();
+}
+// descrição dos filtros: faixas seguidas de ROA viram um intervalo ("0,15 até 0,75%")
+function descFiltro(titulo, rots) {
+  if (titulo !== "ROA") return [...rots].join(", ");
+  const idx = [...rots].map((r) => ORDEM_ROA.indexOf(r)).sort((a, b) => a - b), partes = [];
+  for (let i = 0; i < idx.length; i++) {
+    let j = i; while (j + 1 < idx.length && idx[j + 1] === idx[j] + 1 && /até/.test(ORDEM_ROA[idx[j + 1]])) j++;
+    const a = ORDEM_ROA[idx[i]], b = ORDEM_ROA[idx[j]];
+    partes.push(i === j || !/até/.test(a) ? a : `${a.split(" até ")[0]} até ${b.split(" até ")[1]}`); i = j;
+  }
+  return partes.join(", ");
+}
+function fundosFiltradosXP() {
+  let r = null;
+  for (const [titulo, rots] of st.xpFiltros) {
+    if (!rots.size) continue;
+    const uniao = new Set([...rots].flatMap((rot) => xpConjuntos.get(titulo)?.get(rot) || []));
+    r = r ? new Set([...r].filter((c) => uniao.has(c))) : uniao;
+  }
+  return r ? [...r] : null;
+}
+function barraFiltrosXP() {
+  const lista = fundosFiltradosXP(); if (!lista) return `<div class="xp-filtros" hidden></div>`;
+  const desc = [...st.xpFiltros].filter(([, r]) => r.size).map(([t, r]) => `<b>${esc(t.replace(/ \(.*\)$/, ""))}:</b> ${esc(descFiltro(t, r))}`).join(" · ");
+  const { ok } = calculaveisXP(lista);
+  return `<div class="xp-filtros" role="region" aria-label="Filtros escolhidos"><span class="xf-lista">${desc}</span>
+    <span class="xf-n">${br(lista.length, 0)} fundo(s)${ok.length !== lista.length ? ` <small class="nota">(${br(ok.length, 0)} com cotas para calcular)</small>` : ""}</span>
+    <button type="button" class="sec" id="xpFiltroLimpar">Limpar filtros</button>
+    <button type="button" class="prim" id="xpFiltroCalc" ${ok.length ? "" : "disabled"}>🧮 Calcular ${br(ok.length, 0)} fundo(s)</button></div>`;
 }
 const atualizarXPSelInfo = () => { const el = $("#xpSelInfo"); if (el) el.textContent = st.sel.length ? `${st.sel.length} fundo(s) selecionado(s)` : ""; };
 // fundos da XP que dá para calcular: estão na base da CVM e têm cota nos últimos 30 dias
@@ -3586,7 +3640,15 @@ async function selecionarECalcular(lista, rotulo) {
 document.addEventListener("click", (e) => {
   const a = e.target.closest?.("[data-acao-sel]"); if (a) { $("#" + a.dataset.acaoSel).click(); return; }
   if (e.target.closest?.("#xpCalcTodos")) { selecionarECalcular([...st.xp.keys()], "Todos os fundos da XP"); return; }
-  const g = e.target.closest?.(".xp-barra"); if (g) { const x = xpGrupos.get(g.dataset.xpg); if (x) selecionarECalcular(x.cs, x.rot); return; }
+  const g = e.target.closest?.(".xp-barra");
+  if (g) { const x = xpGrupos.get(g.dataset.xpg); if (!x) return;
+    const sel = st.xpFiltros.get(x.titulo) || st.xpFiltros.set(x.titulo, new Set()).get(x.titulo);
+    sel.has(x.rot) ? sel.delete(x.rot) : sel.add(x.rot);
+    const idB = g.dataset.xpg; redesenharMantendo($("#xpGeral"), renderXPGeral); $(`.xp-barra[data-xpg="${idB}"]`)?.focus({ preventScroll: true }); return; }
+  if (e.target.closest?.("#xpFiltroLimpar")) { st.xpFiltros.clear(); redesenharMantendo($("#xpGeral"), renderXPGeral); return; }
+  if (e.target.closest?.("#xpFiltroCalc")) {
+    const desc = [...st.xpFiltros].filter(([, r]) => r.size).map(([t, r]) => `${t.replace(/ \(.*\)$/, "")}: ${descFiltro(t, r)}`).join(" · ");
+    selecionarECalcular(fundosFiltradosXP() || [], desc); return; }
 });
 // ---------- ROA × métrica (ROA no eixo Y; eixo X escolhido nos botões)
 st.roaEixo = "sharpe";
@@ -3762,8 +3824,8 @@ function renderEditorRk() {
     (fora.length ? ` · <span class="neg">${fora.length} fora da base atual: ${fora.map(cnpjFmt).join(", ")}</span>` : "") +
     (parados.length || fora.length ? ` · entram no ranking cerca de <b>${rkEd.cnpjs.length - parados.length - fora.length}</b>` : "");
   recolhivel($("#rkEdInfo"));
-  $("#rkEdFundos").innerHTML = lista.length ? `<table class="tb tab-fundos">${cabFundos("rkEd", false, "", "x")}<tbody>${lista.map((f) =>
-    `<tr>${colsFundo().map((c) => celFundo(f, c)).join("")}<td><button class="cart-rm" data-rk-edrm="${f.CNPJ}" type="button" title="Tirar do ranking" aria-label="Tirar ${esc(f.NOME)} do ranking">×</button></td></tr>`).join("")}</tbody></table>`
+  $("#rkEdFundos").innerHTML = lista.length ? `<table class="tb tab-fundos rm-ini">${cabFundos("rkEd", false, "x", "")}<tbody>${lista.map((f) =>
+    `<tr><td><button class="cart-rm" data-rk-edrm="${f.CNPJ}" type="button" title="Tirar do ranking" aria-label="Tirar ${esc(f.NOME)} do ranking">×</button></td>${colsFundo().map((c) => celFundo(f, c)).join("")}</tr>`).join("")}</tbody></table>`
     : `<p class="nota" style="padding:10px">Nenhum fundo ainda. Use os botões acima para escolher na lista, colar CNPJs, carregar um grupo ou usar os selecionados.</p>`;
 }
 async function juntarNoEditor(cnpjs, substituir) {

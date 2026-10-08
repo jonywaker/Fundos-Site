@@ -873,3 +873,19 @@ sup.gu { font-size: 9px; font-weight: 800; color: var(--link); margin-left: 2px;
 .rb-item i { display: inline-block; border-radius: 50%; background: color-mix(in srgb, var(--azul) 55%, transparent); border: 1px solid var(--azul); }
 .rb-item i.rb-vazio { background: transparent; border: 1.5px solid var(--sub); }
 #roaBolhaBox[hidden] { display: none; }
+
+/* tabelas de seleção com o "×" antes do nome: as duas primeiras colunas ficam fixas ao rolar para o lado */
+.dlg-tab .tab-fundos.rm-ini th:first-child, .dlg-tab .tab-fundos.rm-ini td:first-child { min-width: 38px; max-width: 38px; width: 38px; text-align: center; padding: 0 4px; box-shadow: none; }
+.tab-fundos.rm-ini th:nth-child(2), .tab-fundos.rm-ini td:nth-child(2) { position: sticky; left: 38px; text-align: left; min-width: 260px; max-width: 300px;
+  overflow: hidden; text-overflow: ellipsis; box-shadow: inset -1px 0 0 var(--borda); }
+.tab-fundos.rm-ini td:nth-child(2) { z-index: 1; background: var(--card); }
+.tab-fundos.rm-ini tbody tr:nth-child(even) td:nth-child(2) { background: var(--zebra); }
+.tab-fundos.rm-ini thead th:nth-child(2) { z-index: 4; background: var(--cab); }
+/* filtros combinados da visão geral (Fundos XP) */
+.xp-barra[aria-pressed=true] { background: color-mix(in srgb, var(--ouro) 22%, var(--card)); box-shadow: inset 3px 0 0 var(--ouro); font-weight: 800; }
+.xp-filtros { position: sticky; top: 0; z-index: 6; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; margin: 10px 0 0; padding: 10px 14px;
+  border: 1px solid var(--ouro); border-radius: 12px; background: var(--card); box-shadow: 0 6px 16px -12px rgba(20,26,74,.5); }
+.xp-filtros[hidden] { display: none; }
+.xp-filtros .xf-lista { flex: 1 1 380px; font-size: 13px; line-height: 1.5; }
+.xp-filtros .xf-lista b { color: var(--anil); } @media (prefers-color-scheme: dark) { .xp-filtros .xf-lista b { color: var(--ouro); } }
+.xp-filtros .xf-n { font-weight: 800; font-size: 15px; white-space: nowrap; }
