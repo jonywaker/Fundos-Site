@@ -889,3 +889,5 @@ sup.gu { font-size: 9px; font-weight: 800; color: var(--link); margin-left: 2px;
 .xp-filtros .xf-lista { flex: 1 1 380px; font-size: 13px; line-height: 1.5; }
 .xp-filtros .xf-lista b { color: var(--anil); } @media (prefers-color-scheme: dark) { .xp-filtros .xf-lista b { color: var(--ouro); } }
 .xp-filtros .xf-n { font-weight: 800; font-size: 15px; white-space: nowrap; }
+
+.xp-barra { user-select: none; }

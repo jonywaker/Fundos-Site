@@ -3641,6 +3641,7 @@ document.addEventListener("click", (e) => {
   const a = e.target.closest?.("[data-acao-sel]"); if (a) { $("#" + a.dataset.acaoSel).click(); return; }
   if (e.target.closest?.("#xpCalcTodos")) { selecionarECalcular([...st.xp.keys()], "Todos os fundos da XP"); return; }
   const g = e.target.closest?.(".xp-barra");
+  if (g && e.detail !== 0 && xpArrasto.tipo === "mouse") return;          // com o mouse, quem marca é o arrasto (abaixo)
   if (g) { const x = xpGrupos.get(g.dataset.xpg); if (!x) return;
     const sel = st.xpFiltros.get(x.titulo) || st.xpFiltros.set(x.titulo, new Set()).get(x.titulo);
     sel.has(x.rot) ? sel.delete(x.rot) : sel.add(x.rot);
@@ -3760,6 +3761,41 @@ document.addEventListener("change", (e) => {
 st.roaBolha = "";
 
 st.roaSoCli = false;
+
+// ---------- marcar várias barras arrastando o mouse (como numa planilha): do primeiro ao último item, no mesmo quadro
+// começar numa barra já marcada desmarca o intervalo; o resultado vale ao soltar o botão
+const xpArrasto = { tipo: "", ativo: false };
+document.addEventListener("pointerdown", (e) => {
+  xpArrasto.tipo = e.pointerType;
+  const b = e.target.closest?.(".xp-barra"); if (!b || e.pointerType !== "mouse" || e.button !== 0) return;
+  e.preventDefault();                                                    // não seleciona texto enquanto arrasta
+  const card = b.closest(".xp-card"), barras = [...card.querySelectorAll(".xp-barra")], ini = barras.indexOf(b);
+  const { titulo } = xpGrupos.get(b.dataset.xpg) || {}; if (!titulo) return;
+  const sel = st.xpFiltros.get(titulo) || st.xpFiltros.set(titulo, new Set()).get(titulo);
+  Object.assign(xpArrasto, { ativo: true, card, barras, ini, fim: ini, titulo, base: new Set(sel), marcar: b.getAttribute("aria-pressed") !== "true" });
+  aplicarArrastoXP();
+});
+document.addEventListener("pointermove", (e) => {
+  if (!xpArrasto.ativo) return;
+  const b = document.elementFromPoint(e.clientX, e.clientY)?.closest?.(".xp-barra");
+  if (!b || b.closest(".xp-card") !== xpArrasto.card) return;
+  const i = xpArrasto.barras.indexOf(b); if (i < 0 || i === xpArrasto.fim) return;
+  xpArrasto.fim = i; aplicarArrastoXP();
+});
+document.addEventListener("pointerup", () => {
+  if (!xpArrasto.ativo) return;
+  xpArrasto.ativo = false;
+  const idB = xpArrasto.barras[xpArrasto.fim]?.dataset.xpg;
+  redesenharMantendo($("#xpGeral"), renderXPGeral);                      // atualiza a barra de filtros e as contagens
+  if (idB) $(`.xp-barra[data-xpg="${idB}"]`)?.focus({ preventScroll: true });
+});
+function aplicarArrastoXP() {
+  const { ini, fim, barras, base, marcar, titulo } = xpArrasto, sel = new Set(base);
+  const [a, b] = ini <= fim ? [ini, fim] : [fim, ini];
+  barras.forEach((el, i) => { const rot = xpGrupos.get(el.dataset.xpg)?.rot; if (i >= a && i <= b && rot != null) marcar ? sel.add(rot) : sel.delete(rot); });
+  st.xpFiltros.set(titulo, sel);
+  barras.forEach((el) => el.setAttribute("aria-pressed", String(sel.has(xpGrupos.get(el.dataset.xpg)?.rot))));   // retorno visual durante o arrasto
+}
 // ============================== rankings ==============================
 // Um ranking = nome + tipo de cálculo (pesos) + lista de fundos. Ficam guardados neste navegador, como os grupos.
 const lerRankings = () => pref("rankings", {});
