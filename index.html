@@ -140,7 +140,7 @@
           <div class="cab">
             <h2 id="tituloMet">Métricas</h2>
             <div class="opcoes"><label class="ordem">Agrupar por <select id="agrupar">
-              <option value="">Sem agrupamento</option><option value="Classificação">Classificação (como na tabela)</option><option>Classificação CVM</option><option>Classificação ANBIMA</option>
+              <option value="">Sem agrupamento</option><option value="Classificação">Classificação (como na tabela)</option><option value="Categoria XP" data-xp hidden>Categoria XP</option><option value="Gestora (XP)" data-xp hidden>Gestora (XP)</option><option>Classificação CVM</option><option>Classificação ANBIMA</option>
               <option>Objetivo de retorno</option><option>Gestor</option></select></label>
               <label id="guBox" class="tog" hidden title="Só para fundos isentos de IR para pessoa física (informação da XP)"><input id="grossUp" type="checkbox"> Gross up dos isentos (IR 15%)</label></div>
             <button class="btn-min" type="button" data-min="met" title="Minimizar esta seção" aria-label="Minimizar esta seção" aria-expanded="true">−</button>
@@ -244,9 +244,12 @@
         <div id="xpSlot"></div>
         <section id="secROA" class="cartao" hidden>
           <div class="cab"><h2>ROA × métricas</h2>
-            <div class="opcoes"><label class="ordem roa-eixo">Comparar o ROA com <div id="cbROA" class="combo"></div></label></div></div>
+            <div class="opcoes"><label class="ordem roa-eixo">Comparar o ROA com <div id="cbROA" class="combo"></div></label></div>
+            <div class="opcoes" id="roaBolhaBox" hidden><label class="ordem">Tamanho das bolhas <select id="roaBolha">
+              <option value="">Igual para todos</option><option value="vol">Volume dos clientes</option><option value="qtd">Quantidade de clientes</option></select></label></div></div>
           <p id="roaNota" class="nota"></p>
           <div class="graf graf-roa"><canvas id="gROA" aria-label="Gráfico de ROA contra a métrica escolhida"></canvas></div>
+          <div id="roaLegBolhas" class="roa-leg-bolhas" hidden></div>
         </section>
       </div>
 

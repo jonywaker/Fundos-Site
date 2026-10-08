@@ -233,7 +233,7 @@ function celFundo(f, c) {
     const t = "Só na XP: sem cotas na base da CVM usada pelo site (ex.: FIDC, FII, FIP, FIAGRO ou fundo novo). Aparece com os dados da XP, mas não dá para calcular métricas.";
     return `<td class="t" title="${esc((v || "") + " · " + t)}"><span class="so-xp" title="${esc(t)}">⚠</span>${esc(v || "")}</td>`;
   }
-  if (c.tipo === "xpcap") return `<td class="xp-capcel">${cadeado(valFundo(f, c.k))}${dinheiroNovo(xpDe(f.CNPJ)._dinheiroNovo)}</td>`;
+  if (c.tipo === "xpcap") { const q = xpDe(f.CNPJ); return `<td class="xp-capcel">${cadeado(valFundo(f, c.k), q._motivoFechado)}${dinheiroNovo(q._dinheiroNovo)}</td>`; }
   if (c.tipo === "xpinv") return `<td>${badgeInv(valFundo(f, c.k))}</td>`;
   if (c.tipo === "xpclassif") { const q = xpDe(f.CNPJ);
     return `<td class="t" title="${esc(`XP: ${q["Classificação XP"] || "–"}\nANBIMA: ${f.CLASSIFICACAO_ANBIMA || "–"}\nCVM: ${f.CLASSIFICACAO_CVM || "–"}`)}">${esc(valFundo(f, c.k))}</td>`; }
@@ -825,7 +825,7 @@ function tabelaHTML({ colunas, linhas, fixas = 0, larguras = [260, 150], grupos 
 
 // ---------- tabela de métricas
 const CAMPOS_GRUPO = {
-  "Classificação": (l) => l._classif,                   // a mesma da coluna da tabela (XP com login; senão ANBIMA)
+  "Classificação": (l) => l._classif, "Categoria XP": (l) => l.Categoria, "Gestora (XP)": (l) => l.Gestora,                   // a mesma da coluna da tabela (XP com login; senão ANBIMA)
   "Classificação CVM": (l) => l["Classificação CVM"], "Classificação ANBIMA": (l) => l["Classificação ANBIMA"],
   "Objetivo de retorno": (l) => (l["Objetivo de retorno"] === "N/D" ? "" : l["Objetivo de retorno"]), "Gestor": (l) => l._gestor,
 };
@@ -1057,14 +1057,17 @@ function estrela(cor, tam = 28) {
 }
 // dispersão risco × retorno com poucos conjuntos de pontos (rápido mesmo com centenas de fundos)
 // pts: { nome, cor, x, y, tipo: "fundo" | "bench" | "carteira", forte, apagado }
-function graficoRR(id, pts, { fmtX, tituloX, refX = null, fmtY = (v) => brPct(v, 1), tituloY = "Volatilidade (risco, % a.a.)", yMin = 0, rotulo = null, quad = null }) {
+// opcional por ponto: r (raio da bolha), vazio (só contorno), alfa (transparência, ex.: "B3"); xLog: eixo x em escala logarítmica
+function graficoRR(id, pts, { fmtX, tituloX, refX = null, fmtY = (v) => brPct(v, 1), tituloY = "Volatilidade (risco, % a.a.)", yMin = 0, rotulo = null, quad = null, xLog = false }) {
   const rotuloRR = rotulo || ((it) => `${it.raw.nome}: volatilidade ${brPct(it.parsed.y)} · ${tituloX.startsWith("Retorno") ? "retorno " + brPct(it.parsed.x) + " a.a." : "Sharpe " + br(it.parsed.x, 2)}`);
   const grupo = (tipo, estilo) => {
     const ps = pts.filter((p) => p.tipo === tipo);
     return { label: tipo, data: ps.map((p) => ({ x: p.x, y: p.y, nome: p.nome, rotulo: p.tipo !== "fundo" || p.forte })),
-      backgroundColor: ps.map((p) => p.cor + (p.apagado ? "33" : "")),
-      borderColor: ps.map((p) => (p.forte ? (escuro() ? "#fff" : ANIL) : tipo === "fundo" ? "#ffffff" : OURO)),
-      borderWidth: ps.map((p) => (p.forte ? 2 : 1)), pointRadius: ps.map((p) => (p.forte ? 9 : estilo.r)), pointHoverRadius: 10,
+      backgroundColor: ps.map((p) => (p.vazio ? "transparent" : p.cor + (p.apagado ? "33" : p.alfa || ""))),
+      borderColor: ps.map((p) => (p.forte ? (escuro() ? "#fff" : ANIL) : p.vazio ? p.cor : tipo === "fundo" ? "#ffffff" : OURO)),
+      borderWidth: ps.map((p) => (p.forte ? 2 : p.vazio ? 1.5 : 1)), pointRadius: ps.map((p) => (p.r != null ? (p.forte ? Math.max(p.r, 9) : p.r) : p.forte ? 9 : estilo.r)),
+      pointHoverRadius: ps.map((p) => (p.r != null ? p.r + 3 : 10)),
+      clip: Math.max(10, ...ps.map((p) => (p.r || 0) + 2)),          // pontos e bolhas na borda aparecem inteiros (margem do tamanho da maior bolha)
       pointStyle: estilo.forma === "estrela" ? ps.map((p) => estrela(p.cor)) : estilo.forma, order: estilo.ordem };
   };
   const datasets = [grupo("fundo", { r: 6, forma: "circle", ordem: 2 }), grupo("bench", { r: 8, forma: "rectRot", ordem: 1 }),
@@ -1076,6 +1079,7 @@ function graficoRR(id, pts, { fmtX, tituloX, refX = null, fmtY = (v) => brPct(v,
     ant.options.plugins.linhaRef = { x: refX }; ant.options.plugins.quadrantes = quad;
     ant.options.plugins.tooltip.callbacks.label = rotuloRR;
     ant.options.scales.y.title.text = tituloY; ant.options.scales.y.ticks.callback = fmtY;
+    ant.options.scales.x.type = xLog ? "logarithmic" : "linear";
     ant.$base = { x: [undefined, undefined], y: [yMin, undefined] };
     aplicarZoomG(ant, id);
     ant.update("none");
@@ -1089,7 +1093,7 @@ function graficoRR(id, pts, { fmtX, tituloX, refX = null, fmtY = (v) => brPct(v,
       plugins: { legend: { display: false }, linhaRef: { x: refX }, quadrantes: quad,
         tooltip: { callbacks: { label: rotuloRR } } },
       scales: {
-        x: { title: { display: true, text: tituloX, color: corTexto() }, ticks: { callback: fmtX, color: corTexto() }, grid: { color: "rgba(128,128,128,.15)" } },
+        x: { type: xLog ? "logarithmic" : "linear", title: { display: true, text: tituloX, color: corTexto() }, ticks: { callback: fmtX, color: corTexto() }, grid: { color: "rgba(128,128,128,.15)" } },
         y: { min: yMin, grace: "6%", title: { display: true, text: tituloY, color: corTexto() },     // folga: pontos não colam na borda
           ticks: { callback: fmtY, color: corTexto() }, grid: { color: "rgba(128,128,128,.15)" } },
       },
@@ -2934,6 +2938,8 @@ async function apiEquipe(acao, dados = {}) {
 function desenharEquipe() {
   $("#equipeBox").hidden = !EQUIPE_URL;
   $("#abaXP").hidden = !st.xp;
+  $$("#agrupar option[data-xp]").forEach((o) => (o.hidden = !st.xp));
+  if (!st.xp && ["Categoria XP", "Gestora (XP)"].includes(st.agrupar)) { st.agrupar = ""; $("#agrupar").value = ""; }
   if (!st.xp && st.pagina === "xp") mostrarPagina("analise", { rolar: false });
   const on = !!st.equipe;
   $("#equipeEntrar").hidden = on; $("#equipeLogado").hidden = !on;
@@ -3020,7 +3026,7 @@ st.grossUp = false;
 // sim/não da planilha: aceita true/false, VERDADEIRO/FALSO (Sheets em português), SIM/NÃO e 1/0.
 // "########" também é verdadeiro: é como o Excel mostra "VERDADEIRO" numa coluna estreita, e copiar/colar leva esse texto
 // (nessas colunas o "FALSO" cabe e aparece escrito; só o "VERDADEIRO" vira ########)
-const verdadeiro = (v) => v === true || v === 1 || /^(true|verdadeiro|sim|s|yes|1|#{3,})$/i.test(String(v ?? "").trim());
+const verdadeiro = (v) => v === true || v === 1 || /^(true|verdadeiro|sim|s|yes|1(\.0+)?|#{3,})$/i.test(String(v ?? "").trim());
 // prazo em dias para ordenar: "D+30 (Dias Corridos)" -> 30; com o mesmo número, corridos antes de úteis; textos especiais no fim
 function prazoDias(v) {
   const m = String(v ?? "").match(/D\s*\+\s*(\d+)/i); if (!m) return null;
@@ -3051,13 +3057,42 @@ function camposXP(cnpj) {
     "Taxa adm.": numXP(o.ADMINISTRATIONRATE), "Taxa perf.": numXP(o.PERFORMANCERATE), "ROA": numXP(o.RETURNONASSETS),
     "Risco": numXP(o.RISKGENIUS), _riscoCor: o.RISKGENIUSCOLOR, _riscoDesc: o.RISKGENIUSDESCRIPTION,
     "Aplicação mín.": minimos.length ? Math.min(...minimos) : null, _isento: verdadeiro(o.ISTAXFREEONINCOMEPF), "Isento": verdadeiro(o.ISTAXFREEONINCOMEPF) ? "Sim" : "",
-    _hubId: /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(o.ID || "")) ? String(o.ID) : null };
+    _hubId: /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(o.ID || "")) ? String(o.ID) : null,
+    ...camposXPNovos(cnpj, o, abertas) };
+}
+// texto da planilha sem as quebras de linha do Excel ("_x000D_")
+const limpaXP = (v) => (v == null ? "" : String(v).replace(/_x000D_/gi, "").replace(/\s+/g, " ").trim());
+// documentos: colunas DOC_* (planilha nova) e as antigas DOCUMENTREGULATION / DOCUMENTPROMOTIONALMATERIAL
+const NOMES_DOC = { REGULAMENTO: "Regulamento", LAMINA: "Lâmina", CARACTERISTICA: "Características", PROSPECTO: "Prospecto", DESEMPENHO: "Desempenho",
+  CARTAGESTOR: "Carta do gestor", PROSPECTODEFINITIVO: "Prospecto definitivo", PROSPECTOPRELIMINAR: "Prospecto preliminar", VIDEO: "Vídeo",
+  ANUNCIOINICIO: "Anúncio de início", COMUNICADOMERCADO: "Comunicado ao mercado" };
+function docsXP(o) {
+  const out = [], vistos = new Set();
+  const add = (rot, url) => { url = limpaXP(url); if (!/^https?:\/\//i.test(url) || vistos.has(url)) return; vistos.add(url); out.push({ rot, url }); };
+  add("Regulamento", o.DOCUMENTREGULATION); add("Características", o.DOCUMENTPROMOTIONALMATERIAL);
+  for (const [k, v] of Object.entries(o)) { const m = k.match(/^DOC_([A-Z]+)/); if (m) add(NOMES_DOC[m[1]] || m[1].toLowerCase(), v); }
+  return out;
+}
+const publicoDe = (t) => { const s = limpaXP(t).toLowerCase(); return /profission/.test(s) ? "IP" : /qualificad/.test(s) ? "IQ" : /geral/.test(s) ? "IG" : null; };
+function camposXPNovos(cnpj, o, abertas) {
+  const ofs = st.xp.get(cnpj), soma = (k) => { const v = ofs.map((x) => numXP(x[k])).filter(Number.isFinite); return v.length ? v.reduce((a, b) => a + b, 0) : null; };
+  const pub = limpaXP(o.TARGETAUDIENCE), pubSigla = publicoDe(pub);
+  const motivo = abertas.length ? "" : limpaXP(ofs.map((x) => x.FUNDINGBLOCKJUSTIFICATION).find((x) => limpaXP(x)));
+  const tags = [...new Set(ofs.flatMap((x) => lerTags(x.TAGS).map((g) => g.titulo)))];
+  return { Gestora: limpaXP(o.MANAGER) || null, Administradora: limpaXP(o.ADMINISTRATOR) || null, Auditoria: limpaXP(o.AUDITOR) || null, Custodiante: limpaXP(o.CUSTODIAN) || null,
+    Categoria: limpaXP(o.CATEGORY) || null, "Público-alvo": pub || null, _publicoDiverge: !!(pubSigla && pubSigla !== tipoInvestidor(o)),
+    "ANBIMA (XP)": limpaXP(o.ANBIMADESCRIPTION) || null, "Cotização da aplicação": resumirPrazo(limpaXP(o.INVESTMENTQUOTATION)) || null,
+    "Aplicação adicional": numXP(o.MINIMALINVESTMENT), "Resgate mínimo": numXP(o.MINIMALREDEMPTION), "Saldo de permanência": numXP(o.PERMANENCEBALANCE),
+    "Tributação": limpaXP(o.TAXATION) || null, IOF: limpaXP(o.IOFRATE) || null, "Taxa perf. máx.": numXP(o.MAXPERFORMANCERATE),
+    Objetivo: limpaXP(o.OBJECTIVE) || null, "Política": limpaXP(o.MANAGEMENTPOLICY) || null, _motivoFechado: motivo,
+    "Na lista da rede": o.NALISTAREDE == null || o.NALISTAREDE === "" ? null : verdadeiro(o.NALISTAREDE) ? "Sim" : "Não",
+    _tags: tags, Clientes: soma("QTDCLIENTES"), "Volume clientes": soma("VOLUMECLIENTES"), _docs: docsXP(o) };
 }
 // risco da XP pela faixa: baixo verde, médio amarelo, alto vermelho
 const faixaRisco = (d) => { const t = String(d || "").toLowerCase(); return t.startsWith("baix") ? "rb" : t.startsWith("m") ? "rm" : t.startsWith("alt") ? "ra" : ""; };
 // captação: cadeado aberto (verde) ou fechado (vermelho)
 const SVG_CADEADO = { ab: '<path d="M7 11V7a5 5 0 0 1 9.6-2"/>', fe: '<path d="M7 11V7a5 5 0 0 1 10 0v4"/>' };
-const cadeado = (v) => { if (!v) return ""; const k = v === "Aberto" ? "ab" : "fe", txt = v === "Aberto" ? "Aberto para aplicação" : "Fechado para aplicação";
+const cadeado = (v, motivo = "") => { if (!v) return ""; const k = v === "Aberto" ? "ab" : "fe", txt = v === "Aberto" ? "Aberto para aplicação" : `Fechado para aplicação${motivo ? ": " + motivo : ""}`;
   return `<span class="xp-cad ${k}" title="${txt}" role="img" aria-label="${txt}"><svg viewBox="0 0 24 24" width="17" height="17" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="11" width="16" height="10" rx="2" fill="currentColor" stroke="none"/>${SVG_CADEADO[k]}</svg></span>`; };
 const resumirPrazo = (t) => (t == null ? t : String(t).replace(/\(\s*dias?\s+[uú]teis\s*\)/gi, "(Úteis)").replace(/\(\s*dias?\s+corridos\s*\)/gi, "(Corridos)"));
 // prazo compacto: "D+30 (Corridos)" -> "D30(C)"; o resgate junta cotização e liquidação: "D30(C)+D1(U)"
@@ -3067,7 +3102,9 @@ const prazoCompacto = (t) => { const m = String(t ?? "").match(/D\s*\+\s*(\d+)/i
 function lerTags(t) {
   const s = String(t ?? ""); if (!s.trim() || s.trim() === "[]") return [];
   const campo = (bloco, k) => { const m = bloco.match(new RegExp(`['"]${k}['"]\\s*:\\s*(?:'((?:[^'\\\\]|\\\\.)*)'|"((?:[^"\\\\]|\\\\.)*)")`)); return m ? (m[1] ?? m[2]) : ""; };
-  return s.split("}").map((b) => ({ titulo: campo(b, "title"), descricao: campo(b, "description") })).filter((x) => x.titulo);
+  const antigas = s.split("}").map((b) => ({ titulo: campo(b, "title"), descricao: campo(b, "description") })).filter((x) => x.titulo);
+  if (antigas.length || /['"]title['"]\s*:/.test(s)) return antigas;
+  return s.split(/[|;,]/).map((x) => ({ titulo: x.trim(), descricao: "" })).filter((x) => x.titulo);   // planilha nova: só os títulos
 }
 // nota verde de "dinheiro novo" (exigência de captação nova), com a descrição ao passar o mouse
 const dinheiroNovo = (desc) => (desc == null ? "" : `<span class="xp-dn" title="${esc("Dinheiro novo" + (desc ? ": " + desc : ""))}" role="img" aria-label="${esc("Dinheiro novo" + (desc ? ": " + desc : ""))}"><svg viewBox="0 0 24 24" width="19" height="19" aria-hidden="true"><rect x="1.5" y="6" width="21" height="12" rx="2" fill="currentColor"/><circle cx="12" cy="12" r="3.2" fill="#fff"/><circle cx="5.5" cy="12" r="1.1" fill="#fff"/><circle cx="18.5" cy="12" r="1.1" fill="#fff"/></svg></span>`);
@@ -3078,7 +3115,7 @@ function colunasXP(g = "XP · confidencial", semInternas = false, foraNoResgate 
   const cols = [
     { chave: "XP Nome", nome: "Nome comercial", tipo: "txt", g, html: (v, l) => (l._naXP ? textoCurto(v, 34) + (l._xpOfertas > 1 ? ` <small class="nota" title="${l._xpOfertas} ofertas deste CNPJ na XP">(${l._xpOfertas})</small>` : "") : `<span class="nota">não está na XP</span>`) },
     { chave: "Investidor", nome: "Inv.", centro: true, dica: "Tipo de investidor", tipo: "txt", g, html: badgeInv },
-    { chave: "Captação", nome: "Capt.", centro: true, dica: "Captação: aberto ou fechado para aplicação (e dinheiro novo)", tipo: "txt", g, html: (v, l) => cadeado(v) + dinheiroNovo(l._dinheiroNovo) },
+    { chave: "Captação", nome: "Capt.", centro: true, dica: "Captação: aberto ou fechado para aplicação (e dinheiro novo)", tipo: "txt", g, html: (v, l) => cadeado(v, l._motivoFechado) + dinheiroNovo(l._dinheiroNovo) },
     { chave: "Isento", nome: "Isento", centro: true, dica: "Isento de IR para pessoa física", tipo: "txt", g, html: (v) => (v ? `<span class="xp-isento" title="Isento de IR para pessoa física" aria-label="Isento de IR para pessoa física">$</span>` : "") },
     { chave: "Resgate", nome: "Resgate (Dias)", centro: true, dica: "Prazo de resgate: cotização + liquidação (C = corridos, U = úteis)", tipo: "txt", g, crescente: true,
       html: (v, l) => (l._naXP ? `<span class="xp-resg" title="${esc(`Cotização: ${l["Cotização"] || "–"}\nLiquidação: ${l["Liquidação"] || "–"}`)}">${esc(l.Resgate || "")}</span>`
@@ -3215,7 +3252,7 @@ function renderEnviar() {
       rent: `<td style="${corSinal(x.rentAA)}">${typeof x.rentAA === "number" ? brPct(x.rentAA) : ""}</td>`,
       vol: `<td>${typeof x.vol === "number" ? brPct(x.vol) : ""}</td>`,
       tot: `<td><b>${n1(x.rk?.total)}</b></td>`, perf: `<td>${n1(x.rk?.perf)}</td>`, cons: `<td>${n1(x.rk?.cons)}</td>`, risco: `<td>${n1(x.rk?.risco)}</td>`,
-      inv: `<td>${q?._naXP ? badgeInv(q.Investidor) : ""}</td>`, cap: `<td>${q?._naXP ? cadeado(q["Captação"]) + dinheiroNovo(q._dinheiroNovo) : ""}</td>`,
+      inv: `<td>${q?._naXP ? badgeInv(q.Investidor) : ""}</td>`, cap: `<td>${q?._naXP ? cadeado(q["Captação"], q._motivoFechado) + dinheiroNovo(q._dinheiroNovo) : ""}</td>`,
       resg: `<td title="${q?._naXP ? esc(`Cotização: ${q["Cotização"] || "–"}\nLiquidação: ${q["Liquidação"] || "–"}`) : ""}">${q?._naXP ? esc(q.Resgate || "") : ""}</td>`,
       roa: `<td>${q?._naXP && q.ROA != null ? pctXP(q.ROA) : ""}</td>`,
       rxp: `<td>${q?._naXP && q.Risco != null ? `<span class="xp-risco ${faixaRisco(q._riscoDesc)}" title="Risco ${esc(q._riscoDesc || "")}">${br(q.Risco, 0)}</span>` : ""}</td>`,
@@ -3269,7 +3306,16 @@ function colunasXPRel() {
     { nome: "Classificação XP", tipo: "txt", v: (q) => q["Classificação XP"] ?? "" }, { nome: "Taxa de adm.", tipo: "pct", v: (q) => pct(q["Taxa adm."]) },
     { nome: "Taxa de perf.", tipo: "pct", v: (q) => pct(q["Taxa perf."]) }, { nome: "ROA", tipo: "pct", v: (q) => pct(q.ROA) },
     { nome: "Risco XP", tipo: "int", v: (q) => q.Risco ?? null }, { nome: "Aplicação mínima", tipo: "valor", v: (q) => q["Aplicação mín."] ?? null },
+    { nome: "Categoria XP", tipo: "txt", v: (q) => q.Categoria ?? "" }, { nome: "Gestora (XP)", tipo: "txt", v: (q) => q.Gestora ?? "" },
+    { nome: "Público-alvo (XP)", tipo: "txt", v: (q) => q["Público-alvo"] ?? "" }, { nome: "Tributação", tipo: "txt", v: (q) => q["Tributação"] ?? "" },
+    { nome: "Cotização da aplicação", tipo: "txt", v: (q) => q["Cotização da aplicação"] ?? "" }, { nome: "Aplicação adicional mínima", tipo: "valor", v: (q) => q["Aplicação adicional"] ?? null },
+    { nome: "Resgate mínimo", tipo: "valor", v: (q) => q["Resgate mínimo"] ?? null }, { nome: "Saldo mínimo de permanência", tipo: "valor", v: (q) => q["Saldo de permanência"] ?? null },
+    { nome: "Taxa de perf. máxima", tipo: "pct", v: (q) => (typeof q["Taxa perf. máx."] === "number" ? q["Taxa perf. máx."] / 100 : null) },
+    { nome: "Etiquetas", tipo: "txt", v: (q) => (q._tags || []).join(" | ") }, { nome: "Motivo do fechamento", tipo: "txt", v: (q) => q._motivoFechado || "" },
+    { nome: "Clientes no fundo", tipo: "int", v: (q) => q.Clientes ?? null }, { nome: "Volume dos clientes (R$)", tipo: "valor", v: (q) => q["Volume clientes"] ?? null },
     { nome: "Link Hub", tipo: "txt", soExcel: true, v: (q) => (q._hubId ? URL_HUB(q._hubId) : "") },
+    { nome: "Regulamento", tipo: "txt", soExcel: true, v: (q) => q._docs?.find((d) => d.rot === "Regulamento")?.url || "" },
+    { nome: "Lâmina", tipo: "txt", soExcel: true, v: (q) => q._docs?.find((d) => d.rot === "Lâmina")?.url || "" },
   ];
 }
 // acrescenta as colunas da XP a uma tabela do relatório; cnpjDe(i) dá o CNPJ da linha i (ou null para linhas sem fundo, como a carteira)
@@ -3296,7 +3342,7 @@ function colunaClassif(g) {
 }
 // captação (aberto/fechado) como coluna fixa sem título visível, entre o Link Hub e o fundo
 const colunaCadeado = () => ({ chave: "Captação", nome: "Capt.", centro: true, dica: "Captação: aberto ou fechado para aplicação (e dinheiro novo)", tipo: "txt", g: "XP",
-  titulo: () => "", html: (v, l) => cadeado(v) + dinheiroNovo(l._dinheiroNovo) });
+  titulo: () => "", html: (v, l) => cadeado(v, l._motivoFechado) + dinheiroNovo(l._dinheiroNovo) });
 
 // ---------- painel do fundo: clique numa linha da tabela de métricas
 // todas as métricas do período ativo, separadas por tipo, com o cadastro, os dados da XP (com login) e dois minigráficos
@@ -3362,7 +3408,7 @@ function abrirPainelFundo(c, onde = "analise") {
   $("#pfTit").textContent = nomeXP || l.Fundo;
   $("#pfSub").innerHTML = `${nomeXP ? `CVM: ${esc(l.Fundo)} · ` : ""}CNPJ ${esc(l.CNPJ || cnpjFmt(c))} · ${esc(fonte.rotulo)} (${esc(fmtData(fonte.dIni))} a ${esc(fmtData(fonte.dFim))})` +
     (fonte.extra ? `<br><b>${esc(fonte.extra)}</b>` : "");
-  $("#pfSelos").innerHTML = q._naXP ? `${cadeado(q["Captação"])}${dinheiroNovo(q._dinheiroNovo)} ${badgeInv(q.Investidor)}${q._hubId ? ` <a class="hub-link" href="${URL_HUB(q._hubId)}" target="_blank" rel="noopener noreferrer">↗ Hub</a>` : ""}` : "";
+  $("#pfSelos").innerHTML = q._naXP ? `${cadeado(q["Captação"], q._motivoFechado)}${dinheiroNovo(q._dinheiroNovo)} ${badgeInv(q.Investidor)}${q._hubId ? ` <a class="hub-link" href="${URL_HUB(q._hubId)}" target="_blank" rel="noopener noreferrer">↗ Hub</a>` : ""}` : "";
   const kpi = (rot, v, t = "pct", nome = "") => `<div class="kpi"><div class="l">${rot}</div><div class="v">${valorPF(t, v, nome)}</div></div>`;
   const kpis = `<div class="kpis pf-kpis">${kpi("Acumulado", l["% Acumulado"])}${kpi("Ao ano", l["% Anualizado"])}${kpi("% do CDI", l["%CDI"])}${kpi("Volatilidade", l.Volatilidade, "pct", "Volatilidade")}${kpi("Sharpe", l["Sharpe Anualizado"], "num2")}${kpi("Maior queda", l.Queda)}</div>`;
   // gráficos do período (mesma função dos outros gráficos: zoom de arrastar, lupa e valor ao passar o mouse)
@@ -3390,13 +3436,26 @@ function abrirPainelFundo(c, onde = "analise") {
   const cadExtra = [["Gestor", esc(cad.GESTOR || "–")], ["Administrador", esc(cad.ADMINISTRADOR || "–")], ["Situação na CVM", esc(cad.SITUACAO || "–")],
     ["Público-alvo (CVM)", esc(cad.PUBLICO_ALVO || "–")], ["PL mais recente", cad.VL_PATRIM_LIQ != null ? `R$ ${br(cad.VL_PATRIM_LIQ / 1e6, 1)} mi` : "–"]];
   const secoes = [bloco("Cadastro", [...itens(PF_SECOES[0][1]), ...cadExtra], "pf-cad")];
-  if (q._naXP) secoes.push(bloco("XP · confidencial", [["Nome comercial", esc(q["XP Nome"] || "–")], ["Classificação XP", esc(q["Classificação XP"] || "–")],
-    ["Investidor", badgeInv(q.Investidor) || "–"], ["Captação", `${cadeado(q["Captação"])} ${esc(q["Captação"] || "")}`],
-    ["Dinheiro novo", q._dinheiroNovo == null ? "–" : `${dinheiroNovo(q._dinheiroNovo)} ${esc(q._dinheiroNovo || "sim")}`], ["Isento de IR (PF)", q.Isento ? "Sim" : "Não"],
-    ["Cotização do resgate", esc(q["Cotização"] || "–")], ["Liquidação do resgate", esc(q["Liquidação"] || "–")],
-    ["Taxa de administração", q["Taxa adm."] != null ? `${br(q["Taxa adm."], 2)}% a.a.` : "–"], ["Taxa de performance", q["Taxa perf."] != null ? `${br(q["Taxa perf."], 2)}%` : "–"],
-    ["ROA", q.ROA != null ? `${br(q.ROA, 2)}%` : "–"], ["Risco XP", q.Risco != null ? `<span class="xp-risco ${faixaRisco(q._riscoDesc)}">${br(q.Risco, 0)}</span> ${esc(q._riscoDesc || "")}` : "–"],
-    ["Aplicação mínima", q["Aplicação mín."] != null ? `R$ ${br(q["Aplicação mín."], 0)}` : "–"]], "pf-xp"));
+  if (q._naXP) {
+    const R$ = (v, d = 0) => (v != null ? `R$ ${br(v, d)}` : "–"), txt = (v) => esc(v || "–");
+    secoes.push(bloco("XP · confidencial", [["Nome comercial", txt(q["XP Nome"])], ["Categoria XP", txt(q.Categoria)], ["Classificação XP", txt(q["Classificação XP"])],
+      ["Gestora", txt(q.Gestora)], ["Investidor", (badgeInv(q.Investidor) || "–") + (q._publicoDiverge ? ` <span class="xp-aviso-pub" title="O público-alvo escrito pela XP é diferente das marcações de qualificado/profissional">⚠ ${esc(q["Público-alvo"])}</span>` : "")],
+      ["Captação", `${cadeado(q["Captação"], q._motivoFechado)} ${esc(q["Captação"] || "")}${q._motivoFechado ? ` <small class="nota">(${esc(q._motivoFechado)})</small>` : ""}`],
+      ["Dinheiro novo", q._dinheiroNovo == null ? "Não" : `${dinheiroNovo(q._dinheiroNovo)} ${esc(q._dinheiroNovo || "Sim")}`],
+      ["Etiquetas", q._tags?.length ? q._tags.map((t) => `<span class="xp-tag">${esc(t)}</span>`).join(" ") : "–"],
+      ["Isento de IR (PF)", q.Isento ? "Sim" : "Não"], ["Tributação", txt(q["Tributação"])],
+      ["Cotização da aplicação", txt(q["Cotização da aplicação"])], ["Cotização do resgate", txt(q["Cotização"])], ["Liquidação do resgate", txt(q["Liquidação"])],
+      ["Taxa de administração", q["Taxa adm."] != null ? `${br(q["Taxa adm."], 2)}% a.a.` : "–"], ["Taxa de performance", q["Taxa perf."] != null ? `${br(q["Taxa perf."], 2)}%` : "–"],
+      ["Taxa de performance máxima", q["Taxa perf. máx."] != null ? `${br(q["Taxa perf. máx."], 2)}%` : "–"],
+      ["ROA", q.ROA != null ? `${br(q.ROA, 2)}%` : "–"], ["Risco XP", q.Risco != null ? `<span class="xp-risco ${faixaRisco(q._riscoDesc)}">${br(q.Risco, 0)}</span> ${esc(q._riscoDesc || "")}` : "–"],
+      ["Aplicação mínima inicial", R$(q["Aplicação mín."])], ["Aplicação adicional mínima", R$(q["Aplicação adicional"])],
+      ["Resgate mínimo", R$(q["Resgate mínimo"])], ["Saldo mínimo de permanência", R$(q["Saldo de permanência"])], ["IOF", txt(q.IOF)],
+      ["Clientes no fundo", q.Clientes != null ? `${br(q.Clientes, 0)} cliente(s) · ${q["Volume clientes"] != null ? `R$ ${br(q["Volume clientes"] / 1e6, 2)} mi` : "–"}` : "–"],
+      ["Na lista da rede", txt(q["Na lista da rede"])], ["Administradora (XP)", txt(q.Administradora)], ["Custodiante", txt(q.Custodiante)], ["Auditoria", txt(q.Auditoria)]], "pf-xp"));
+    if (q.Objetivo || q["Política"] || q._docs?.length) secoes.push(`<section class="pf-sec pf-xp pf-textos"><h3>Objetivo, política e documentos (XP)</h3>
+      ${q._docs?.length ? `<div class="pf-docs">${q._docs.map((d) => `<a class="hub-link" href="${esc(d.url)}" target="_blank" rel="noopener noreferrer">📄 ${esc(d.rot)}</a>`).join("")}</div>` : ""}
+      ${q.Objetivo ? `<h4>Objetivo</h4><p class="pf-longo">${esc(q.Objetivo)}</p>` : ""}${q["Política"] ? `<h4>Política de gestão</h4><p class="pf-longo">${esc(q["Política"])}</p>` : ""}</section>`);
+  }
   else if (st.xp) secoes.push(bloco("XP · confidencial", [["Situação", '<span class="fora-xp">não está na XP</span>']], "pf-xp"));
   for (const [nome, filtro] of PF_SECOES.slice(1)) secoes.push(bloco(nome, itens(filtro)));
   $("#pfConteudo").innerHTML = kpis + grafs + `<div class="pf-grade">${secoes.join("")}</div>`;
@@ -3405,6 +3464,7 @@ function abrirPainelFundo(c, onde = "analise") {
   semZoom("gPfAcum", "gPfDd");
   $("#dlgFundo").showModal(); $("#dlgFundo .pf-corpo").scrollTop = 0;
   desenhar?.();                                                              // depois de abrir: o gráfico mede o tamanho certo
+  $$("#pfConteudo .pf-longo").forEach((el) => recolhivel(el));
 }
 // qualquer tabela: clique no nome do fundo (ou na linha das tabelas de métricas) abre o painel; janelas de seleção ficam de fora
 const ondePainel = (el) => (el.closest("#pgRankings") ? "rk" : el.closest("#pgCarteira") ? "cart" : "analise");
@@ -3425,6 +3485,7 @@ document.addEventListener("keydown", (e) => {
 
 // ============================== página "Fundos XP" (só com login) ==============================
 // visão geral (planilha da XP), seleção/cálculo (o mesmo motor da Análise) e o gráfico ROA × métrica
+const tribCurta = (t) => (t ? String(t).split(" - ")[0].trim() : null);
 const xpGrupos = new Map();                            // id da barra -> CNPJs (clique seleciona e calcula)
 function plXP(c) { const cad = st.porCnpj.get(c); if (cad && !cad._soXP && cad.VL_PATRIM_LIQ != null) return cad.VL_PATRIM_LIQ; return numXP(ofertaXP(c)?.NETEQUITY); }
 const mediana = (v) => { const a = v.filter(Number.isFinite).sort((x, y) => x - y); if (!a.length) return null; const m = a.length >> 1; return a.length % 2 ? a[m] : (a[m - 1] + a[m]) / 2; };
@@ -3446,6 +3507,7 @@ function renderXPGeral() {
   const cs = [...st.xp.keys()], n = cs.length, q = new Map(cs.map((c) => [c, camposXP(c)]));
   const add = (m, k, c) => { if (k == null) return; (m.get(k) || m.set(k, []).get(k)).push(c); };
   const classif = new Map(), inv = new Map(), risco = new Map(), prazo = new Map(), pl = new Map(), minimo = new Map(), roa = new Map(), adm = new Map(), cvm = new Map();
+  const categoria = new Map(), gestora = new Map(), trib = new Map(), volCli = new Map();
   const naBase = cs.filter((c) => st.porCnpj.has(c) && !st.porCnpj.get(c)._soXP);
   for (const c of cs) {
     const x = q.get(c), o = ofertaXP(c);
@@ -3459,6 +3521,8 @@ function renderXPGeral() {
     add(roa, x.ROA == null ? "Sem ROA" : faixaDe(x.ROA, [["0%", 0], ["até 0,25%", 0.25], ["0,25% a 0,50%", 0.5], ["0,50% a 1%", 1], ["acima de 1%", Infinity]]), c);
     add(adm, x["Taxa adm."] == null ? "Sem informação" : faixaDe(x["Taxa adm."], [["até 0,5%", 0.5], ["0,5% a 1%", 1], ["1% a 2%", 2], ["acima de 2%", Infinity]]), c);
     add(cvm, o?.CLASSIFICATIONCVM || "Sem classificação", c);
+    add(categoria, x.Categoria || "Sem categoria", c); add(gestora, x.Gestora || "Sem gestora", c); add(trib, tribCurta(x["Tributação"]) || "Sem informação", c);
+    add(volCli, !x["Volume clientes"] ? "Sem clientes" : faixaDe(x["Volume clientes"], [["até R$ 100 mil", 1e5], ["R$ 100 mil–1 mi", 1e6], ["R$ 1–5 mi", 5e6], ["R$ 5–20 mi", 2e7], ["acima de R$ 20 mi", Infinity]]), c);
   }
   const conta = (f) => cs.filter((c) => f(q.get(c))).length, pls = cs.map(plXP).filter(Number.isFinite);
   const kpi = (rot, v, sub = "") => `<div class="kpi"><div class="l">${rot}</div><div class="v">${v}</div>${sub ? `<div class="s">${sub}</div>` : ""}</div>`;
@@ -3480,6 +3544,10 @@ function renderXPGeral() {
     ${kpi("PL somado", `R$ ${br(pls.reduce((a, b) => a + b, 0) / 1e9, 1)} bi`, `mediana R$ ${br((mediana(pls) || 0) / 1e6, 0)} mi`)}
     ${kpi("ROA mediano", `${br(mediana(cs.map((c) => q.get(c).ROA)) ?? 0, 2)}%`)}
     ${kpi("Taxa de adm. mediana", `${br(mediana(cs.map((c) => q.get(c)["Taxa adm."])) ?? 0, 2)}%`)}
+    ${(() => { const cli = cs.map((c) => q.get(c).Clientes).filter(Number.isFinite); if (!cli.length) return "";
+      const vol = cs.map((c) => q.get(c)["Volume clientes"]).filter(Number.isFinite), com = cs.filter((c) => q.get(c).Clientes > 0).length;
+      return kpi("Clientes nos fundos", br(cli.reduce((a, b) => a + b, 0), 0), `em ${br(com, 0)} fundo(s)`) +
+        kpi("Volume dos clientes", `R$ ${br(vol.reduce((a, b) => a + b, 0) / 1e6, 1)} mi`, `mediana R$ ${br((mediana(vol.filter((v) => v > 0)) || 0) / 1e6, 2)} mi por fundo`); })()}
   </div><div class="xp-cards">
     ${cartaoBarras("Classificação XP", classif, n)}
     ${cartaoBarras("Tipo de investidor", inv, n, { ordem: ["Geral (IG)", "Qualificado (IQ)", "Profissional (IP)"], cores: { "Geral (IG)": "#087040", "Qualificado (IQ)": "#f0b400", "Profissional (IP)": "#b35000" } })}
@@ -3490,6 +3558,10 @@ function renderXPGeral() {
     ${cartaoBarras("ROA", roa, n, { ordem: ["0%", "até 0,25%", "0,25% a 0,50%", "0,50% a 1%", "acima de 1%", "Sem ROA"] })}
     ${cartaoBarras("Taxa de administração", adm, n, { ordem: ["até 0,5%", "0,5% a 1%", "1% a 2%", "acima de 2%", "Sem informação"] })}
     ${cartaoBarras("Classe CVM", cvm, n)}
+    ${categoria.size > 1 || !categoria.has("Sem categoria") ? cartaoBarras("Categoria XP", categoria, n) : ""}
+    ${gestora.size > 1 || !gestora.has("Sem gestora") ? cartaoBarras("Gestora (12 maiores)", gestora, n) : ""}
+    ${trib.size > 1 || !trib.has("Sem informação") ? cartaoBarras("Tributação", trib, n) : ""}
+    ${volCli.size > 1 || !volCli.has("Sem clientes") ? cartaoBarras("Volume dos clientes por fundo", volCli, n, { ordem: ["Sem clientes", "até R$ 100 mil", "R$ 100 mil–1 mi", "R$ 1–5 mi", "R$ 5–20 mi", "acima de R$ 20 mi"] }) : ""}
   </div>`;
   atualizarXPSelInfo();
 }
@@ -3542,6 +3614,10 @@ function eixosROA() {
     taxaPerf: xp("Taxa de performance (%)", "taxa de perf.", -1, "Taxa perf.", (v) => brPct(v, 0), 100),
     minimo: xp("Aplicação mínima (R$)", "aplicação mínima", -1, "Aplicação mín.", (v) => `R$ ${br(v, 0)}`),
     jm: { ...EIXOS_ROA.jm, grupo: "Janela móvel" },
+    volCli: { titulo: "Volume dos clientes (R$, escala logarítmica)", curto: "volume dos clientes", melhor: 1, grupo: "Clientes", bom: "volume alto", ruim: "volume baixo", log: true,
+      fmt: (v) => (v >= 1e6 ? `R$ ${br(v / 1e6, v >= 1e7 ? 0 : 1)} mi` : `R$ ${br(v / 1e3, 0)} mil`), valor: (l, q) => (q["Volume clientes"] > 0 ? q["Volume clientes"] : null) },
+    qtdCli: { titulo: "Quantidade de clientes (escala logarítmica)", curto: "quantidade de clientes", melhor: 1, grupo: "Clientes", bom: "muitos clientes", ruim: "poucos clientes", log: true,
+      fmt: (v) => br(v, 0), valor: (l, q) => (q.Clientes > 0 ? q.Clientes : null) },
   };
   for (const [g, n, t] of COLUNAS) {
     if (!fmtT[t] || ROA_FORA.has(n) || !ROA_GRUPOS[g]) continue;
@@ -3571,8 +3647,27 @@ function renderROA() {
     if (!q._naXP || q.ROA == null) { semROA++; continue; }
     const x = E.valor(l, q); if (x == null || !Number.isFinite(x)) { semX++; continue; }
     const marcado = algum && casa(st.destaque, l.Fundo, l.CNPJ);
-    pts.push({ nome: q["XP Nome"] ? String(q["XP Nome"]).toLocaleUpperCase("pt-BR") : st.res.apelidos[l._c], cor: st.ctx.cores[l._c], x, y: q.ROA / 100, tipo: "fundo", forte: marcado, apagado: algum && !marcado });
+    pts.push({ _c: l._c, nome: q["XP Nome"] ? String(q["XP Nome"]).toLocaleUpperCase("pt-BR") : st.res.apelidos[l._c], cor: st.ctx.cores[l._c], x, y: q.ROA / 100, tipo: "fundo", forte: marcado, apagado: algum && !marcado,
+      cli: q.Clientes, vol: q["Volume clientes"] });
   }
+  // bolhas: área proporcional ao volume (ou à quantidade) de clientes; sem clientes = ponto vazado
+  const temClientes = st.ctx.dados.linhas.some((l) => camposXP(l._c).Clientes != null);
+  $("#roaBolhaBox").hidden = !temClientes; if (!temClientes) st.roaBolha = "";
+  $("#roaBolha").value = st.roaBolha || "";
+  const campoB = { vol: "Volume clientes", qtd: "Clientes" }[st.roaBolha], R_MIN = 4, R_MAX = 28;
+  let maxB = 0;
+  if (campoB) {
+    for (const p of pts) { const v = camposXP(p._c)[campoB]; p.b = Number.isFinite(v) ? v : 0; maxB = Math.max(maxB, p.b); }
+    const raio = (v) => (v > 0 && maxB > 0 ? R_MIN + (R_MAX - R_MIN) * Math.sqrt(v / maxB) : R_MIN);
+    for (const p of pts) { p.r = raio(p.b); p.vazio = !(p.b > 0); p.alfa = p.vazio ? "" : "B3"; }
+    pts.sort((a, b) => b.r - a.r);                                     // grandes desenhadas primeiro (ficam por baixo)
+    const fmtB = st.roaBolha === "vol" ? (v) => (v >= 1e6 ? `R$ ${br(v / 1e6, v >= 1e7 ? 0 : 1)} mi` : `R$ ${br(v / 1e3, 0)} mil`) : (v) => `${br(v, 0)} cliente${v === 1 ? "" : "s"}`;
+    const refs = [maxB, maxB / 4, maxB / 25].map((v) => (st.roaBolha === "qtd" ? Math.max(1, Math.round(v)) : v));
+    $("#roaLegBolhas").innerHTML = `<span class="nota">Área da bolha proporcional ${st.roaBolha === "vol" ? "ao volume" : "à quantidade"} de clientes:</span>` +
+      refs.map((v) => { const d = 2 * raio(v); return `<span class="rb-item"><i style="width:${d.toFixed(0)}px;height:${d.toFixed(0)}px"></i>${esc(fmtB(v))}</span>`; }).join("") +
+      `<span class="rb-item"><i class="rb-vazio" style="width:${2 * R_MIN}px;height:${2 * R_MIN}px"></i>sem clientes</span>`;
+  }
+  $("#roaLegBolhas").hidden = !campoB;
   // quadrantes: o cruzamento é a mediana do ROA e a mediana do eixo x (só fundos do gráfico)
   const medX = mediana(pts.map((p) => p.x)), medY = mediana(pts.map((p) => p.y));
   const bomX = (x) => (E.melhor >= 0 ? x > medX : x < medX), q4 = { bom: 0, ruim: 0, misto: 0 };
@@ -3587,9 +3682,15 @@ function renderROA() {
   // casas decimais do eixo conforme o espaçamento das marcas (ROA pequeno ou com zoom não repete rótulos)
   const fmtROA = (v, i, ticks) => { const passo = ticks?.length > 1 ? Math.abs(ticks[1].value - ticks[0].value) * 100 : 0.01;
     return brPct(v, Math.min(4, Math.max(2, Math.ceil(-Math.log10(passo || 0.01))))); };
-  graficoRR("gROA", pts, { fmtX: E.fmt, tituloX: E.titulo, refX: null, fmtY: fmtROA, tituloY: "ROA (% a.a.)", yMin: 0, quad,
-    rotulo: (it) => `${it.raw.nome}: ROA ${brPct(it.parsed.y, 2)} · ${E.titulo.split(" (")[0]} ${E.fmt(it.parsed.x)}` });
+  const pontos = pts.map((p) => ({ ...p, nome: p.nome }));
+  graficoRR("gROA", pontos, { fmtX: E.fmt, tituloX: E.titulo, refX: null, fmtY: fmtROA, tituloY: "ROA (% a.a.)", yMin: 0, quad, xLog: !!E.log,
+    rotulo: (it) => { const p = pontos.find((x) => x.nome === it.raw.nome) || {};
+      return `${it.raw.nome}: ROA ${brPct(it.parsed.y, 2)} · ${E.titulo.split(" (")[0]} ${E.fmt(it.parsed.x)}` +
+        (p.cli != null ? ` · ${br(p.cli, 0)} cliente(s) · R$ ${br((p.vol || 0) / 1e6, 2)} mi` : ""); } });
 }
+
+document.addEventListener("change", (e) => { if (e.target.id === "roaBolha") { st.roaBolha = e.target.value; renderROA(); } });
+st.roaBolha = "";
 // ============================== rankings ==============================
 // Um ranking = nome + tipo de cálculo (pesos) + lista de fundos. Ficam guardados neste navegador, como os grupos.
 const lerRankings = () => pref("rankings", {});
