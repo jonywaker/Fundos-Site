@@ -6,7 +6,7 @@ import { INDICES, corIndice, nomeIndice, serieIndice, retornoVol, nivelEm } from
 import { janelaMovel, resumoJanela, retornosFundo, retornosDiarios, matrizCorrelacao } from "./analises.js";
 import { simularCarteira, estatisticas, curvaDrawdown } from "./carteira.js";
 import { EQUIPE_URL } from "./config.js";
-import { GRUPOS_RANK, METRICAS_RANK, metricaRank, grupoMetrica, MODELOS_RANK, JM_ANOS, indiceObjetivo, pontuar, ordenarRanking, COMPARACOES, ROTULO_VAR, dataComparacao, METRICAS_JM } from "./ranking.js";
+import { GRUPOS_RANK, METRICAS_RANK, metricaRank, grupoMetrica, MODELOS_RANK, JM_ANOS, indiceObjetivo, pontuar, ordenarRanking, COMPARACOES, ROTULO_VAR, dataComparacao, METRICAS_JM, somaPesos, escalaPesos } from "./ranking.js";
 
 // ============================== CONFIGURAÇÃO (único lugar para editar) ==============================
 const HF_REPO = "Shote/fundos-cvm";
@@ -19,7 +19,7 @@ const $$ = (s, el = document) => [...el.querySelectorAll(s)];
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const nf = (c) => new Intl.NumberFormat("pt-BR", { minimumFractionDigits: c, maximumFractionDigits: c });
 const NF = [0, 1, 2, 4, 6].reduce((o, c) => ((o[c] = nf(c)), o), {});
-const br = (v, c = 2) => (v == null || Number.isNaN(v) ? "" : NF[c].format(v));
+const br = (v, c = 2) => (v == null || Number.isNaN(v) ? "" : (NF[c] ||= nf(c)).format(v));     // cria o formato que faltar (qualquer nº de casas)
 const brPct = (v, c = 2) => (typeof v !== "number" || Number.isNaN(v) ? "" : br(v * 100, c) + "%");
 const cnpjFmt = (c) => (c || "").replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, "$1.$2.$3/$4-$5");
 const curto = (s, n = 45) => (s.length <= n ? s : s.slice(0, n - 1) + "…");
@@ -4361,21 +4361,24 @@ function renderRkTabela() {
 }
 function renderRkPontos() {
   const R = rkAtivo(); if (!R) return;
+  const somaR = somaPesos(R.M.pesos);
+  const avisoP = Math.abs(somaR - 100) > 0.01 ? `<p class="nota neg">Os pesos do tipo "${esc(R.M.nome)}" somam ${br(somaR, 1).replace(",0", "")}%: os pontos foram calculados proporcionalmente, como se fossem 100%.</p>` : "";
   const ks = GRUPOS_RANK.flatMap((g) => Object.keys(R.M.pesos).filter((k) => grupoMetrica(R.M, k) === g));
   const fmtValor = (m) => (v) => (v == null ? `<span class="nota">sem valor</span>` : m.tipo === "valor" ? br(v / 1e6, 1) + " mi" : esc(FMT[m.tipo]?.(v) ?? v));
   const colunas = [{ chave: "pos", nome: "Pos.", tipo: "int", g: "Ranking", html: posHTML }, { chave: "Fundo", nome: "Fundo", tipo: "txt", g: "Ranking", html: (v, l) => `<span class="lk-fundo" tabindex="0" role="button" data-mini="${esc(l._c)}">${esc(v)}</span>` },
     { chave: "total", nome: "Pontuação", tipo: "num2", g: "Ranking", html: (v) => `<b>${br(v, 2)}</b>` },
     ...GRUPOS_RANK.map((g) => ({ chave: `g:${g}`, nome: g, tipo: "num2", g: "Pontos por grupo", html: (v) => br(v, 2) })),
-    ...ks.flatMap((k) => { const m = metricaRank(k), p = R.M.pesos[k], prop = R.M.jmProporcional && METRICAS_JM.includes(k);
-      const gnome = `${m.nome} · peso ${Math.abs(p)} · ${prop ? "consistência × janelas" : p > 0 ? "maior é melhor" : "menor é melhor"}`;
+    ...ks.flatMap((k) => { const m = metricaRank(k), p = R.M.pesos[k], prop = R.M.jmProporcional && METRICAS_JM.includes(k), esc1 = escalaPesos(R.M.pesos);
+      const pe = Math.abs(p) * esc1, ajust = Math.abs(esc1 - 1) > 1e-9;
+      const gnome = `${m.nome} · peso ${Math.abs(p)}${ajust ? ` (≈ ${br(pe, 1)} proporcional)` : ""} · ${prop ? "consistência × janelas" : p > 0 ? "maior é melhor" : (R.M.dirs?.[k] || 1) < 0 || p < 0 ? "menor é melhor" : "maior é melhor"}`;
       return [{ chave: `v:${k}`, nome: "Valor", tipo: m.tipo, g: gnome,
           html: prop ? (v, l) => `${fmtValor(m)(v)}${l[`j:${k}`] != null ? ` <small class="nota" title="Janelas deste fundo em relação ao fundo com mais janelas">× ${br(l[`j:${k}`] * 100, 0)}% das janelas</small>` : ""}` : fmtValor(m) },
         { chave: `n:${k}`, nome: prop ? "Nota (consist. × janelas)" : "Nota (0 a 1)", tipo: "num2", g: gnome, html: (v) => br(v, 2) },
-        { chave: `p:${k}`, nome: `Pontos (de ${Math.abs(p)})`, tipo: "num2", g: gnome, html: (v) => `<b>${br(v, 2)}</b>` }]; })];
+        { chave: `p:${k}`, nome: `Pontos (de ${br(pe, ajust ? 1 : 0)})`, tipo: "num2", g: gnome, html: (v) => `<b>${br(v, 2)}</b>` }]; })];
   const linhas = ordenar(fundosVisiveis(R).map((x) => ({ _c: x.id, pos: x.pos, Fundo: nomeRk(R, x.id), CNPJ: cnpjFmt(x.id), total: x.total,
     ...Object.fromEntries(GRUPOS_RANK.map((g) => [`g:${g}`, x.grupos[g]])),
     ...Object.fromEntries(ks.flatMap((k) => [[`v:${k}`, x.notas[k].valor], [`n:${k}`, x.notas[k].nota], [`p:${k}`, x.notas[k].pontos], [`j:${k}`, x.notas[k].pJan ?? null]])) })), "rkPts", colunas);
-  $("#rkPontos").innerHTML = tabelaHTML({ colunas, linhas, fixas: 2, larguras: [52, 240], grupos: colunas.map((c) => c.g), ordenavel: "rkPts", altura: 520, centralizar: true,
+  $("#rkPontos").innerHTML = avisoP + tabelaHTML({ colunas, linhas, fixas: 2, larguras: [52, 240], grupos: colunas.map((c) => c.g), ordenavel: "rkPts", altura: 520, centralizar: true,
     destacar: linhas.map((l) => casa(st.destaque, l.Fundo, l.CNPJ)), classes: linhas.map((l) => classeMedalha(l.pos)) });
 }
 function topRk(R) { return R.ordem.slice(0, TOP_RANK); }
@@ -4554,7 +4557,8 @@ function renderModelos() {
     <th class="t">Origem</th><th title="Ponderar a consistência da janela móvel pela quantidade de janelas de cada fundo (fundos mais novos ganham menos pontos)">Ponderar<br>consistência</th><th><span class="sr-only">Ações</span></th></tr></thead><tbody>${Object.entries(modelos()).map(([id, M]) => {
       const usaJM = Object.keys(M.pesos).some((k) => METRICAS_JM.includes(k)), uso = (usos[id] || []).join(", ");
       const g = gruposPesosRk(M), padrao = !!MODELOS_RANK[id], editado = padrao && !!salvos[id];
-      return `<tr><td class="t" title="${esc(uso ? `Usado em: ${uso}` : "Nenhum ranking usa este tipo")}"><b>${esc(M.nome)}</b></td><td class="t quebra">${esc(M.periodo)} · janela ${M.jmMeses}m vs ${esc(nomeIndice(M.bench))} · ${Object.keys(M.pesos).length} métricas</td>
+      return `<tr><td class="t" title="${esc(uso ? `Usado em: ${uso}` : "Nenhum ranking usa este tipo")}"><b>${esc(M.nome)}</b></td><td class="t quebra">${esc(M.periodo)} · janela ${M.jmMeses}m vs ${esc(nomeIndice(M.bench))} · ${Object.keys(M.pesos).length} métricas${Math.abs(somaPesos(M.pesos) - 100) > 0.01
+          ? `<br><span class="neg rkm-soma-aviso" title="O ranking considera os pesos proporcionalmente, como se somassem 100%">pesos somam ${br(somaPesos(M.pesos), 1).replace(",0", "")}% → proporcional a 100%</span>` : ""}</td>
         <td class="t">${g.map((x) => `<span class="rkm-chip" style="border-color:${CORES_GRUPO[x.g]}">${brPct(x.total, 0)}</span>`).join(" ")}</td>
         <td class="t">${padrao ? (editado ? "padrão (editado)" : "padrão") : "criado por você"}</td><td class="rkm-prop-cel">${usaJM ? `<label class="tog" title="${M.jmProporcional ? "Ligado" : "Desligado"}: consistência da janela móvel × proporção de janelas do fundo"><input type="checkbox" data-rkm-prop="${esc(id)}"${M.jmProporcional ? " checked" : ""} aria-label="Ponderar a consistência da janela móvel pela quantidade de janelas no tipo ${esc(M.nome)}"></label>`
           : `<span class="nota" title="Este tipo não usa métricas de consistência da janela móvel">–</span>`}</td>
@@ -4567,7 +4571,7 @@ function abrirEditorModelo(id = null, duplicar = false) {
   const M = id ? modeloDe(id) : null;
   Object.assign(rkMod, { id: duplicar ? null : id, nome: M ? (duplicar ? `${M.nome} (cópia)` : M.nome) : "", periodo: M?.periodo || "36 Meses", jm: M?.jmMeses || 36, bench: M?.bench || "CDI", lin: {} });
   $("#rkmJmProp").checked = !!M?.jmProporcional;
-  for (const m of METRICAS_RANK) { const p = M?.pesos[m.k]; rkMod.lin[m.k] = { usar: p != null, peso: p != null ? Math.abs(p) : 0, dir: p != null ? Math.sign(p) : m.dir, g: grupoMetrica(M, m.k) }; }
+  for (const m of METRICAS_RANK) { const p = M?.pesos[m.k]; rkMod.lin[m.k] = { usar: p != null, peso: p != null ? Math.abs(p) : 0, dir: p ? Math.sign(p) : M?.dirs?.[m.k] || m.dir, g: grupoMetrica(M, m.k) }; }
   $("#rkmNome").value = rkMod.nome; $("#rkmPeriodo").value = rkMod.periodo; $("#rkmJm").value = rkMod.jm;
   $("#rkmBench").innerHTML = st.idx.disponiveis.map((k) => `<option value="${k}"${k === rkMod.bench ? " selected" : ""}>${esc(nomeIndice(k))}</option>`).join("");
   mostrarTelaRk("modEd"); renderEditorModelo(); $("#rkmNome").focus();
@@ -4590,7 +4594,9 @@ function somaModelo() {
   for (const l of Object.values(rkMod.lin)) if (l.usar) { g[l.g] += Number(l.peso) || 0; total += Number(l.peso) || 0; n++; }
   const ok = Math.abs(total - 100) < 0.01;
   $("#rkmSoma").innerHTML = GRUPOS_RANK.map((x) => `<span class="rkm-chip" style="border-color:${CORES_GRUPO[x]}">${x}: <b>${br(g[x], 0)}%</b></span>`).join("") +
-    `<span class="rkm-total ${ok ? "ok" : "neg"}">Total: <b>${br(total, 1).replace(",0", "")}%</b> ${ok ? "✓" : "(precisa somar 100%)"} · ${n} métrica(s)</span>`;
+    `<span class="rkm-total ${ok ? "ok" : "neg"}">Total: <b>${br(total, 1).replace(",0", "")}%</b> ${ok ? "✓" : total > 0
+      ? `— não é 100%: o ranking vai considerar os pesos proporcionalmente, como se ${br(total, 1).replace(",0", "")}% fossem 100% (cada peso × ${br(100 / total, 3)}). Os valores digitados não mudam.`
+      : "— coloque peso em pelo menos uma métrica"} · ${n} métrica(s)</span>`;
   return { ok, total, n };
 }
 async function salvarModelo() {
@@ -4598,13 +4604,13 @@ async function salvarModelo() {
   const aviso = (t) => perguntar("Não deu para salvar", t, [{ rot: "OK", v: 1, classe: "prim" }]);
   if (!nome) { $("#rkmNome").focus(); return; }
   if (!n) return aviso("Ligue pelo menos uma métrica.");
-  if (!ok) return aviso("Os pesos das métricas ligadas precisam somar 100%.");
-  if (Object.values(rkMod.lin).some((l) => l.usar && !(Number(l.peso) > 0))) return aviso("Toda métrica ligada precisa de peso maior que zero (ou desligue a métrica).");
+  if (!(somaModelo().total > 0)) return aviso("Coloque peso maior que zero em pelo menos uma métrica.");
   const jm = Math.max(1, Math.min(120, Math.round(Number($("#rkmJm").value) || 12)));
   const pesos = {}, grupos = {};
-  for (const [k, l] of Object.entries(rkMod.lin)) if (l.usar) { pesos[k] = Number(l.peso) * (l.dir < 0 ? -1 : 1); grupos[k] = l.g; }
+  const dirs = {};
+  for (const [k, l] of Object.entries(rkMod.lin)) if (l.usar) { pesos[k] = (Number(l.peso) || 0) * (l.dir < 0 ? -1 : 1); grupos[k] = l.g; if (!(Number(l.peso) > 0)) dirs[k] = l.dir < 0 ? -1 : 1; }
   const id = rkMod.id || `c${Date.now().toString(36)}`, salvos = modelosSalvos();
-  salvos[id] = { nome, periodo: $("#rkmPeriodo").value, jmMeses: jm, bench: $("#rkmBench").value, pesos, grupos, ...($("#rkmJmProp").checked ? { jmProporcional: true } : {}) };
+  salvos[id] = { nome, periodo: $("#rkmPeriodo").value, jmMeses: jm, bench: $("#rkmBench").value, pesos, grupos, ...(Object.keys(dirs).length ? { dirs } : {}), ...($("#rkmJmProp").checked ? { jmProporcional: true } : {}) };
   salvar("modelosRank", salvos);
   mostrarTelaRk("modelos"); renderModelos();
 }

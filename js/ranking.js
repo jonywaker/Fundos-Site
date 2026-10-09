@@ -93,10 +93,13 @@ export function indiceObjetivo(txt) {
 // Opcional (M.jmProporcional): nas métricas de consistência da janela móvel (_jmPos, _jmBench), em vez da nota relativa,
 // pontos = peso × consistência × (janelas do fundo ÷ janelas do fundo com mais janelas) — fundo com histórico curto vale menos.
 export const METRICAS_JM = ["_jmPos", "_jmBench"];
+// Pesos que não somam 100 (ex.: uma métrica zerada): cada peso é escalado para a soma valer 100 (o valor digitado não muda).
+export const somaPesos = (pesos) => Object.values(pesos || {}).reduce((a, p) => a + Math.abs(Number(p) || 0), 0);
+export const escalaPesos = (pesos) => { const s = somaPesos(pesos); return s > 0 ? 100 / s : 0; };
 export function pontuar(itens, pesos, M = null) {
   const ks = Object.keys(pesos), lim = {};
   const ok = (x) => typeof x === "number" && Number.isFinite(x);
-  const prop = !!M?.jmProporcional, nMax = prop ? Math.max(0, ...itens.map((it) => it.v._jmN || 0)) : 0;
+  const prop = !!M?.jmProporcional, nMax = prop ? Math.max(0, ...itens.map((it) => it.v._jmN || 0)) : 0, escala = escalaPesos(pesos);
   for (const k of ks) {
     let a = Infinity, b = -Infinity;
     for (const it of itens) { const x = it.v[k]; if (ok(x)) { if (x < a) a = x; if (x > b) b = x; } }
@@ -112,7 +115,7 @@ export function pontuar(itens, pesos, M = null) {
         pJan = nMax > 0 ? (it.v._jmN || 0) / nMax : 0;
         if (ok(x)) nota = (p > 0 ? x : 1 - x) * pJan;                    // consistência × proporção de janelas
       } else if (L && ok(x)) nota = L[1] === L[0] ? 1 : p > 0 ? (x - L[0]) / (L[1] - L[0]) : (L[1] - x) / (L[1] - L[0]);
-      const pontos = nota * Math.abs(p);
+      const pontos = nota * Math.abs(p) * escala;                         // escala = 1 quando os pesos somam 100
       notas[k] = { nota, pontos, valor: ok(x) ? x : null, ...(pJan != null ? { pJan } : {}) };
       total += pontos; grupos[grupoMetrica(M, k)] = (grupos[grupoMetrica(M, k)] || 0) + pontos;
     }

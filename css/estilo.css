@@ -609,7 +609,8 @@ dialog.dlg-medio[open] { max-height: 92vh; }
 .rkm-tab td { white-space: normal; }
 .rkm-tab input[type=number] { width: 80px; text-align: right; font-weight: 700; }
 .rkm-tab select { min-width: 140px; }
-.rkm-tab tr.rkm-fora td { opacity: .55; }
+.rkm-tab tr.rkm-fora td, .rkm-tab tr.rkm-fora td select, .rkm-tab tr.rkm-fora td input { color: #626678; }      /* métrica desligada: cinza legível (contraste ≥ 4,5) */
+@media (prefers-color-scheme: dark) { .rkm-tab tr.rkm-fora td, .rkm-tab tr.rkm-fora td select, .rkm-tab tr.rkm-fora td input { color: var(--sub); } }
 .rkm-tab tr.rkm-fora td:first-child { opacity: 1; }
 .rkm-tab tr.rkm-usada td { background: color-mix(in srgb, var(--azul) 6%, var(--card)); }
 #rkComparar { min-width: 190px; }
