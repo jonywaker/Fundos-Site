@@ -913,3 +913,11 @@ button.fav:hover { color: var(--ouro); }
 /* painel do fundo: "Página do Hub ↗" no título do cartão da XP */
 .pf-sec h3 { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .pf-sec h3 .pf-hub { font: 700 12px Manrope, sans-serif; text-transform: none; letter-spacing: 0; white-space: nowrap; }
+
+/* painel do fundo: linha fina entre os itens (textos longos ficam fáceis de separar) */
+.pf-sec dl { row-gap: 0; }
+.pf-sec dt, .pf-sec dd { padding: 4px 0; border-bottom: 1px solid color-mix(in srgb, var(--ouro) 38%, transparent); }
+.pf-sec dt:last-of-type, .pf-sec dd:last-of-type { border-bottom: 0; }
+@media (prefers-color-scheme: dark) { .pf-sec dt, .pf-sec dd { border-bottom-color: color-mix(in srgb, var(--ouro) 28%, transparent); } }
+.pf-sec dl { column-gap: 0; }                 /* linha contínua: o espaço entre nome e valor vira margem interna */
+.pf-sec dt { padding-right: 12px; }
