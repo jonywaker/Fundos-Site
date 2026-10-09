@@ -3683,17 +3683,46 @@ function calculaveisXP(lista) {
   const ok = lista.filter((c) => { const f = st.porCnpj.get(c); return f && !f._soXP && f._dia && f._dia >= base - 30; });
   return { ok, fora: lista.length - ok.length };
 }
+// confirmação do cálculo da página XP: métricas e/ou um ranking (temporário) com os fundos escolhidos
 async function selecionarECalcular(lista, rotulo) {
   const { ok, fora } = calculaveisXP(lista);
   if (!ok.length) { await perguntar("Nenhum fundo para calcular", `${esc(rotulo)}: nenhum desses fundos tem cotas recentes na CVM.`, [{ rot: "OK", v: 1, classe: "prim" }]); return; }
+  const opModelos = Object.entries(modelos()).map(([k, M]) => `<option value="${esc(k)}"${k === (st.rkXPModelo || "MM") ? " selected" : ""}>${esc(M.nome)}</option>`).join("");
   const r = await perguntar(`Calcular ${ok.length} fundo(s)?`, `<b>${esc(rotulo)}</b>: ${ok.length} fundo(s) com cotas recentes na CVM` +
-    (fora ? ` (${fora} ficam de fora: sem dados na CVM ou sem cota nos últimos 30 dias)` : "") + `.<br>A seleção atual (${st.sel.length}) será substituída.` +
-    (ok.length > 150 ? "<br>Com muitos fundos o cálculo pode levar alguns minutos na primeira vez (depois fica guardado neste computador)." : ""),
+    (fora ? ` (${fora} ficam de fora: sem dados na CVM ou sem cota nos últimos 30 dias)` : "") + "." +
+    `<div class="xp-calc-op">
+      <label class="tog"><input type="checkbox" id="xpOpMet" checked> <span><b>Calcular as métricas</b> — tabela, gráficos e gráfico de quadrantes (substitui a seleção atual de ${st.sel.length} fundo(s))</span></label>
+      <label class="tog"><input type="checkbox" id="xpOpRk"${st.rkXPMarcado ? " checked" : ""}> <span><b>Calcular um ranking</b> com estes fundos (as pontuações entram no gráfico de quadrantes)</span></label>
+      <label class="xp-calc-mod" id="xpOpModBox"${st.rkXPMarcado ? "" : " hidden"}>Tipo de cálculo do ranking <select id="xpOpModelo">${opModelos}</select></label>
+    </div>` + (ok.length > 150 ? `<p class="nota">Com muitos fundos o cálculo pode levar alguns minutos na primeira vez (depois fica guardado neste computador).</p>` : ""),
     [{ rot: "Cancelar", v: false }, { rot: "Calcular", v: true, classe: "prim" }]);
   if (!r) return;
-  st.sel = []; adicionar(ok); atualizarSidebar(); atualizarXPSelInfo();
-  calcular();
+  const met = $("#xpOpMet").checked, rk = $("#xpOpRk").checked, modelo = $("#xpOpModelo").value;
+  if (!met && !rk) return;
+  st.rkXPMarcado = rk; if (rk) st.rkXPModelo = modelo;
+  if (met) { st.sel = []; adicionar(ok); atualizarSidebar(); atualizarXPSelInfo(); await calcular(); }
+  if (rk) {
+    await calcularRankingXP(ok, modelo);
+    if (st.ctx && st.roaEixo === "sharpe") st.roaEixo = "rkTotal";            // para já cruzar o ROA com a pontuação
+    renderROA();
+  }
 }
+// ranking temporário "⚡ Seleção Fundos XP": não fica salvo; aparece também na página de Rankings
+const NOME_RK_XP = "⚡ Seleção Fundos XP";
+const rankingXP = () => st.rk?.lista.find((x) => x._xp) || null;
+async function calcularRankingXP(cnpjs, modelo) {
+  abrirCarga(cnpjs); $("#cargaTit").textContent = `Ranking: carregando ${cnpjs.length} fundo(s)`;
+  try {
+    const fundos = await D.carregarFundos(cnpjs, st.idx.cdiAnterior, (feitos, total, ev) => atualizarCarga(feitos, total, ev));
+    faseCarga(`calculando o ranking (${modeloDe(modelo).nome})…`, 95); await pausa();
+    const R = montarRanking(NOME_RK_XP, { modelo, cnpjs }, fundos); R._xp = true;
+    const todos = new Map(st.rk?.fundos || []); for (const [c, f] of fundos) todos.set(c, f);
+    st.rk = { lista: [R, ...(st.rk?.lista || []).filter((x) => !x._xp)], fundos: todos, ativo: 0 }; semZoom("gRkJM");
+    renderRankings(); renderCarteira(); fecharCarga(); atualizarEspaco();
+    st.rkXPAviso = `Ranking "${R.nome}" calculado com ${R.ordem.length} fundo(s) (${R.M.nome}); veja também na página Rankings.`;
+  } catch (e) { console.error(e); fecharCarga(e.message); }
+}
+document.addEventListener("change", (e) => { if (e.target.id === "xpOpRk") $("#xpOpModBox").hidden = !e.target.checked; });
 document.addEventListener("click", (e) => {
   const a = e.target.closest?.("[data-acao-sel]"); if (a) { $("#" + a.dataset.acaoSel).click(); return; }
   if (e.target.closest?.("#xpCalcTodos")) { selecionarECalcular([...st.xp.keys()], "Todos os fundos da XP"); return; }
@@ -3723,6 +3752,19 @@ const ROA_MENOR_MELHOR = new Set(["Volatilidade", "No. de estouros", "Duração 
   "Maior Período em Dias Underwater", "Períodos 21d-30d", "Períodos 31d-60d", "Períodos 61d-90d", "Períodos 91d-120d", "Períodos acima de 120d", "Beta"]);
 const ROA_FORA = new Set(["Cota Inicial", "Cota Final", "Poço", "Máxima anterior", "Sharpe Anualizado", "Índice de Dor"]);    // níveis de cota e as que já têm atalho
 const ROA_GRUPOS = { Rentabilidade: "Rentabilidade", VaR: "Risco · VaR", Risco: "Risco", MDD: "Drawdown", Underwater: "Underwater", IBOV: "Contra o IBOV", Outras: "Outras métricas", "Captação": "Captação" };
+// pontuações do ranking calculado na página XP (0 a 100 na geral; pontos por grupo)
+function eixosRankingXP() {
+  const R = rankingXP(); if (!R) return {};
+  const por = new Map(R.ordem.map((x) => [x.id, x])), g = `Ranking · ${R.M.nome}`;
+  const um = (titulo, curto, f, melhor = 1, fmt = (v) => br(v, 1)) => ({ titulo, curto, melhor, grupo: g, bom: "", ruim: "", fmt, fem: true, valor: (l) => { const x = por.get(l._c); return x ? f(x) : null; } });
+  return {
+    rkTotal: um("Pontuação geral do ranking (0 a 100)", "pontuação geral", (x) => x.total),
+    rkPerf: um("Pontuação de performance", "pontuação de performance", (x) => x.grupos.Performance),
+    rkCons: um("Pontuação de consistência", "pontuação de consistência", (x) => x.grupos["Consistência"]),
+    rkRisco: um("Pontuação de risco", "pontuação de risco", (x) => x.grupos.Risco),
+    rkPos: um("Posição no ranking (1 = melhor)", "posição no ranking", (x) => x.pos, -1, (v) => `${br(v, 0)}º`),
+  };
+}
 function eixosROA() {
   const fmtT = { pct: (v) => brPct(v, 2), num: (v) => br(v, 2), num2: (v) => br(v, 2), int: (v) => br(v, 0), valor: (v) => (Math.abs(v) >= 1e6 ? `R$ ${br(v / 1e6, 1)} mi` : `R$ ${br(v / 1e3, 0)} mil`) };
   const xp = (titulo, curto, melhor, chave, fmt, div = 1) => ({ titulo, curto, melhor, grupo: "Dados da XP", bom: `${curto} ${melhor > 0 ? "alto" : "baixo"}`, ruim: `${curto} ${melhor > 0 ? "baixo" : "alto"}`,
@@ -3735,6 +3777,7 @@ function eixosROA() {
     taxaPerf: xp("Taxa de performance (%)", "taxa de perf.", -1, "Taxa perf.", (v) => brPct(v, 0), 100),
     minimo: xp("Aplicação mínima (R$)", "aplicação mínima", -1, "Aplicação mín.", (v) => `R$ ${br(v, 0)}`),
     jm: { ...EIXOS_ROA.jm, grupo: "Janela móvel" },
+    ...eixosRankingXP(),
     volCli: { titulo: "Volume dos clientes (R$, escala logarítmica)", curto: "volume dos clientes", melhor: 1, grupo: "Clientes", bom: "volume alto", ruim: "volume baixo", log: true,
       fmt: (v) => (v >= 1e6 ? `R$ ${br(v / 1e6, v >= 1e7 ? 0 : 1)} mi` : `R$ ${br(v / 1e3, 0)} mil`), valor: (l, q) => (q["Volume clientes"] > 0 ? q["Volume clientes"] : null) },
     qtdCli: { titulo: "Quantidade de clientes (escala logarítmica)", curto: "quantidade de clientes", melhor: 1, grupo: "Clientes", bom: "muitos clientes", ruim: "poucos clientes", log: true,
@@ -3795,7 +3838,7 @@ function renderROA() {
   // quadrantes nas medianas; numeração cartesiana (1 = superior direito, sentido anti-horário)
   const medX = mediana(pts.map((p) => p.x)), medY = mediana(pts.map((p) => p.y)), cont = { 1: 0, 2: 0, 3: 0, 4: 0 };
   for (const p of pts) { const xa = p.x > medX, ya = p.y > medY; cont[xa ? (ya ? 1 : 4) : (ya ? 2 : 3)]++; }
-  const lado = (E, alto) => `${E.curto} ${alto ? "alto" : "baixo"}`, qual = (xa, ya) => (xa === (EX.melhor >= 0)) + (ya === (EY.melhor >= 0));
+  const lado = (E, alto) => `${E.curto} ${alto ? (E.fem ? "alta" : "alto") : (E.fem ? "baixa" : "baixo")}`, qual = (xa, ya) => (xa === (EX.melhor >= 0)) + (ya === (EY.melhor >= 0));
   const rot = {}, verde = [], vermelho = [];
   for (const [n, xa, ya] of [[1, true, true], [2, false, true], [3, false, false], [4, true, false]]) {
     const qq = qual(xa, ya); rot[n] = `${n} · ${qq === 2 ? "✓ " : qq === 0 ? "✗ " : ""}${lado(EY, ya)} · ${lado(EX, xa)}`;
@@ -3806,7 +3849,8 @@ function renderROA() {
     (quad ? ` · medianas: ${esc(EY.curto)} <b>${esc(EY.fmt(medY))}</b> · ${esc(EX.curto)} <b>${esc(EX.fmt(medX))}</b> —
       ${[1, 2, 3, 4].map((n) => `<span class="roa-q${verde.includes(n) ? " bom" : vermelho.includes(n) ? " ruim" : ""}">Q${n}: ${cont[n]}</span>`).join(" · ")}` : "") +
     esc((semCli ? ` · ${semCli} sem clientes (ocultos)` : "") + (semY ? ` · ${semY} sem ${EY.curto}` : "") + (semX ? ` · ${semX} sem ${EX.curto}` : "") +
-      ([st.roaEixo, st.eixoY].includes("jm") && !st.res?.jm ? " · calcule a janela móvel na seção abaixo para ver a mediana" : "") + ". Arraste ou use a lupa para dar zoom.");
+      ([st.roaEixo, st.eixoY].includes("jm") && !st.res?.jm ? " · calcule a janela móvel na seção abaixo para ver a mediana" : "") + ". Arraste ou use a lupa para dar zoom.") +
+    (rankingXP() ? ` <span class="nota">🏆 ${esc(st.rkXPAviso || "")}</span>` : "");
   // marcas dos eixos: percentuais com casas conforme o espaçamento (não repete rótulos com valores pequenos ou com zoom)
   const tick = (E) => (E.pct ? (v, i, ticks) => { const passo = ticks?.length > 1 ? Math.abs(ticks[1].value - ticks[0].value) * 100 : 0.01;
     return brPct(v, Math.min(4, Math.max(E.zeroMin ? 2 : 1, Math.ceil(-Math.log10(passo || 0.01))))); } : E.fmt);

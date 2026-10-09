@@ -921,3 +921,9 @@ button.fav:hover { color: var(--ouro); }
 @media (prefers-color-scheme: dark) { .pf-sec dt, .pf-sec dd { border-bottom-color: color-mix(in srgb, var(--ouro) 28%, transparent); } }
 .pf-sec dl { column-gap: 0; }                 /* linha contínua: o espaço entre nome e valor vira margem interna */
 .pf-sec dt { padding-right: 12px; }
+
+/* opções do cálculo da página XP */
+.xp-calc-op { display: grid; gap: 8px; margin: 12px 0 4px; padding: 10px 12px; border: 1px solid var(--borda); border-radius: 10px; }
+.xp-calc-op .tog { align-items: flex-start; } .xp-calc-op .tog span { line-height: 1.4; }
+.xp-calc-mod { display: flex; align-items: center; gap: 8px; padding-left: 46px; font-weight: 700; font-size: 13px; }
+.xp-calc-mod[hidden] { display: none; }
