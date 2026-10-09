@@ -3463,7 +3463,7 @@ function abrirPainelFundo(c, onde = "analise") {
   $("#pfTit").textContent = nomeXP || l.Fundo;
   $("#pfSub").innerHTML = `${nomeXP ? `CVM: ${esc(l.Fundo)} · ` : ""}CNPJ ${esc(l.CNPJ || cnpjFmt(c))} · ${esc(fonte.rotulo)} (${esc(fmtData(fonte.dIni))} a ${esc(fmtData(fonte.dFim))})` +
     (fonte.extra ? `<br><b>${esc(fonte.extra)}</b>` : "");
-  $("#pfSelos").innerHTML = q._naXP ? `${cadeado(q["Captação"], q._motivoFechado)}${dinheiroNovo(q._dinheiroNovo)} ${badgeInv(q.Investidor)}${q._hubId ? ` <a class="hub-link" href="${URL_HUB(q._hubId)}" target="_blank" rel="noopener noreferrer">↗ Hub</a>` : ""}` : "";
+  $("#pfSelos").innerHTML = q._naXP ? `${cadeado(q["Captação"], q._motivoFechado)}${dinheiroNovo(q._dinheiroNovo)} ${badgeInv(q.Investidor)}` : "";
   const kpi = (rot, v, t = "pct", nome = "") => `<div class="kpi"><div class="l">${rot}</div><div class="v">${valorPF(t, v, nome)}</div></div>`;
   const kpis = `<div class="kpis pf-kpis">${kpi("Acumulado", l["% Acumulado"])}${kpi("Ao ano", l["% Anualizado"])}${kpi("% do CDI", l["%CDI"])}${kpi("Volatilidade", l.Volatilidade, "pct", "Volatilidade")}${kpi("Sharpe", l["Sharpe Anualizado"], "num2")}${kpi("Maior queda", l.Queda)}</div>`;
   // gráficos do período (mesma função dos outros gráficos: zoom de arrastar, lupa e valor ao passar o mouse)
@@ -3487,12 +3487,13 @@ function abrirPainelFundo(c, onde = "analise") {
   }
   const tipos = Object.fromEntries(COLUNAS.map(([g, n, t]) => [n, [g, t]]));
   const itens = (filtro) => COLUNAS.filter(([g, n]) => filtro(g, n)).map(([, n, t]) => [n, valorPF(t, n === "Objetivo de retorno" && l[n] === "N/D" ? null : l[n], n)]);
-  const bloco = (titulo, pares, classe = "") => `<section class="pf-sec ${classe}"><h3>${esc(titulo)}</h3><dl>${pares.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${v}</dd>`).join("")}</dl></section>`;
+  const bloco = (titulo, pares, classe = "", extra = "") => `<section class="pf-sec ${classe}"><h3>${esc(titulo)}${extra}</h3><dl>${pares.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${v}</dd>`).join("")}</dl></section>`;
   const cadExtra = [["Gestor", esc(cad.GESTOR || "–")], ["Administrador", esc(cad.ADMINISTRADOR || "–")], ["Situação na CVM", esc(cad.SITUACAO || "–")],
     ["Público-alvo (CVM)", esc(cad.PUBLICO_ALVO || "–")], ["PL mais recente", cad.VL_PATRIM_LIQ != null ? `R$ ${br(cad.VL_PATRIM_LIQ / 1e6, 1)} mi` : "–"]];
   const secoes = [bloco("Cadastro", [...itens(PF_SECOES[0][1]), ...cadExtra], "pf-cad")];
   if (q._naXP) {
     const R$ = (v, d = 0) => (v != null ? `R$ ${br(v, d)}` : "–"), txt = (v) => esc(v || "–");
+    const linkHub = q._hubId ? `<a class="hub-link pf-hub" href="${URL_HUB(q._hubId)}" target="_blank" rel="noopener noreferrer" title="Abrir a página do fundo no Hub XP">Página do Hub ↗</a>` : "";
     secoes.push(bloco("XP · confidencial", [["Nome comercial", txt(q["XP Nome"])], ["Categoria XP", txt(q.Categoria)], ["Classificação XP", txt(q["Classificação XP"])],
       ["Gestora", txt(q.Gestora)], ["Investidor", (badgeInv(q.Investidor) || "–") + (q._publicoDiverge ? ` <span class="xp-aviso-pub" title="O público-alvo escrito pela XP é diferente das marcações de qualificado/profissional">⚠ ${esc(q["Público-alvo"])}</span>` : "")],
       ["Captação", `${cadeado(q["Captação"], q._motivoFechado)} ${esc(q["Captação"] || "")}${q._motivoFechado ? ` <small class="nota">(${esc(q._motivoFechado)})</small>` : ""}`],
@@ -3506,7 +3507,7 @@ function abrirPainelFundo(c, onde = "analise") {
       ["Aplicação mínima inicial", R$(q["Aplicação mín."])], ["Aplicação adicional mínima", R$(q["Aplicação adicional"])],
       ["Resgate mínimo", R$(q["Resgate mínimo"])], ["Saldo mínimo de permanência", R$(q["Saldo de permanência"])], ["IOF", txt(q.IOF)],
       ["Clientes no fundo", q.Clientes != null ? `${br(q.Clientes, 0)} cliente(s) · ${q["Volume clientes"] != null ? `R$ ${br(q["Volume clientes"] / 1e6, 2)} mi` : "–"}` : "–"],
-      ["Na lista da rede", txt(q["Na lista da rede"])], ["Administradora (XP)", txt(q.Administradora)], ["Custodiante", txt(q.Custodiante)], ["Auditoria", txt(q.Auditoria)]], "pf-xp"));
+      ["Na lista da rede", txt(q["Na lista da rede"])], ["Administradora (XP)", txt(q.Administradora)], ["Custodiante", txt(q.Custodiante)], ["Auditoria", txt(q.Auditoria)]], "pf-xp", linkHub));
     if (q.Objetivo || q["Política"] || q._docs?.length) secoes.push(`<section class="pf-sec pf-xp pf-textos"><h3>Objetivo, política e documentos (XP)</h3>
       ${q._docs?.length ? `<div class="pf-docs">${q._docs.map((d) => `<a class="hub-link" href="${esc(d.url)}" target="_blank" rel="noopener noreferrer">📄 ${esc(d.rot)}</a>`).join("")}</div>` : ""}
       ${q.Objetivo ? `<h4>Objetivo</h4><p class="pf-longo">${esc(q.Objetivo)}</p>` : ""}${q["Política"] ? `<h4>Política de gestão</h4><p class="pf-longo">${esc(q["Política"])}</p>` : ""}</section>`);

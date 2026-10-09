@@ -909,3 +909,7 @@ tr.sv-linha-equipe td { background: color-mix(in srgb, #b7791f 4%, var(--card));
 button.fav { border: 0; background: none; cursor: pointer; font-size: 16px; line-height: 1; padding: 0 4px 0 0; color: var(--sub); vertical-align: -1px; }
 button.fav[aria-pressed=true] { color: var(--ouro); }
 button.fav:hover { color: var(--ouro); }
+
+/* painel do fundo: "Página do Hub ↗" no título do cartão da XP */
+.pf-sec h3 { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.pf-sec h3 .pf-hub { font: 700 12px Manrope, sans-serif; text-transform: none; letter-spacing: 0; white-space: nowrap; }
