@@ -6,7 +6,7 @@ import { INDICES, corIndice, nomeIndice, serieIndice, retornoVol, nivelEm } from
 import { janelaMovel, resumoJanela, retornosFundo, retornosDiarios, matrizCorrelacao } from "./analises.js";
 import { simularCarteira, estatisticas, curvaDrawdown } from "./carteira.js";
 import { EQUIPE_URL } from "./config.js";
-import { GRUPOS_RANK, METRICAS_RANK, metricaRank, grupoMetrica, MODELOS_RANK, JM_ANOS, indiceObjetivo, pontuar, ordenarRanking, COMPARACOES, ROTULO_VAR, dataComparacao } from "./ranking.js";
+import { GRUPOS_RANK, METRICAS_RANK, metricaRank, grupoMetrica, MODELOS_RANK, JM_ANOS, indiceObjetivo, pontuar, ordenarRanking, COMPARACOES, ROTULO_VAR, dataComparacao, METRICAS_JM } from "./ranking.js";
 
 // ============================== CONFIGURAÇÃO (único lugar para editar) ==============================
 const HF_REPO = "Shote/fundos-cvm";
@@ -4221,6 +4221,7 @@ function rodarRanking(M, itens, fim, detalhe) {
     const v = {};
     for (const k of Object.keys(M.pesos)) v[k] = k === "_objetivo" ? obj : k === "_jmPos" ? rs?.pPositivas ?? null : k === "_jmBench" ? rs?.pAcima ?? null
       : typeof r[k] === "number" && Number.isFinite(r[k]) ? r[k] : null;
+    v._jmN = rs?.total || 0;                                              // quantidade de janelas (opção "consistência × janelas")
     linhas.push({ c, cad, r, obj, kObj, v, rs, jm: detalhe ? jm : null, curto: r["Data Inicial"] - inicioPer > 31 });
   }
   const porId = new Map(linhas.map((l) => [l.c, l]));
@@ -4365,13 +4366,15 @@ function renderRkPontos() {
   const colunas = [{ chave: "pos", nome: "Pos.", tipo: "int", g: "Ranking", html: posHTML }, { chave: "Fundo", nome: "Fundo", tipo: "txt", g: "Ranking", html: (v, l) => `<span class="lk-fundo" tabindex="0" role="button" data-mini="${esc(l._c)}">${esc(v)}</span>` },
     { chave: "total", nome: "Pontuação", tipo: "num2", g: "Ranking", html: (v) => `<b>${br(v, 2)}</b>` },
     ...GRUPOS_RANK.map((g) => ({ chave: `g:${g}`, nome: g, tipo: "num2", g: "Pontos por grupo", html: (v) => br(v, 2) })),
-    ...ks.flatMap((k) => { const m = metricaRank(k), p = R.M.pesos[k], gnome = `${m.nome} · peso ${Math.abs(p)} · ${p > 0 ? "maior é melhor" : "menor é melhor"}`;
-      return [{ chave: `v:${k}`, nome: "Valor", tipo: m.tipo, g: gnome, html: fmtValor(m) },
-        { chave: `n:${k}`, nome: "Nota (0 a 1)", tipo: "num2", g: gnome, html: (v) => br(v, 2) },
+    ...ks.flatMap((k) => { const m = metricaRank(k), p = R.M.pesos[k], prop = R.M.jmProporcional && METRICAS_JM.includes(k);
+      const gnome = `${m.nome} · peso ${Math.abs(p)} · ${prop ? "consistência × janelas" : p > 0 ? "maior é melhor" : "menor é melhor"}`;
+      return [{ chave: `v:${k}`, nome: "Valor", tipo: m.tipo, g: gnome,
+          html: prop ? (v, l) => `${fmtValor(m)(v)}${l[`j:${k}`] != null ? ` <small class="nota" title="Janelas deste fundo em relação ao fundo com mais janelas">× ${br(l[`j:${k}`] * 100, 0)}% das janelas</small>` : ""}` : fmtValor(m) },
+        { chave: `n:${k}`, nome: prop ? "Nota (consist. × janelas)" : "Nota (0 a 1)", tipo: "num2", g: gnome, html: (v) => br(v, 2) },
         { chave: `p:${k}`, nome: `Pontos (de ${Math.abs(p)})`, tipo: "num2", g: gnome, html: (v) => `<b>${br(v, 2)}</b>` }]; })];
   const linhas = ordenar(fundosVisiveis(R).map((x) => ({ _c: x.id, pos: x.pos, Fundo: nomeRk(R, x.id), CNPJ: cnpjFmt(x.id), total: x.total,
     ...Object.fromEntries(GRUPOS_RANK.map((g) => [`g:${g}`, x.grupos[g]])),
-    ...Object.fromEntries(ks.flatMap((k) => [[`v:${k}`, x.notas[k].valor], [`n:${k}`, x.notas[k].nota], [`p:${k}`, x.notas[k].pontos]])) })), "rkPts", colunas);
+    ...Object.fromEntries(ks.flatMap((k) => [[`v:${k}`, x.notas[k].valor], [`n:${k}`, x.notas[k].nota], [`p:${k}`, x.notas[k].pontos], [`j:${k}`, x.notas[k].pJan ?? null]])) })), "rkPts", colunas);
   $("#rkPontos").innerHTML = tabelaHTML({ colunas, linhas, fixas: 2, larguras: [52, 240], grupos: colunas.map((c) => c.g), ordenavel: "rkPts", altura: 520, centralizar: true,
     destacar: linhas.map((l) => casa(st.destaque, l.Fundo, l.CNPJ)), classes: linhas.map((l) => classeMedalha(l.pos)) });
 }
@@ -4547,20 +4550,21 @@ function mostrarTelaRk(qual) { for (const [id, k] of [["#rkListaBox", "lista"], 
 function usosModelo() { const u = {}; for (const [n, x] of Object.entries(lerRankings())) (u[x.modelo] ||= []).push(n); return u; }
 function renderModelos() {
   const salvos = modelosSalvos(), usos = usosModelo();
-  $("#rkModLista").innerHTML = `<table class="tb gr-tab"><thead><tr><th class="t">Tipo de cálculo</th><th class="t">Métricas e janela</th><th class="t">Performance · Consistência · Risco</th>
+  $("#rkModLista").innerHTML = `<div class="rkm-rola"><table class="tb gr-tab rkm-lista"><thead><tr><th class="t">Tipo de cálculo</th><th class="t">Métricas e janela</th><th class="t">Performance · Consistência · Risco</th>
     <th class="t">Origem</th><th class="t">Usado em</th><th><span class="sr-only">Ações</span></th></tr></thead><tbody>${Object.entries(modelos()).map(([id, M]) => {
       const g = gruposPesosRk(M), padrao = !!MODELOS_RANK[id], editado = padrao && !!salvos[id];
-      return `<tr><td class="t"><b>${esc(M.nome)}</b></td><td class="t">${esc(M.periodo)} · janela ${M.jmMeses}m vs ${esc(nomeIndice(M.bench))} · ${Object.keys(M.pesos).length} métricas</td>
+      return `<tr><td class="t"><b>${esc(M.nome)}</b></td><td class="t quebra">${esc(M.periodo)} · janela ${M.jmMeses}m vs ${esc(nomeIndice(M.bench))} · ${Object.keys(M.pesos).length} métricas${M.jmProporcional ? ` · <span class="rkm-prop" title="Consistência da janela móvel ponderada pela quantidade de janelas de cada fundo">consistência × janelas</span>` : ""}</td>
         <td class="t">${g.map((x) => `<span class="rkm-chip" style="border-color:${CORES_GRUPO[x.g]}">${brPct(x.total, 0)}</span>`).join(" ")}</td>
-        <td class="t">${padrao ? (editado ? "padrão (editado)" : "padrão") : "criado por você"}</td><td class="t">${esc((usos[id] || []).join(", ") || "–")}</td>
+        <td class="t">${padrao ? (editado ? "padrão (editado)" : "padrão") : "criado por você"}</td><td class="t quebra">${esc((usos[id] || []).join(", ") || "–")}</td>
         <td class="gr-acoes"><button class="sec mini-btn" data-rkm-ed="${id}" type="button">Editar</button>
           <button class="sec mini-btn" data-rkm-dup="${id}" type="button">Duplicar</button>
           ${editado ? `<button class="sec mini-btn" data-rkm-orig="${id}" type="button" title="Desfaz as edições deste tipo padrão">Voltar ao original</button>` : ""}
-          ${padrao ? "" : `<button class="cart-rm" data-rkm-del="${id}" type="button" title="Excluir tipo de cálculo">🗑</button>`}</td></tr>`; }).join("")}</tbody></table>`;
+          ${padrao ? "" : `<button class="cart-rm" data-rkm-del="${id}" type="button" title="Excluir tipo de cálculo">🗑</button>`}</td></tr>`; }).join("")}</tbody></table></div>`;
 }
 function abrirEditorModelo(id = null, duplicar = false) {
   const M = id ? modeloDe(id) : null;
   Object.assign(rkMod, { id: duplicar ? null : id, nome: M ? (duplicar ? `${M.nome} (cópia)` : M.nome) : "", periodo: M?.periodo || "36 Meses", jm: M?.jmMeses || 36, bench: M?.bench || "CDI", lin: {} });
+  $("#rkmJmProp").checked = !!M?.jmProporcional;
   for (const m of METRICAS_RANK) { const p = M?.pesos[m.k]; rkMod.lin[m.k] = { usar: p != null, peso: p != null ? Math.abs(p) : 0, dir: p != null ? Math.sign(p) : m.dir, g: grupoMetrica(M, m.k) }; }
   $("#rkmNome").value = rkMod.nome; $("#rkmPeriodo").value = rkMod.periodo; $("#rkmJm").value = rkMod.jm;
   $("#rkmBench").innerHTML = st.idx.disponiveis.map((k) => `<option value="${k}"${k === rkMod.bench ? " selected" : ""}>${esc(nomeIndice(k))}</option>`).join("");
@@ -4598,7 +4602,7 @@ async function salvarModelo() {
   const pesos = {}, grupos = {};
   for (const [k, l] of Object.entries(rkMod.lin)) if (l.usar) { pesos[k] = Number(l.peso) * (l.dir < 0 ? -1 : 1); grupos[k] = l.g; }
   const id = rkMod.id || `c${Date.now().toString(36)}`, salvos = modelosSalvos();
-  salvos[id] = { nome, periodo: $("#rkmPeriodo").value, jmMeses: jm, bench: $("#rkmBench").value, pesos, grupos };
+  salvos[id] = { nome, periodo: $("#rkmPeriodo").value, jmMeses: jm, bench: $("#rkmBench").value, pesos, grupos, ...($("#rkmJmProp").checked ? { jmProporcional: true } : {}) };
   salvar("modelosRank", salvos);
   mostrarTelaRk("modelos"); renderModelos();
 }

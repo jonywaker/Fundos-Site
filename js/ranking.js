@@ -90,9 +90,13 @@ export function indiceObjetivo(txt) {
  * Devolve, por item: { id, total (0 a 100), grupos: { Performance, Consistência, Risco }, notas: { métrica: { nota 0..1, pontos } } }.
  * Sem valor numa métrica = 0 ponto nela. Se todos os fundos têm o mesmo valor, todos recebem nota 1.
  */
+// Opcional (M.jmProporcional): nas métricas de consistência da janela móvel (_jmPos, _jmBench), em vez da nota relativa,
+// pontos = peso × consistência × (janelas do fundo ÷ janelas do fundo com mais janelas) — fundo com histórico curto vale menos.
+export const METRICAS_JM = ["_jmPos", "_jmBench"];
 export function pontuar(itens, pesos, M = null) {
   const ks = Object.keys(pesos), lim = {};
   const ok = (x) => typeof x === "number" && Number.isFinite(x);
+  const prop = !!M?.jmProporcional, nMax = prop ? Math.max(0, ...itens.map((it) => it.v._jmN || 0)) : 0;
   for (const k of ks) {
     let a = Infinity, b = -Infinity;
     for (const it of itens) { const x = it.v[k]; if (ok(x)) { if (x < a) a = x; if (x > b) b = x; } }
@@ -103,10 +107,13 @@ export function pontuar(itens, pesos, M = null) {
     let total = 0;
     for (const k of ks) {
       const p = pesos[k], x = it.v[k], L = lim[k];
-      let nota = 0;
-      if (L && ok(x)) nota = L[1] === L[0] ? 1 : p > 0 ? (x - L[0]) / (L[1] - L[0]) : (L[1] - x) / (L[1] - L[0]);
+      let nota = 0, pJan = null;
+      if (prop && METRICAS_JM.includes(k)) {
+        pJan = nMax > 0 ? (it.v._jmN || 0) / nMax : 0;
+        if (ok(x)) nota = (p > 0 ? x : 1 - x) * pJan;                    // consistência × proporção de janelas
+      } else if (L && ok(x)) nota = L[1] === L[0] ? 1 : p > 0 ? (x - L[0]) / (L[1] - L[0]) : (L[1] - x) / (L[1] - L[0]);
       const pontos = nota * Math.abs(p);
-      notas[k] = { nota, pontos, valor: ok(x) ? x : null };
+      notas[k] = { nota, pontos, valor: ok(x) ? x : null, ...(pJan != null ? { pJan } : {}) };
       total += pontos; grupos[grupoMetrica(M, k)] = (grupos[grupoMetrica(M, k)] || 0) + pontos;
     }
     return { id: it.id, total, grupos, notas };

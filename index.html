@@ -536,6 +536,9 @@
       <label><span>Janela móvel (meses)</span><input id="rkmJm" type="number" min="1" max="120" step="1"></label>
       <label><span>Benchmark da janela móvel</span><select id="rkmBench"></select></label>
     </div>
+    <label class="tog rkm-prop-op"><input id="rkmJmProp" type="checkbox"> <span><b>Ponderar a consistência da janela móvel pela quantidade de janelas</b> — nas métricas
+      "Rentabilidade positiva" e "acima do benchmark" na janela móvel: pontos = peso × consistência × (janelas do fundo ÷ janelas do fundo com mais janelas).
+      Um fundo mais novo, com menos janelas, ganha menos pontos (ex.: 30 janelas de 100 com 100% de consistência = 0,3 do peso).</span></label>
     <div id="rkmSoma" class="rkm-soma"></div>
     <div id="rkmMetricas" class="dlg-tab"></div>
     <div class="dlg-pe"><span class="nota">Ligue as métricas que entram, escolha o grupo, o peso e se é melhor ter valor maior ou menor. Os pesos precisam somar 100.</span>
