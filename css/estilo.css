@@ -936,3 +936,7 @@ button.fav:hover { color: var(--ouro); }
 .xp-calc-mod select { flex: 1 1 200px; min-width: 0; max-width: 100%; }
 #dlgPergunta { max-width: min(560px, 94vw); }
 #pergTexto { overflow-wrap: anywhere; }
+
+#rkDestaque { min-width: 200px; }
+.rk-dest-aviso { border-left: 3px solid var(--ouro); padding: 4px 10px; background: color-mix(in srgb, var(--ouro) 10%, var(--card)); border-radius: 0 8px 8px 0; color: var(--txt); }
+.rk-dest-aviso[hidden] { display: none; }

@@ -1052,9 +1052,9 @@ const rotulos = { id: "rotulos", afterDatasetsDraw(ch) {
 
 // linhas no tempo. s.bench = tracejada; s.fraca = fina e clara (ativos da carteira); s.forte = grossa (carteira)
 function grafico(id, series, { fmtY = (v) => brPct(v, 1), ref = null, xMin, xMax, tituloX = fmtData } = {}) {
-  const algum = series.some((s) => !s.bench && !s.forte && casa(st.destaque, s.nome));
+  const algum = series.some((s) => !s.bench && !s.forte && casa(st.destaque, s.nome, ...(s.busca || [])));
   const datasets = series.map((s) => {
-    const ativo = !algum || s.bench || s.forte || casa(st.destaque, s.nome);
+    const ativo = !algum || s.bench || s.forte || casa(st.destaque, s.nome, ...(s.busca || []));
     const cor = s.cor + (!ativo ? "22" : s.fraca ? "88" : "");
     return { label: s.nome, data: s.x.map((x, i) => ({ x, y: s.y[i] })), borderColor: cor, backgroundColor: cor,
       borderWidth: s.forte ? 3.2 : s.fraca ? 1.1 : algum && ativo && !s.bench ? 3 : 1.4, borderDash: s.bench ? [6, 4] : [], pointRadius: 0,
@@ -4279,8 +4279,9 @@ function renderRankings() {
   $("#rkPills").innerHTML = st.rk.lista.map((R, i) => `<button data-rk-pill="${i}" aria-pressed="${i === st.rk.ativo}">${esc(R.nome)}</button>`).join("");
   aplicarMinimizados();
   renderRkTudo();
+  avisoDestaqueRk();
 }
-function renderRkTudo() { renderRkBotao(); renderRkTabela(); renderRkPontos(); renderRkJM(); renderRkCorr(); renderRkPesos(); }
+function renderRkTudo() { renderRkBotao(); renderRkTabela(); renderRkPontos(); renderRkJM(); renderRkCorr(); renderRkPesos(); avisoDestaqueRk(); }
 function renderRkBotao() {                       // botão da barra fixa (acompanha a rolagem) e o de baixo da tabela
   const R = rkAtivo(), n = R?.ordem.length || 0, todos = !!st.rkTodos;
   for (const b of $$(".rk-alterna")) {
@@ -4379,13 +4380,17 @@ function topRk(R) { return R.ordem.slice(0, TOP_RANK); }
 function seriesJMRk(R, lista) {
   const cores = coresRk(R);
   return lista.filter((x) => x.l.jm?.length).map((x) => { const v = x.l.jm.filter((j) => j.dif != null);
-    return { nome: `${x.pos}. ${nomeRk(R, x.id)}`, c: x.id, pos: x.pos, cor: cores[x.id], x: v.map((j) => j.ini), y: v.map((j) => j.dif), forte: x.pos <= 3, fraca: x.pos > 3 }; });
+    const q = st.xp ? camposXP(x.id) : {};
+    return { nome: `${x.pos}. ${nomeRk(R, x.id)}`, c: x.id, pos: x.pos, cor: cores[x.id], x: v.map((j) => j.ini), y: v.map((j) => j.dif), forte: x.pos <= 3, fraca: x.pos > 3,
+      busca: [cnpjFmt(x.id), st.porCnpj.get(x.id)?.NOME || "", q["XP Nome"] || ""] }; });
 }
 function renderRkJM() {
   const R = rkAtivo(); if (!R) return;
   const lista = fundosVisiveis(R);
   $("#rkTitJM").textContent = `Janela móvel ${st.rkTodos ? "de todos os fundos" : `do top ${TOP_RANK}`} · ${R.M.jmMeses} meses contra o ${nomeIndice(R.M.bench)}`;
   const series = seriesJMRk(R, lista).sort((a, b) => b.pos - a.pos);       // top 3 desenhado por cima
+  // fundo destacado: só ele fica forte (o top 3 também clareia), como na Análise
+  if (st.destaque && series.some((s) => casa(st.destaque, s.nome, ...s.busca))) for (const s of series) { s.forte = casa(st.destaque, s.nome, ...s.busca); s.fraca = !s.forte; }
   const xs = series.flatMap((s) => [s.x[0], s.x[s.x.length - 1]]).filter((v) => v != null);
   grafico("gRkJM", series, { ref: 0, xMin: xs.length ? Math.min(...xs) : undefined, xMax: xs.length ? Math.max(...xs) : undefined, tituloX: (d) => `Aplicação em ${fmtData(d)}` });
   const porId = new Map(R.ordem.map((x) => [x.id, x]));
@@ -4742,6 +4747,18 @@ document.addEventListener("click", (e) => {
 });
 renderCompRk();
 
+
+// fundo destacado fora da lista visível do ranking (top 10): avisa a posição
+function avisoDestaqueRk() {
+  const R = rkAtivo(), el = $("#rkDestAviso"); if (!R) return;
+  const box = el || ($("#rkInfo").insertAdjacentHTML("afterend", `<p id="rkDestAviso" class="nota rk-dest-aviso" hidden></p>`), $("#rkDestAviso"));
+  if (!st.destaque || st.rkTodos) { box.hidden = true; return; }
+  const visiveis = new Set(fundosVisiveis(R).map((x) => x.id));
+  const achados = R.ordem.filter((x) => { const q = st.xp ? camposXP(x.id) : {}; return casa(st.destaque, nomeRk(R, x.id), cnpjFmt(x.id), st.porCnpj.get(x.id)?.NOME || "", q["XP Nome"] || ""); });
+  const fora = achados.filter((x) => !visiveis.has(x.id));
+  box.hidden = !fora.length;
+  if (fora.length) box.innerHTML = `🔎 ${fora.slice(0, 3).map((x) => `<b>${esc(nomeRk(R, x.id))}</b> está em ${x.pos}º lugar`).join("; ")}${fora.length > 3 ? ` e mais ${fora.length - 3}` : ""} — fora do top ${TOP_RANK}: use o botão de ver todos os fundos para vê-lo nas tabelas e gráficos.`;
+}
 // ---------- slider de datas (dois cursores)
 function configurarSlider(dIni, dFim, [zi, zf]) {
   const a = $("#zIni"), b = $("#zFim");
@@ -4898,7 +4915,13 @@ let tBusca, tDest, tDlg;
 document.addEventListener("input", (e) => {
   const t = e.target;
   if (t.id === "busca") { clearTimeout(tBusca); tBusca = setTimeout(atualizarSidebar, 150); }
-  else if (t.id === "destaque") { clearTimeout(tDest); tDest = setTimeout(() => { st.destaque = t.value; renderResultado(); }, 200); }
+  else if (t.id === "destaque" || t.id === "rkDestaque") {                 // um destaque só: Análise e Rankings
+    clearTimeout(tDest);
+    tDest = setTimeout(() => {
+      st.destaque = t.value; for (const id of ["destaque", "rkDestaque"]) if ($("#" + id) !== t) $("#" + id).value = t.value;
+      if (st.res) renderResultado(); if (st.rk) { renderRankings(); avisoDestaqueRk(); }
+    }, 200);
+  }
   else if (t.id === "zIni" || t.id === "zFim") aoMoverSlider(e);
 });
 addEventListener("scroll", () => { $("#btnTopo").hidden = scrollY < 400; }, { passive: true });
