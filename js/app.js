@@ -4550,12 +4550,14 @@ function mostrarTelaRk(qual) { for (const [id, k] of [["#rkListaBox", "lista"], 
 function usosModelo() { const u = {}; for (const [n, x] of Object.entries(lerRankings())) (u[x.modelo] ||= []).push(n); return u; }
 function renderModelos() {
   const salvos = modelosSalvos(), usos = usosModelo();
-  $("#rkModLista").innerHTML = `<div class="rkm-rola"><table class="tb gr-tab rkm-lista"><thead><tr><th class="t">Tipo de cálculo</th><th class="t">Métricas e janela</th><th class="t">Performance · Consistência · Risco</th>
-    <th class="t">Origem</th><th class="t">Usado em</th><th><span class="sr-only">Ações</span></th></tr></thead><tbody>${Object.entries(modelos()).map(([id, M]) => {
+  $("#rkModLista").innerHTML = `<p id="rkmPropAviso" class="nota rk-dest-aviso" hidden></p><div class="rkm-rola"><table class="tb gr-tab rkm-lista"><thead><tr><th class="t">Tipo de cálculo</th><th class="t">Métricas e janela</th><th class="t">Performance · Consistência · Risco</th>
+    <th class="t">Origem</th><th title="Ponderar a consistência da janela móvel pela quantidade de janelas de cada fundo (fundos mais novos ganham menos pontos)">Ponderar<br>consistência</th><th><span class="sr-only">Ações</span></th></tr></thead><tbody>${Object.entries(modelos()).map(([id, M]) => {
+      const usaJM = Object.keys(M.pesos).some((k) => METRICAS_JM.includes(k)), uso = (usos[id] || []).join(", ");
       const g = gruposPesosRk(M), padrao = !!MODELOS_RANK[id], editado = padrao && !!salvos[id];
-      return `<tr><td class="t"><b>${esc(M.nome)}</b></td><td class="t quebra">${esc(M.periodo)} · janela ${M.jmMeses}m vs ${esc(nomeIndice(M.bench))} · ${Object.keys(M.pesos).length} métricas${M.jmProporcional ? ` · <span class="rkm-prop" title="Consistência da janela móvel ponderada pela quantidade de janelas de cada fundo">consistência × janelas</span>` : ""}</td>
+      return `<tr><td class="t" title="${esc(uso ? `Usado em: ${uso}` : "Nenhum ranking usa este tipo")}"><b>${esc(M.nome)}</b></td><td class="t quebra">${esc(M.periodo)} · janela ${M.jmMeses}m vs ${esc(nomeIndice(M.bench))} · ${Object.keys(M.pesos).length} métricas</td>
         <td class="t">${g.map((x) => `<span class="rkm-chip" style="border-color:${CORES_GRUPO[x.g]}">${brPct(x.total, 0)}</span>`).join(" ")}</td>
-        <td class="t">${padrao ? (editado ? "padrão (editado)" : "padrão") : "criado por você"}</td><td class="t quebra">${esc((usos[id] || []).join(", ") || "–")}</td>
+        <td class="t">${padrao ? (editado ? "padrão (editado)" : "padrão") : "criado por você"}</td><td class="rkm-prop-cel">${usaJM ? `<label class="tog" title="${M.jmProporcional ? "Ligado" : "Desligado"}: consistência da janela móvel × proporção de janelas do fundo"><input type="checkbox" data-rkm-prop="${esc(id)}"${M.jmProporcional ? " checked" : ""} aria-label="Ponderar a consistência da janela móvel pela quantidade de janelas no tipo ${esc(M.nome)}"></label>`
+          : `<span class="nota" title="Este tipo não usa métricas de consistência da janela móvel">–</span>`}</td>
         <td class="gr-acoes"><button class="sec mini-btn" data-rkm-ed="${id}" type="button">Editar</button>
           <button class="sec mini-btn" data-rkm-dup="${id}" type="button">Duplicar</button>
           ${editado ? `<button class="sec mini-btn" data-rkm-orig="${id}" type="button" title="Desfaz as edições deste tipo padrão">Voltar ao original</button>` : ""}
@@ -4763,6 +4765,18 @@ function avisoDestaqueRk() {
   box.hidden = !fora.length;
   if (fora.length) box.innerHTML = `🔎 ${fora.slice(0, 3).map((x) => `<b>${esc(nomeRk(R, x.id))}</b> está em ${x.pos}º lugar`).join("; ")}${fora.length > 3 ? ` e mais ${fora.length - 3}` : ""} — fora do top ${TOP_RANK}: use o botão de ver todos os fundos para vê-lo nas tabelas e gráficos.`;
 }
+
+// interruptor "Ponderar consistência" direto na tabela de tipos de cálculo
+document.addEventListener("change", (e) => {
+  const id = e.target.dataset?.rkmProp; if (!id) return;
+  const salvos = modelosSalvos(), base = salvos[id] || semInternos({ ...modeloDe(id) });
+  if (e.target.checked) base.jmProporcional = true; else delete base.jmProporcional;
+  salvos[id] = base; salvar("modelosRank", salvos);
+  const nome = modeloDe(id).nome; renderModelos();
+  const av = $("#rkmPropAviso"); av.hidden = false;
+  av.innerHTML = `"${esc(nome)}": ponderação da consistência ${e.target.checked ? "<b>ligada</b>" : "<b>desligada</b>"}.` + (st.rk?.lista.some((R) => R.M.nome === nome) ? " Recalcule os rankings para aplicar." : "");
+  $(`[data-rkm-prop="${CSS.escape(id)}"]`)?.focus();
+});
 // ---------- slider de datas (dois cursores)
 function configurarSlider(dIni, dFim, [zi, zf]) {
   const a = $("#zIni"), b = $("#zFim");
