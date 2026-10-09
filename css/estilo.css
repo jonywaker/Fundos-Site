@@ -904,3 +904,8 @@ sup.gu { font-size: 9px; font-weight: 800; color: var(--link); margin-left: 2px;
 @media (prefers-color-scheme: dark) { .sv-meu { color: #9cc2ff; } .sv-eq { color: #f0c46a; } }
 tr.sv-linha-equipe td { background: color-mix(in srgb, #b7791f 4%, var(--card)); }
 #grCompBox[hidden], #rkEdCompBox[hidden] { display: none; }
+
+/* favoritos */
+button.fav { border: 0; background: none; cursor: pointer; font-size: 16px; line-height: 1; padding: 0 4px 0 0; color: var(--sub); vertical-align: -1px; }
+button.fav[aria-pressed=true] { color: var(--ouro); }
+button.fav:hover { color: var(--ouro); }

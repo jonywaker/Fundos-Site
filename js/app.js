@@ -401,13 +401,15 @@ const gravarGrupos = (g) => salvar("grupos", Object.fromEntries(Object.entries(g
 function abrirGrupos() { renderGrupos(); $("#dlgGrupos").showModal(); }
 function renderGrupos() {
   const g = lerGrupos(), ordem = { local: 0, meu: 1, equipe: 2 }, logado = !!st.nuvem;
-  const nomes = Object.keys(g).sort((a, b) => ordem[g[a]._origem] - ordem[g[b]._origem] || (g[a]._autor || "").localeCompare(g[b]._autor || "", "pt-BR") || a.localeCompare(b, "pt-BR"));
+  const fav = (n) => ehFav("grupo", g[n]);
+  const nomes = Object.keys(g).filter((n) => !$("#grSoFav").checked || fav(n))
+    .sort((a, b) => fav(b) - fav(a) || ordem[g[a]._origem] - ordem[g[b]._origem] || (g[a]._autor || "").localeCompare(g[b]._autor || "", "pt-BR") || a.localeCompare(b, "pt-BR"));
   $("#grN").textContent = st.sel.length;
   $("#grSalvar").disabled = !st.sel.length; $("#grSalvar").textContent = logado ? "Salvar grupo na conta" : "Salvar grupo";
   $("#grCompBox").hidden = !logado;
   $("#grNomes").innerHTML = nomes.filter((n) => g[n]._origem !== "equipe").map((n) => `<option value="${esc(g[n]._nome)}">`).join("");
   $("#grLista").innerHTML = (logado ? "" : `<p class="nota">Entre na área da equipe para salvar na sua conta (aparece em qualquer computador) e ver os grupos dos colegas.</p>`) +
-    (!nomes.length ? `<p class="nota">Nenhum grupo salvo ainda. Selecione fundos e salve acima.</p>` :
+    (!nomes.length ? `<p class="nota">${$("#grSoFav").checked ? "Nenhum grupo favorito. Clique na estrela ☆ ao lado de um grupo." : "Nenhum grupo salvo ainda. Selecione fundos e salve acima."}</p>` :
     `<table class="tb gr-tab"><thead><tr><th class="t">Grupo</th><th class="t">Onde está</th><th>Fundos</th><th>Atualizado em</th><th class="t">Carregar</th><th class="t"><span class="sr-only">Ações</span></th></tr></thead><tbody>${nomes.map((n) => {
       const x = g[n], aberto = renderGrupos.aberto === n, k = esc(n);
       const acoes = x._origem === "local" ? (logado ? `<button class="sec mini-btn" data-gr-up="${k}" type="button" title="Guarda na sua conta: aparece em qualquer computador e não some se o navegador apagar os dados">☁ Enviar para a conta</button> ` : "") +
@@ -415,7 +417,7 @@ function renderGrupos() {
         : x._origem === "meu" ? `<button class="sec mini-btn" data-gr-comp="${k}" type="button" title="${x._comp ? "Deixar só para você" : "Compartilhar com a equipe"}">${x._comp ? "🔒 Deixar só meu" : "👥 Compartilhar"}</button>
           <button class="cart-rm" data-gr-del="${k}" type="button" title="Excluir da sua conta" aria-label="Excluir o grupo ${esc(x._nome)}">🗑</button>`
         : `<button class="sec mini-btn" data-gr-copia="${k}" type="button" title="Cria uma cópia sua, que você pode alterar">⧉ Copiar para mim</button>`;
-      return `<tr class="sv-linha-${x._origem}"><td class="t"><button class="link gr-ver" data-gr="${k}" title="Ver os fundos">${aberto ? "▾" : "▸"} <b>${esc(x._nome)}</b></button></td><td class="t">${seloOrigem(x)}</td><td>${x.cnpjs.length}</td>
+      return `<tr class="sv-linha-${x._origem}"><td class="t">${botaoFav("grupo", x)}<button class="link gr-ver" data-gr="${k}" title="Ver os fundos">${aberto ? "▾" : "▸"} <b>${esc(x._nome)}</b></button></td><td class="t">${seloOrigem(x)}</td><td>${x.cnpjs.length}</td>
         <td>${x.atualizado ? new Date(x.atualizado).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }) : ""}</td>
         <td class="t gr-acoes"><button class="sec mini-btn" data-gr-add="${k}" type="button" title="Junta estes fundos aos já selecionados">＋ Acrescentar</button>
           <button class="prim mini-btn" data-gr-sub="${k}" type="button" title="Tira os selecionados e coloca só os do grupo">Substituir</button></td>
@@ -542,6 +544,7 @@ document.addEventListener("click", async (e) => {
     const n = t.dataset.grUp, g = lerGrupos(), x = g[n]; if (!x) return;
     const r = await salvarNaNuvem({ tipo: "grupo", nome: x._nome, compartilhado: true, conteudo: { cnpjs: x.cnpjs } });
     if (!r.ok) { avisoSel(`<span class="neg">${esc(r.erro)}</span>`); return; }
+    moverFav("grupo", x._nome, r.item.id);
     const loc = lerGruposLocais(); delete loc[n]; salvar("grupos", loc); return renderGrupos();
   }
   if (t.dataset?.grComp) {
@@ -2922,7 +2925,7 @@ document.addEventListener("keydown", (e) => {                      // setas entr
 // ---------- backup completo das configurações (grupos, rankings, tipos de cálculo, carteira e preferências)
 // As configurações ficam no navegador e presas ao endereço do site: mudar de computador, de navegador ou de endereço
 // (ex.: trocar o usuário do GitHub) começa do zero. O backup leva tudo num arquivo.
-const CHAVES_BACKUP = ["sel", "grupos", "rankings", "rankingsSel", "modelosRank", "rkCompPadrao", "carteira", "indices", "agrupar", "gruposFechados",
+const CHAVES_BACKUP = ["carteirasSalvas", "favoritos", "sel", "grupos", "rankings", "rankingsSel", "modelosRank", "rkCompPadrao", "carteira", "indices", "agrupar", "gruposFechados",
   "minimizados", "pagina", "relFmt", "relSel", "riscoEixo", "travar", "guardar"];
 function salvarBackup() {
   const dados = {};
@@ -3862,7 +3865,10 @@ async function carregarNuvem() {
   const token = lerSessaoEquipe(); if (!token) return;
   const r = await apiEquipe("salvos", { token });
   if (!r.ok) { if (r.erro && !/Ação desconhecida/.test(r.erro)) avisoSel(`<span class="neg">Grupos e rankings da conta: ${esc(r.erro)}</span>`); return; }
-  st.nuvem = { itens: r.itens || [] }; atualizarListasSalvos();
+  st.nuvem = { itens: r.itens || [] };
+  const fv = st.nuvem.itens.find((x) => x.tipo === "favoritos" && x.meu);
+  if (fv?.conteudo?.chaves) { for (const k of fv.conteudo.chaves) st.favs.add(k); salvar("favoritos", [...st.favs]); }
+  atualizarListasSalvos();
 }
 async function salvarNaNuvem(item) {
   const token = lerSessaoEquipe(); if (!token || !st.nuvem) return { ok: false, erro: "Entre na área da equipe para salvar na conta." };
@@ -3879,6 +3885,7 @@ async function apagarDaNuvem(id) {
 }
 function atualizarListasSalvos() {
   if ($("#dlgGrupos").open) renderGrupos();
+  if ($("#dlgCarteiras")?.open) renderCarteirasSalvas();
   if ($("#dlgRank").open && !rkEd.aberto) renderRkLista();
   resumoLateralRk();
 }
@@ -3888,6 +3895,133 @@ function seloOrigem(x) {
   if (x._origem === "equipe") return `<span class="sv sv-eq" title="Salvo e compartilhado por ${esc(x._autor)}">👥 ${esc(x._autor)}</span>`;
   return `<span class="sv sv-local" title="Guardado só neste navegador, neste computador: some se o navegador apagar os dados">💻 Só neste computador</span>`;
 }
+
+// ============================== favoritos (grupos, rankings e carteiras) ==============================
+// chave: "id:<id>" para itens da conta (sincroniza entre computadores) ou "local:<tipo>:<nome>" para os deste computador
+st.favs = new Set(pref("favoritos", [])); st.soFav = { rk: false };
+const chaveFav = (tipo, x) => (x?._id ? `id:${x._id}` : `local:${tipo}:${x?._nome}`);
+const ehFav = (tipo, x) => !!x && st.favs.has(chaveFav(tipo, x));
+function botaoFav(tipo, x) {
+  const on = ehFav(tipo, x);
+  return `<button type="button" class="fav" data-fav="${esc(chaveFav(tipo, x))}" aria-pressed="${on}" title="${on ? "Tirar dos favoritos" : "Marcar como favorito"}" aria-label="${on ? "Tirar dos favoritos" : "Marcar como favorito"}: ${esc(x._nome)}">${on ? "★" : "☆"}</button>`;
+}
+let favTimer = null;
+function gravarFavs() {
+  salvar("favoritos", [...st.favs]);
+  if (!st.nuvem) return;
+  clearTimeout(favTimer);                                                // várias estrelas seguidas = um pedido só
+  favTimer = setTimeout(() => {
+    const ex = st.nuvem?.itens.find((x) => x.tipo === "favoritos" && x.meu);
+    salvarNaNuvem({ id: ex?.id, tipo: "favoritos", nome: "Favoritos", compartilhado: false, conteudo: { chaves: [...st.favs].filter((k) => k.startsWith("id:")) } });
+  }, 800);
+}
+function alternarFav(k) { st.favs.has(k) ? st.favs.delete(k) : st.favs.add(k); gravarFavs(); atualizarListasSalvos(); }
+// item do computador enviado para a conta: a estrela vai junto
+function moverFav(tipo, nome, novoId) { const k = `local:${tipo}:${nome}`; if (st.favs.delete(k)) { st.favs.add(`id:${novoId}`); gravarFavs(); } }
+document.addEventListener("click", (e) => { const b = e.target.closest?.("button.fav[data-fav]"); if (b) { e.stopPropagation(); alternarFav(b.dataset.fav); } }, true);
+document.addEventListener("change", (e) => {
+  if (e.target.id === "grSoFav") renderGrupos();
+  if (e.target.id === "rkSoFav") { st.soFav.rk = e.target.checked; renderRkLista(); }
+  if (e.target.id === "ctSoFav") renderCarteirasSalvas();
+});
+
+// ============================== carteiras salvas ==============================
+// cópia completa da carteira montada (ativos e pesos, referência, rebalanceamento, valor inicial e período)
+const lerCarteirasLocais = () => pref("carteirasSalvas", {});
+function lerCarteiras() {
+  const out = {};
+  for (const [n, x] of Object.entries(lerCarteirasLocais())) out[n] = { ...x, _origem: "local", _nome: n };
+  for (const it of st.nuvem?.itens || []) {
+    if (it.tipo !== "carteira") continue;
+    const base = it.meu ? it.nome : `${it.nome} · ${it.autor}`; let k = base, i = 2; while (out[k]) k = `${base} (${i++})`;
+    out[k] = { cart: it.conteudo?.cart || it.conteudo || {}, atualizado: it.atualizado, _origem: it.meu ? "meu" : "equipe", _id: it.id, _autor: it.autor, _comp: it.compartilhado, _nome: it.nome };
+  }
+  return out;
+}
+const copiaCart = () => JSON.parse(JSON.stringify({ itens: st.cart.itens, ref: st.cart.ref, rebal: st.cart.rebal, valor: st.cart.valor, ini: st.cart.ini, fim: st.cart.fim }));
+const nomeAtivo = (it) => (it.tipo === "i" ? nomeIndice(it.v) : curto(st.porCnpj.get(it.v)?.NOME || cnpjFmt(it.v), 44));
+function abrirCarteirasSalvas() { renderCarteirasSalvas(); $("#dlgCarteiras").showModal(); $("#ctNome").focus(); }
+function renderCarteirasSalvas() {
+  const g = lerCarteiras(), ordem = { local: 0, meu: 1, equipe: 2 }, logado = !!st.nuvem, fav = (n) => ehFav("carteira", g[n]);
+  const nomes = Object.keys(g).filter((n) => !$("#ctSoFav").checked || fav(n))
+    .sort((a, b) => fav(b) - fav(a) || ordem[g[a]._origem] - ordem[g[b]._origem] || (g[a]._autor || "").localeCompare(g[b]._autor || "", "pt-BR") || a.localeCompare(b, "pt-BR"));
+  $("#ctN").textContent = st.cart.itens.length;
+  $("#ctSalvar").disabled = !st.cart.itens.length; $("#ctSalvar").textContent = logado ? "Salvar carteira na conta" : "Salvar carteira";
+  $("#ctCompBox").hidden = !logado;
+  $("#ctNomes").innerHTML = Object.values(g).filter((x) => x._origem !== "equipe").map((x) => `<option value="${esc(x._nome)}">`).join("");
+  $("#ctLista").innerHTML = (logado ? "" : `<p class="nota">Entre na área da equipe para salvar carteiras na sua conta (aparecem em qualquer computador) e ver as dos colegas.</p>`) +
+    (!nomes.length ? `<p class="nota">${$("#ctSoFav").checked ? "Nenhuma carteira favorita. Clique na estrela ☆ ao lado de uma carteira." : "Nenhuma carteira salva ainda. Monte uma carteira e salve acima."}</p>` :
+    `<table class="tb gr-tab"><thead><tr><th class="t">Carteira</th><th class="t">Onde está</th><th>Ativos</th><th>Atualizada em</th><th class="t">Carregar</th><th class="t"><span class="sr-only">Ações</span></th></tr></thead><tbody>${nomes.map((n) => {
+      const x = g[n], k = esc(n), itens = x.cart?.itens || [], aberto = renderCarteirasSalvas.aberto === n;
+      const acoes = x._origem === "local" ? (logado ? `<button class="sec mini-btn" data-ct-up="${k}" type="button" title="Guarda na sua conta: aparece em qualquer computador">☁ Enviar para a conta</button> ` : "") +
+          `<button class="cart-rm" data-ct-del="${k}" type="button" title="Excluir carteira" aria-label="Excluir a carteira ${esc(x._nome)}">🗑</button>`
+        : x._origem === "meu" ? `<button class="sec mini-btn" data-ct-comp="${k}" type="button">${x._comp ? "🔒 Deixar só meu" : "👥 Compartilhar"}</button>
+          <button class="cart-rm" data-ct-del="${k}" type="button" title="Excluir da sua conta" aria-label="Excluir a carteira ${esc(x._nome)}">🗑</button>`
+        : `<button class="sec mini-btn" data-ct-copia="${k}" type="button" title="Cria uma cópia sua, que você pode alterar">⧉ Copiar para mim</button>`;
+      return `<tr class="sv-linha-${x._origem}"><td class="t">${botaoFav("carteira", x)}<button class="link gr-ver" data-ct-ver="${k}" title="Ver os ativos e pesos">${aberto ? "▾" : "▸"} <b>${esc(x._nome)}</b></button></td>
+        <td class="t">${seloOrigem(x)}</td><td>${itens.length}</td><td>${x.atualizado ? new Date(x.atualizado).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }) : ""}</td>
+        <td class="t"><button class="prim mini-btn" data-ct-car="${k}" type="button" title="Substitui a carteira montada agora">Carregar</button></td><td class="t gr-acoes">${acoes}</td></tr>` +
+        (aberto ? `<tr class="gr-det"><td colspan="6"><div class="chips">${itens.map((it) => `<span class="chip">${esc(nomeAtivo(it))} · <b>${br(Number(it.peso) || 0, 1)}%</b></span>`).join("")}</div>
+          <p class="nota">Referência: ${esc(x.cart.ref?.rot || x.cart.ref?.v || "–")} · rebalanceamento: ${esc({ 0: "nunca", 1: "mensal", 3: "trimestral", 6: "semestral", 12: "anual" }[x.cart.rebal] ?? "–")} · valor inicial: R$ ${br(Number(x.cart.valor) || 0, 0)}</p></td></tr>` : "");
+    }).join("")}</tbody></table>`);
+}
+async function salvarCarteiraAtual() {
+  const nome = $("#ctNome").value.trim(); if (!nome) { $("#ctNome").focus(); return; }
+  if (!st.cart.itens.length) return;
+  const g = lerCarteiras(), cart = copiaCart();
+  if (st.nuvem) {
+    const ex = Object.values(g).find((x) => x._origem === "meu" && x._nome.toLowerCase() === nome.toLowerCase());
+    if (ex && !(await perguntar("Substituir a carteira?", `Você já tem na conta a carteira <b>${esc(ex._nome)}</b>. Substituir pela carteira montada agora?`,
+      [{ rot: "Cancelar", v: false }, { rot: "Substituir", v: true, classe: "prim" }]))) return;
+    const r = await salvarNaNuvem({ id: ex?._id, tipo: "carteira", nome, compartilhado: $("#ctComp").checked, conteudo: { cart } });
+    if (r.ok) { $("#ctNome").value = ""; renderCarteirasSalvas(); $("#cartAviso").innerHTML = `<span class="ok">Carteira "${esc(nome)}" salva na sua conta${$("#ctComp").checked ? " e compartilhada com a equipe" : ""}.</span>`; return; }
+    if (!(await perguntar("Não foi possível salvar na conta", `${esc(r.erro)}<br>Salvar só neste computador?`, [{ rot: "Cancelar", v: false }, { rot: "Salvar neste computador", v: true, classe: "prim" }]))) return;
+  }
+  const loc = lerCarteirasLocais();
+  if (loc[nome] && !(await perguntar("Substituir a carteira?", `Já existe a carteira <b>${esc(nome)}</b> neste computador. Substituir?`, [{ rot: "Cancelar", v: false }, { rot: "Substituir", v: true, classe: "prim" }]))) return;
+  loc[nome] = { cart, atualizado: new Date().toISOString() }; salvar("carteirasSalvas", loc);
+  $("#ctNome").value = ""; renderCarteirasSalvas(); $("#cartAviso").innerHTML = `<span class="ok">Carteira "${esc(nome)}" salva neste computador.</span>`;
+}
+async function carregarCarteiraSalva(n) {
+  const x = lerCarteiras()[n]; if (!x?.cart?.itens) return;
+  if (st.cart.itens.length && !(await perguntar("Carregar a carteira?", `A carteira montada agora (${st.cart.itens.length} ativo(s)) será substituída por <b>${esc(x._nome)}</b> (${x.cart.itens.length} ativo(s)).`,
+    [{ rot: "Cancelar", v: false }, { rot: "Carregar", v: true, classe: "prim" }]))) return;
+  Object.assign(st.cart, JSON.parse(JSON.stringify(x.cart)));
+  salvarCart(); $("#dlgCarteiras").close(); mostrarPagina("carteira"); renderCarteira();
+  const faltam = st.cart.itens.filter((it) => it.tipo === "f" && !fundoCart(it.v)).length;
+  $("#cartAviso").innerHTML = `<span class="ok">Carteira "${esc(x._nome)}" carregada${x._origem === "equipe" ? ` (de ${esc(x._autor)})` : ""}.</span>` +
+    (faltam ? ` Clique em 🧮 Calcular carteira para baixar as cotas de ${faltam} fundo(s).` : "");
+}
+document.addEventListener("click", async (e) => {
+  const t = e.target;
+  if (t.id === "cartSalvas") return abrirCarteirasSalvas();
+  if (t.id === "ctSalvar") return salvarCarteiraAtual();
+  const d = t.closest?.("[data-ct-ver],[data-ct-car],[data-ct-del],[data-ct-up],[data-ct-comp],[data-ct-copia]"); if (!d) return;
+  const ds = d.dataset, g = lerCarteiras();
+  if (ds.ctVer) { renderCarteirasSalvas.aberto = renderCarteirasSalvas.aberto === ds.ctVer ? null : ds.ctVer; return renderCarteirasSalvas(); }
+  if (ds.ctCar) return carregarCarteiraSalva(ds.ctCar);
+  if (ds.ctDel) {
+    const x = g[ds.ctDel]; if (!x) return;
+    if (!(await perguntar("Excluir a carteira?", `Excluir a carteira <b>${esc(x._nome)}</b>${x._origem === "meu" ? " da sua conta (some de todos os computadores" + (x._comp ? " e da equipe" : "") + ")" : ""}? A carteira montada agora não muda.`,
+      [{ rot: "Cancelar", v: false }, { rot: "Excluir", v: true, classe: "prim" }]))) return;
+    if (x._origem === "meu") { const r = await apagarDaNuvem(x._id); if (!r.ok) $("#cartAviso").innerHTML = `<span class="neg">${esc(r.erro)}</span>`; return renderCarteirasSalvas(); }
+    const loc = lerCarteirasLocais(); delete loc[ds.ctDel]; salvar("carteirasSalvas", loc); return renderCarteirasSalvas();
+  }
+  if (ds.ctUp) {
+    const x = g[ds.ctUp]; if (!x) return;
+    const r = await salvarNaNuvem({ tipo: "carteira", nome: x._nome, compartilhado: true, conteudo: { cart: x.cart } });
+    if (!r.ok) { $("#cartAviso").innerHTML = `<span class="neg">${esc(r.erro)}</span>`; return; }
+    moverFav("carteira", x._nome, r.item.id);
+    const loc = lerCarteirasLocais(); delete loc[ds.ctUp]; salvar("carteirasSalvas", loc); return renderCarteirasSalvas();
+  }
+  if (ds.ctComp) { const x = g[ds.ctComp]; if (!x) return;
+    const r = await salvarNaNuvem({ id: x._id, tipo: "carteira", nome: x._nome, compartilhado: !x._comp, conteudo: { cart: x.cart } }); if (!r.ok) $("#cartAviso").innerHTML = `<span class="neg">${esc(r.erro)}</span>`; return renderCarteirasSalvas(); }
+  if (ds.ctCopia) { const x = g[ds.ctCopia]; if (!x) return;
+    const meus = Object.values(g).filter((y) => y._origem !== "equipe").map((y) => y._nome.toLowerCase());
+    const nome = meus.includes(x._nome.toLowerCase()) ? `${x._nome} (de ${x._autor})` : x._nome;
+    const r = await salvarNaNuvem({ tipo: "carteira", nome, compartilhado: false, conteudo: { cart: x.cart } }); if (!r.ok) $("#cartAviso").innerHTML = `<span class="neg">${esc(r.erro)}</span>`; return renderCarteirasSalvas(); }
+});
+document.addEventListener("keydown", (e) => { if (e.key === "Enter" && e.target.id === "ctNome") { e.preventDefault(); salvarCarteiraAtual(); } });
 // ============================== rankings ==============================
 // Um ranking = nome + tipo de cálculo (pesos) + lista de fundos. Ficam guardados neste navegador, como os grupos.
 // rankings de três origens, como os grupos: deste computador, meus na conta e compartilhados pelos colegas.
@@ -3933,9 +4067,11 @@ function resumoLateralRk() {
 function abrirRank() { rkEd.aberto = false; renderRkLista(); mostrarTelaRk("lista"); $("#dlgRank").showModal(); }
 function renderRkLista() {
   const g = lerRankings(), ordem = { local: 0, meu: 1, equipe: 2 }, logado = !!st.nuvem;
-  const nomes = Object.keys(g).sort((a, b) => ordem[g[a]._origem] - ordem[g[b]._origem] || (g[a]._autor || "").localeCompare(g[b]._autor || "", "pt-BR") || a.localeCompare(b, "pt-BR"));
+  const fav = (n) => ehFav("ranking", g[n]);
+  const nomes = Object.keys(g).filter((n) => !st.soFav?.rk || fav(n))
+    .sort((a, b) => fav(b) - fav(a) || ordem[g[a]._origem] - ordem[g[b]._origem] || (g[a]._autor || "").localeCompare(g[b]._autor || "", "pt-BR") || a.localeCompare(b, "pt-BR"));
   if (st.nuvem || !st.equipe) for (const n of [...rkSel]) if (!g[n]) rkSel.delete(n);    // sem apagar marcações enquanto a conta ainda carrega
-  $("#rkLista").innerHTML = (logado ? "" : `<p class="nota">Entre na área da equipe para salvar rankings na sua conta (aparecem em qualquer computador) e ver os dos colegas.</p>`) + (!nomes.length ? `<p class="nota">Nenhum ranking ainda. Clique em "＋ Novo ranking", dê um nome, escolha o tipo de cálculo e os fundos.</p>` :
+  $("#rkLista").innerHTML = `<p class="nota"><label class="tog"><input id="rkSoFav" type="checkbox"${st.soFav?.rk ? " checked" : ""}> Só favoritos ★</label></p>` + (logado ? "" : `<p class="nota">Entre na área da equipe para salvar rankings na sua conta (aparecem em qualquer computador) e ver os dos colegas.</p>`) + (!nomes.length ? `<p class="nota">Nenhum ranking ainda. Clique em "＋ Novo ranking", dê um nome, escolha o tipo de cálculo e os fundos.</p>` :
     `<table class="tb gr-tab"><thead><tr><th><span class="sr-only">Calcular</span></th><th class="t">Ranking</th><th class="t">Onde está</th><th class="t">Tipo de cálculo</th><th>Fundos</th><th>Atualizado em</th><th><span class="sr-only">Ações</span></th></tr></thead><tbody>${nomes.map((n) => {
       const x = g[n], M = modeloDe(x.modelo) || {}, k = esc(n);
       const acoes = x._origem === "equipe" ? `<button class="sec mini-btn" data-rk-copia="${k}" type="button" title="Cria uma cópia sua, que você pode alterar">⧉ Copiar para mim</button>`
@@ -3944,7 +4080,7 @@ function renderRkLista() {
           (x._origem === "meu" ? ` <button class="sec mini-btn" data-rk-comp="${k}" type="button">${x._comp ? "🔒 Deixar só meu" : "👥 Compartilhar"}</button>` : "") +
           ` <button class="cart-rm" data-rk-del="${k}" type="button" title="Excluir ranking" aria-label="Excluir o ranking ${esc(x._nome)}">🗑</button>`;
       return `<tr class="linha-f${rkSel.has(n) ? " marcado" : ""}" data-rk="${esc(n)}" title="Clique para marcar ou desmarcar"><td><label class="tog"><input type="checkbox" data-rk-sel="${esc(n)}" aria-label="Calcular o ranking ${esc(n)}" ${rkSel.has(n) ? "checked" : ""}></label></td>
-        <td class="t"><b>${esc(x._nome)}</b></td><td class="t">${seloOrigem(x)}</td><td class="t">${esc(M.nome || x.modelo)} <small class="nota">· ${esc(M.periodo || "")} · janela ${M.jmMeses || "?"}m vs ${esc(M.bench || "")}
+        <td class="t">${botaoFav("ranking", x)}<b>${esc(x._nome)}</b></td><td class="t">${seloOrigem(x)}</td><td class="t">${esc(M.nome || x.modelo)} <small class="nota">· ${esc(M.periodo || "")} · janela ${M.jmMeses || "?"}m vs ${esc(M.bench || "")}
 </small></td>
         <td>${x.cnpjs.length}</td><td>${x.atualizado ? new Date(x.atualizado).toLocaleDateString("pt-BR") : ""}</td>
         <td class="gr-acoes">${acoes}</td></tr>`; }).join("")}</tbody></table>`);
@@ -4496,6 +4632,7 @@ document.addEventListener("click", async (e) => {
     const n = t.dataset.rkUp, x = lerRankings()[n]; if (!x) return;
     const r = await salvarNaNuvem({ tipo: "ranking", nome: x._nome, compartilhado: true, conteudo: conteudoRanking(x.modelo, x.cnpjs) });
     if (!r.ok) { avisoSel(`<span class="neg">${esc(r.erro)}</span>`); return; }
+    moverFav("ranking", x._nome, r.item.id);
     const loc = lerRankingsLocais(); delete loc[n]; salvar("rankings", loc); return renderRkLista();
   }
   if (t.dataset?.rkComp) {
